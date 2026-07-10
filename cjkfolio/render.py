@@ -62,7 +62,9 @@ class Shaper:
         return size_pt * (self.dpi / 72.0) / self.upem  # font unit -> px
 
     def glyph_tile(self, gid: int):
-        self.ft.load_glyph(gid, freetype.FT_LOAD_RENDER)
+        # NO_HINTING：印刷級柵格不需 hinting，且部分手寫 TTF（辰宇、粉圓）的
+        # bytecode 會使 FreeType 拋 too many function definitions
+        self.ft.load_glyph(gid, freetype.FT_LOAD_RENDER | freetype.FT_LOAD_NO_HINTING)
         g = self.ft.glyph
         bmp = g.bitmap
         if bmp.width == 0 or bmp.rows == 0:
@@ -145,7 +147,31 @@ class PageRenderer:
         self.fonts_used.add(str(resolved.path))
         return self._shapers[key]
 
-    def render_page(self, page) -> Image.Image:
+    def _draw_footer(self, img, page, footer_texts: dict) -> None:
+        """頁腳三件組（頁碼＋書眉）：水平文字，錨定書口側，奇偶頁鏡像。"""
+        master, template = self.master, self.template
+        page_w_pt = mm_to_pt(template.page_width_mm)
+        odd = (page.number % 2 == 1) or not master.mirror
+        for item in master.footer.values():
+            if item.pages == "odd" and not odd:
+                continue
+            if item.pages == "even" and odd:
+                continue
+            text = footer_texts.get(item.source, "")
+            if not text:
+                continue
+            style = template.character_styles[item.style]
+            shaper = self._shaper_for(style)
+            strip = _render_horizontal_strip(shaper, text, style.size_pt, self.scale)
+            ascent_px = style.size_pt * self.scale * 0.88
+            y = round(item.baseline_from_top_pt * self.scale - ascent_px)
+            if odd:  # 書口在右：文字右緣對齊 outer_offset
+                x = round((page_w_pt - item.outer_offset_pt) * self.scale) - strip.width
+            else:
+                x = round(item.outer_offset_pt * self.scale)
+            img.paste(0, (x, y), strip)
+
+    def render_page(self, page, footer_texts=None) -> Image.Image:
         master, template = self.master, self.template
         size_px = (
             round(mm_to_pt(template.page_width_mm) * self.scale),
@@ -176,6 +202,8 @@ class PageRenderer:
                 elif cell.kind == "latin":
                     _draw_rotated_latin(img, shaper, cell.text, axis, cell_top, style.size_pt, self.scale)
                 slot_i += cell.width  # space 留白即可
+        if footer_texts:
+            self._draw_footer(img, page, footer_texts)
         return img
 
 
@@ -188,14 +216,21 @@ class RenderResult:
 
 
 def render_document(doc, template: Template, out_dir, dpi: int = 150,
-                    basename: str = "page", font_dir=None) -> RenderResult:
+                    basename: str = "page", font_dir=None,
+                    footer: bool = True, first_page: int = 1) -> RenderResult:
     layout = layout_document(doc, template)
     renderer = PageRenderer(template, doc.master, dpi=dpi, font_dir=font_dir)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
     for page in layout.pages:
-        img = renderer.render_page(page)
+        texts = None
+        if footer and renderer.master.footer:
+            texts = {
+                "number": str(page.number + first_page - 1),
+                "title": doc.title,
+            }
+        img = renderer.render_page(page, footer_texts=texts)
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)

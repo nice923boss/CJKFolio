@@ -48,6 +48,28 @@ def test_template_page_size_and_colors(template):
     assert template.colors["暖黑"] == "#231f20"
 
 
+def test_template_md_mapping_present(template):
+    m = template.md_mapping
+    assert m["h1"] == "章名大標-明體W7"
+    assert m["h2"] == "個案大標-NotoSans"
+    assert m["h3"] == "章節小標-黑體"
+    assert m["blockquote"] == "引文-仿宋語錄"
+    assert m["paragraph"] == "內文-明體直排"
+
+
+def test_master_a_footer_spec(template):
+    footer = template.masters["A-內文版"].footer
+    num = footer["page_number"]
+    assert num.style == "頁碼數字-GillSans"
+    assert num.source == "number"
+    assert num.pages == "all"
+    assert num.baseline_from_top_pt == 530.43
+    title = footer["running_title"]
+    assert title.source == "title"
+    assert title.pages == "odd"
+    assert template.masters["B-部扉"].footer == {}
+
+
 def test_template_missing_masters_rejected():
     with pytest.raises(TemplateError, match="masters"):
         template_from_dict({

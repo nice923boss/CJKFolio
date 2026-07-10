@@ -31,8 +31,11 @@ BLOCK_TOP_PT = 92.09  # 版心天頭（measurements.json），僅作無 body 欄
 INDENT_THRESHOLD_PT = 18.0  # 段首縮排 2 字 = 24.16pt，門檻取 1.5 字距
 COLUMN_TOL_PT = 7.0         # 行距 23pt，聚欄容差
 MIN_HEADING_CHARS = 3       # 標題帶碎欄門檻（圖旁單字標籤剔除，剔除量入 log）
-# 裝飾性頁面元素字型（Case 編號、頁碼），非章節正文，不入流
-DECOR_FONTS = {"PepitaMT", "GillSans-Light"}
+# 非正文流字型，不入流（固定行為，於輸出摘要註明）：
+# 裝飾性頁面元素（Case 編號、頁碼）＋手寫旁注／裝飾大字（圖注非結構正文）
+DECOR_FONTS = {"PepitaMT", "GillSans-Light", "HanziPenTC-W5", "ChenYuluoyan-Thin"}
+# md 標題層級（依全書掃描：章名 21.9 → h1、個案大標 17.9 → h2、章節小標 13 → h3）
+MD_LEVELS = [(20.0, "# "), (14.5, "## "), (0.0, "### ")]
 
 
 def page_chars(page) -> list:
@@ -50,7 +53,8 @@ def page_chars(page) -> list:
                         continue
                     x0, y0, x1, _ = ch["bbox"]
                     chars.append(
-                        {"c": c, "size": span["size"], "x": (x0 + x1) / 2, "y0": y0}
+                        {"c": c, "size": span["size"], "font": span["font"],
+                         "x": (x0 + x1) / 2, "y0": y0}
                     )
     return chars
 
@@ -68,7 +72,8 @@ def cluster_columns(chars: list) -> list:
     return columns
 
 
-def extract(start: int, end: int):
+def extract(start: int, end: int, fmt: str = "txt"):
+    """回傳 (paragraphs, dropped)。fmt="md" 時標題段帶 #/##/### 前綴、仿宋引文帶 >。"""
     doc = fitz.open(PDF)
     paragraphs: list = []
     dropped: list = []
@@ -79,6 +84,14 @@ def extract(start: int, end: int):
         if current:
             paragraphs.append("".join(current))
             current = []
+
+    def md_prefix(median_size) -> str:
+        if fmt != "md":
+            return ""
+        for threshold, prefix in MD_LEVELS:
+            if median_size >= threshold:
+                return prefix
+        return ""
 
     for pno in range(start, end + 1):
         in_band = [c for c in page_chars(doc[pno]) if c["size"] >= BODY_MIN_PT]
@@ -104,13 +117,20 @@ def extract(start: int, end: int):
                     dropped.append(f"p{pno} {text!r}")
                     continue
                 close_paragraph()
-                paragraphs.append(text)
+                paragraphs.append(md_prefix(col["median"]) + text)
                 continue
             if items[0]["y0"] - page_flow_top > INDENT_THRESHOLD_PT:
                 close_paragraph()
+            if fmt == "md" and not current and _is_fangsong(items):
+                current.append("> ")  # 仿宋引文欄 → blockquote（段起始）
             current.extend(c["c"] for c in items)
     close_paragraph()
     return paragraphs, dropped
+
+
+def _is_fangsong(items) -> bool:
+    fonts = [c.get("font", "") for c in items]
+    return sum("FangSong" in f for f in fonts) > len(fonts) / 2
 
 
 def main() -> None:
@@ -118,15 +138,17 @@ def main() -> None:
     parser.add_argument("--start", type=int, required=True, help="起始 PDF 頁（0 起算）")
     parser.add_argument("--end", type=int, required=True, help="結束 PDF 頁（含）")
     parser.add_argument("--out", required=True)
+    parser.add_argument("--format", choices=("txt", "md"), default="txt")
     args = parser.parse_args()
 
-    paragraphs, dropped = extract(args.start, args.end)
+    paragraphs, dropped = extract(args.start, args.end, fmt=args.format)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n\n".join(paragraphs) + "\n", encoding="utf-8")
 
     total = sum(len(p) for p in paragraphs)
-    print(f"抽取 PDF 頁 {args.start}~{args.end}：{len(paragraphs)} 段、{total} 字 → {out}")
+    print(f"抽取 PDF 頁 {args.start}~{args.end}（{args.format}）：{len(paragraphs)} 段、{total} 字 → {out}")
+    print(f"非正文流字型固定排除（設計行為）：{sorted(DECOR_FONTS)}")
     if dropped:
         print(f"剔除標題帶碎欄 {len(dropped)} 筆（不沉默）：{dropped}")
     print("各段（首 6 字＋字數，供人工核對）：")

@@ -56,11 +56,23 @@ class Grid:
 
 
 @dataclass(frozen=True)
+class FooterItem:
+    """頁腳／書眉元素：水平文字，錨定書口（outer）側，奇偶頁鏡像。"""
+    name: str
+    style: str   # 字元樣式名
+    source: str  # "number"（頁碼）| "title"（書名）
+    baseline_from_top_pt: float
+    outer_offset_pt: float  # 文字靠書口側的邊到頁面書口邊的距離
+    pages: str = "all"      # "all" | "odd" | "even"
+
+
+@dataclass(frozen=True)
 class MasterPage:
     name: str
     margins: Margins
     grid: Grid
     mirror: bool = True  # 對開鏡像（奇數頁書口在右）
+    footer: dict = field(default_factory=dict)  # name → FooterItem
     evidence: Optional[str] = None
     note: Optional[str] = None
 
@@ -74,6 +86,7 @@ class Template:
     paragraph_styles: dict = field(default_factory=dict)
     character_styles: dict = field(default_factory=dict)
     masters: dict = field(default_factory=dict)
+    md_mapping: dict = field(default_factory=dict)  # md block kind → 段落樣式名
 
 
 def _require(data: dict, key: str, context: str):
@@ -109,6 +122,17 @@ def _character_style(name: str, d: dict) -> CharacterStyle:
     )
 
 
+def _footer_item(name: str, d: dict, ctx: str) -> FooterItem:
+    return FooterItem(
+        name=name,
+        style=str(_require(d, "style", ctx)),
+        source=str(_require(d, "source", ctx)),
+        baseline_from_top_pt=float(_require(d, "baseline_from_top_pt", ctx)),
+        outer_offset_pt=float(_require(d, "outer_offset_pt", ctx)),
+        pages=str(d.get("pages", "all")),
+    )
+
+
 def _master(name: str, d: dict) -> MasterPage:
     ctx = f"masters[{name}]"
     m = _require(d, "margins_mm", ctx)
@@ -129,6 +153,10 @@ def _master(name: str, d: dict) -> MasterPage:
             base_size_pt=float(_require(g, "base_size_pt", f"{ctx}.grid")),
         ),
         mirror=bool(d.get("mirror", True)),
+        footer={
+            fname: _footer_item(fname, fd, f"{ctx}.footer[{fname}]")
+            for fname, fd in d.get("footer", {}).items()
+        },
         evidence=d.get("evidence"),
         note=d.get("note"),
     )
@@ -155,6 +183,7 @@ def template_from_dict(data) -> Template:
             name: _character_style(name, d) for name, d in data["character_styles"].items()
         },
         masters={name: _master(name, d) for name, d in data["masters"].items()},
+        md_mapping=dict(data.get("md_mapping", {})),
     )
 
 

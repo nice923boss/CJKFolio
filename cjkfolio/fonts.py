@@ -15,11 +15,14 @@ FAMILY_FILES = {
         "regular": "SourceHanSerifTC-Regular.otf",
         "heavy": "SourceHanSerifTC-Heavy.otf",
     },
-    "思源黑體 TC": {},
+    "思源黑體 TC": {
+        "medium": "SourceHanSansTC-Medium.otf",
+        "bold": "SourceHanSansTC-Bold.otf",
+    },
     "全字庫正楷體 TW-Kai": {},
     "全字庫正宋體": {},
-    "辰宇落雁體": {},
-    "jf open 粉圓": {},
+    "辰宇落雁體": {"regular": "ChenYuluoyan-2.0-Thin.ttf"},
+    "jf open 粉圓": {"regular": "jf-openhuninn-2.1.ttf"},
 }
 
 # 字重替代順序（找不到請求字重時，依序找可用檔）

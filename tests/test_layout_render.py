@@ -101,7 +101,7 @@ def test_line_axis_positions_odd_even_mirror(template):
 @needs_fonts
 def test_render_single_char_lands_in_first_cell(template, tmp_path):
     doc = make_doc([{"text": "永", "style": "內文-明體直排"}])
-    result = render_document(doc, template, tmp_path, dpi=150)
+    result = render_document(doc, template, tmp_path, dpi=150, footer=False)
     assert len(result.paths) == 1
     img = Image.open(result.paths[0])
     scale = 150 / 72.0
@@ -134,3 +134,38 @@ def test_render_multipage_and_style_fonts(template, tmp_path):
     used = {Path(f).name for f in result.fonts_used}
     assert "SourceHanSerifTC-Regular.otf" in used
     assert "SourceHanSerifTC-Heavy.otf" in used  # 章名 W7→Heavy（字重 fallback）
+
+
+# ---------- 頁腳三件組（主版層） ----------
+
+def _footer_band(img, scale):
+    """頁腳帶（基線 530.43pt 上下）的著墨 bbox。"""
+    y0, y1 = round(516 * scale), round(538 * scale)
+    band = img.crop((0, y0, img.width, y1))
+    return ImageOps.invert(band.convert("L")).getbbox()
+
+
+@needs_fonts
+def test_footer_page_number_and_running_title(template, tmp_path):
+    doc = make_doc([{"text": BODY_500, "style": "內文-明體直排"}])
+    result = render_document(doc, template, tmp_path, dpi=150, first_page=30)
+    scale = 150 / 72.0
+    page_w_px = mm_to_pt(148) * scale
+    # 頁 1（奇數＝右頁）：頁碼靠右緣、書眉（書名）齊版心外緣
+    ink1 = _footer_band(Image.open(result.paths[0]), scale)
+    assert ink1 is not None, "奇數頁頁腳帶無著墨"
+    assert ink1[2] > page_w_px * 0.8, "奇數頁頁腳應靠書口（右）側"
+    # 頁 2（偶數＝左頁）：鏡像靠左緣
+    ink2 = _footer_band(Image.open(result.paths[1]), scale)
+    assert ink2 is not None, "偶數頁頁腳帶無著墨"
+    assert ink2[0] < page_w_px * 0.2, "偶數頁頁腳應靠書口（左）側"
+    used = {Path(f).name for f in result.fonts_used}
+    assert "jf-openhuninn-2.1.ttf" in used       # 頁碼
+    assert "ChenYuluoyan-2.0-Thin.ttf" in used   # 書眉
+
+
+@needs_fonts
+def test_footer_disabled_leaves_band_empty(template, tmp_path):
+    doc = make_doc([{"text": "短段。", "style": "內文-明體直排"}])
+    result = render_document(doc, template, tmp_path, dpi=150, footer=False)
+    assert _footer_band(Image.open(result.paths[0]), 150 / 72.0) is None

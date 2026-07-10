@@ -12,6 +12,13 @@
   "紙白": "#ffffff"
  },
  "colors_note": "暖黑為實測內文色（建議印刷轉單 K90-92）。灰階 K、CMYK 四色、虛線灰未逐一量測，待色票管理功能（Phase 3）補。",
+ "md_mapping": {
+  "h1": "章名大標-明體W7",
+  "h2": "個案大標-NotoSans",
+  "h3": "章節小標-黑體",
+  "blockquote": "引文-仿宋語錄",
+  "paragraph": "內文-明體直排"
+ },
  "paragraph_styles": {
   "內文-明體直排": {
    "font_family": "思源宋體 TC",
@@ -220,8 +227,24 @@
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
    "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
    "mirror": true,
-   "evidence": "跨頁實測（measurements.json、calibration.json）；inner 與 bottom 由版心網格反推（148mm − 書口 21mm − 13 行網格寬 287.5pt）",
-   "note": "雙頁書眉頁腳鏡像；頁腳三件組（頁碼＋書名＋Case 編號）於後續 Sprint 進場"
+   "footer": {
+    "page_number": {
+     "style": "頁碼數字-GillSans",
+     "source": "number",
+     "baseline_from_top_pt": 530.43,
+     "outer_offset_pt": 36.8,
+     "pages": "all"
+    },
+    "running_title": {
+     "style": "書眉副標-手札體",
+     "source": "title",
+     "baseline_from_top_pt": 529.15,
+     "outer_offset_pt": 59.53,
+     "pages": "odd"
+    }
+   },
+   "evidence": "跨頁實測（measurements.json、calibration.json）；inner 與 bottom 由版心網格反推（148mm − 書口 21mm − 13 行網格寬 287.5pt）；頁腳座標取 foot_elements 實測（頁碼外緣 36.8pt≈13mm、基線 530.43pt；書眉齊版心外緣 59.53pt、基線 529.15pt）",
+   "note": "頁腳 v1 為頁碼（全頁）＋書名書眉（奇數頁）；原書左頁書眉為章節副標、個案頁另有 Case 編號，待章節結構與個案主版進場"
   },
   "B-部扉": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
