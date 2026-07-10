@@ -7,6 +7,7 @@
 > 修訂：2026-07-10 執行層補強（Phase 0 執行細則、spike 語言與依賴、素材版權紅線、驗收檢核清單）；同日擴充內容匯入與 AI 輔助樣式指派（§4.4、Spike 5，PoC 8/8 已驗證）。
 > 修訂：2026-07-10 Sprint 2：Spike 1 引擎與跨頁樣張完成（詳 devlog/2026-07-10-sprint2-spike1-spread.md）；§1 量測修正（滿行 32 字、字距 12.08pt、縮排與段距網格）；新增 §10 決議紀錄。
 > 修訂：2026-07-10 Sprint 6：Phase 1 開工第一片落地（文件模型、三層樣式讀取、《內在整理》起始模版、txt 匯入、思源宋體 TC 單頁 PNG 渲染，詳 devlog/2026-07-10-sprint6-phase1-pipeline.md）；§4.2 依全書掃描修正章名／部扉大標字重。
+> 修訂：2026-07-11 Sprint 7：md 匯入（結構直接對映樣式）、主版頁腳書眉、字型組入庫（黑體／辰宇／粉圓），第一章樣式化實排（詳 devlog/2026-07-11-sprint7-md-footer-fonts.md）。
 
 ---
 
@@ -274,7 +275,8 @@ CJKFolio/
 - txt／Markdown 匯入（內容入口，md 結構直接對映樣式）。
 - 先支援單一內建模版（《內在整理》風格），命令列或極簡介面驅動。
 - **DoD**：以本書真實文字匯出單頁完稿 PDF/X-1a，直排／版心／頁碼／書眉與參考一致度人工抽檢，印刷廠 preflight 全綠。
-- **進度（2026-07-10 Sprint 6）**：第一片完成 [實作]：文件模型（cjkfolio/document@1）、三層樣式讀取（template@1：15 段落樣式＋9 字元樣式＋7 主版）、起始模版（templates/neizai-zhengli.json）、txt 匯入、樣式驅動直排引擎（自 Spike 1 產品化，ParagraphSpec 承載每段幾何）、單頁 A5 PNG 渲染（思源宋體 TC，GAPS #3 關閉；奇偶頁鏡像版心）、CLI（import-txt／render）。新增測試 46 項（合計 61）。本機真實素材驗收：第一章（PDF 頁 19〜34）79 段 5,408 字 → 23 頁、禁則 0 違規，page-001/002 目檢通過。**未完**：md 匯入、頁腳三件組與書眉、齊行與約物擠壓（GAPS #9）、橫排、PDF/X 寫出層（皆後續 Sprint）。
+- **進度（2026-07-10 Sprint 6）**：第一片完成 [實作]：文件模型（cjkfolio/document@1）、三層樣式讀取（template@1：15 段落樣式＋9 字元樣式＋7 主版）、起始模版（templates/neizai-zhengli.json）、txt 匯入、樣式驅動直排引擎（自 Spike 1 產品化，ParagraphSpec 承載每段幾何）、單頁 A5 PNG 渲染（思源宋體 TC，GAPS #3 關閉；奇偶頁鏡像版心）、CLI（import-txt／render）。新增測試 46 項（合計 61）。本機真實素材驗收：第一章（PDF 頁 19〜34）79 段 5,408 字 → 23 頁、禁則 0 違規，page-001/002 目檢通過。
+- **進度（2026-07-11 Sprint 7）**：md 匯入 [實作]（block 級：標題層級／引文／清單直接對映樣式，模版帶 md_mapping，§4.4 修正 1 落地）、主版頁腳 [實作]（頁碼全頁＋書名書眉奇數頁，foot_elements 實測座標、奇偶鏡像；左頁章節副標與 Case 編號待章節結構）、字型組入庫（思源黑體 TC Medium/Bold、辰宇落雁體、jf open 粉圓，皆驗 vert；GAPS #12 縮至全字庫兩款）。測試 61→74。真實素材驗收：第一章 md 樣式化實排 4 種樣式同頁（章名 Heavy／個案大標黑 Medium／小標黑 Bold／內文宋 Regular）＋頁腳，23 頁禁則 0 違規，page-001/002 目檢通過。**未完**：字元樣式 run（行內強調）、齊行與約物擠壓（GAPS #9）、橫排、題詞／引文字型（GAPS #12）、PDF/X 寫出層。
 
 ### Phase 2：WYSIWYG 編輯器（12〜16 週）[實作]
 
@@ -374,6 +376,10 @@ CJKFolio/
 | 2026-07-10（Sprint 6） | 樣式幾何換算規則：字距＝級數×(12.08/11.5)、行容量＝floor(欄高／字距)、行槽寬＝ceil(級數／行距)；版面幾何一律引擎確定性計算 | 跨頁實測比例＋§4.4 分工鐵律 |
 | 2026-07-10（Sprint 6） | 起始模版字型對映：模版寫 §8 可散布家族、source_font 記原書字型；未入庫家族 FontRegistry fallback 思源宋體並警告 | 字型授權紅線（GAPS #12） |
 | 2026-07-10（Sprint 6） | §4.2 修正：章名大標＝明體 W7 21.9pt、部扉大標＝明體 W9 21.9pt；第一章界定為 PDF 頁 19〜34 | 全書 (font,size) 掃描（A 級） |
+| 2026-07-11（Sprint 7） | 頁腳 v1 規格：頁碼（全頁，外緣內推 36.8pt、基線 530.43pt）＋書名書眉（奇數頁，齊版心外緣）；鏡像錨定書口側；左頁章節副標待章節結構 | calibration foot_elements 實測 |
+| 2026-07-11（Sprint 7） | md 匯入為 block 級（h1→章名、h2→個案大標、h3→章節小標、>→引文），對映表 md_mapping 入模版；行內強調待 run 模型 | §4.4 設計修正 1 |
+| 2026-07-11（Sprint 7） | 渲染一律 FT_LOAD_NO_HINTING：辰宇／粉圓 TTF 的 hinting bytecode 使 FreeType 拋 too many function definitions，且印刷級柵格不需 hinting | 實測缺陷與修正 |
+| 2026-07-11（Sprint 7） | 抽取工具：手寫／裝飾字型（手札體、辰宇、Pepita、GillSans）不入正文流；md 模式級數對映標題層級、仿宋欄對映引文 | 圖注非結構正文 |
 
 ## 11. 證據附錄（關鍵引用）
 
