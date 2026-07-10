@@ -15,3 +15,4 @@
 | 8 | 樣張頁腳字型替位：Gill Sans MT 代 GillSans-Light、標楷體代華康手札體 | 原字型無授權（GAPS #2 同源） | 頁腳字形風格與參考書不同，位置與級數對位正確 | Phase 1 內建 OFL 字型組時改用可散布字型 | 黃政文 |
 | 9 | Spike 1 引擎為等距網格，無 InDesign 式齊行（justification）微調與標點擠壓變寬 | 齊行演算法超出 spike 時間盒，且本書實測無半形擠壓 | 斷行點與參考書偶有 ±1 字漂移（行數與版面結構一致） | Phase 1 直排引擎補齊行與約物擠壓 | 黃政文 |
 | 10 | Spike 1 人工抽檢僅 AI 全圖掃描，Owner 未抽檢 | Owner 尚未過目樣張 | R5 真實素材驗收的人類抽檢項未滿足，Spike 1 不得關閉 | Owner 檢視 spikes/spike1-vertical-core/out/spread_comparison.png 後打勾 | 黃政文 |
+| 11 | Spike 2a 的 CMYK／PDF-X 後處理未驗證 | 本機無 Ghostscript（vivliostyle --preflight press-ready 依賴其一） | Vivliostyle 直出為 RGB／灰 PDF 1.7，PDF/X-1a 轉換品質無一手數據 | Owner 同意安裝 Ghostscript 後補測，或 Phase 1 自寫 PDF 後端時一併驗 | 黃政文 |

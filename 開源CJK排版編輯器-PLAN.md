@@ -198,8 +198,8 @@
 本專案最大風險集中在此，先驗證再投入。
 
 - **Spike 1 直排版面核心**：用 HarfBuzz vert/vrt2（Python uharfbuzz）＋ 自寫逐字斷行與最小禁則／約物擠壓，排出《內在整理》一個真實跨頁（直排明體 11.5pt 內文 32 字／行、含直排中橫排頁碼、書眉頁腳），依下方執行細則的檢核清單逐項驗收。**進度（2026-07-10 Sprint 2）：檢核清單七項證據齊備（引擎 15 項單元測試、真實跨頁 0 禁則違規、並排對比圖、縱中橫示範條），待 Owner 人工抽檢後關閉。**原規劃的 ICU 斷行降為非必要：CJK 書冊斷行＝逐字可斷＋禁則表調整，無需詞典斷行，僅拉丁連續串不拆（簡單規則即可），避開 PyICU 在 Windows 的安裝成本。
-- **Spike 2 輸出後端**：同一份內容分別走 Vivliostyle 與 LuaLaTeX-ja，產 PDF/X，比較直排品質、CMYK、字型嵌入、preflight 結果。
-- **Spike 3 效能**：依賴 Spike 1、2 產出，殿後執行。量測候選輸出後端的全書（179 頁級）編譯時間，與 spike 引擎的單章重排延遲，決定是否需增量重排與分章快取。
+- **Spike 2 輸出後端**：同一份內容分別走 Vivliostyle 與 LuaLaTeX-ja，產 PDF/X，比較直排品質、CMYK、字型嵌入、preflight 結果。**進度（2026-07-10 Sprint 3）：2a Vivliostyle 核心驗證通過：直排（vert 形、句逗置中、strict 禁則 0 違規、縱中橫、拉丁旋轉）、TrimBox 148×210 精確＋BleedBox 154×216＋裁切標記、字型 100% 嵌入子集化（pdffonts 全綠、無 Type3）、PDF Catalog /Direction /R2L 右翻。CMYK／PDF-X 後處理未驗（本機無 Ghostscript，GAPS #11）。2b LuaLaTeX 依 GAPS #4 維持不裝（2a 達標）。**
+- **Spike 3 效能**：依賴 Spike 1、2 產出，殿後執行。量測候選輸出後端的全書（179 頁級）編譯時間，與 spike 引擎的單章重排延遲，決定是否需增量重排與分章快取。**進度（2026-07-10 Sprint 3）：Vivliostyle 全書級實測 192 頁 26.0 秒（約 7.4 頁/秒，含瀏覽器啟動），匯出路徑可接受；spike 引擎單章重排延遲待測。**
 - **Spike 4 授權**：釐清 Vivliostyle AGPL-3.0 對產品形態（散布／SaaS）的約束，確認進程隔離或商業授權方案。
 - **Spike 5 AI 樣式指派（2026-07-10 增）**：私有 LLM 對書稿段落做樣式分類（見 §4.4）。第一輪已完成：8 段自擬段落 8/8 全對。剩餘工作：以參考書整章真實文字重測、量測分章批次的耗時與正確率。
 - **DoD**：真實素材（本書內容）跑過；至少 1 名人類抽檢直排品質；dev-log 留證（時戳、commit、樣本 PDF 路徑）。
@@ -341,6 +341,9 @@ CJKFolio/
 | 2026-07-10（Sprint 2） | 基線指令定案：typecheck 為 python -m py_compile spikes/spike1-vertical-core/*.py；test 為 python -m pytest spikes -q | PLAN 原未明列，代決補齊 |
 | 2026-07-10（Sprint 2） | 滿行字數修正為 32 字（原 22 為每頁行數之誤）；字距 12.08pt；段首縮排 2 字；段間空 1 行槽；每頁 13 行槽 | 逐字座標實測（A 級證據） |
 | 2026-07-10（Sprint 2） | 樣張頁腳以 Gill Sans MT／標楷體替位（僅位置對位），入 GAPS #8 | GillSans-Light 與手札體無授權 |
+| 2026-07-10（Sprint 3） | Vivliostyle 於本機以系統 Chrome 執行（--executable-browser），不下載 Chrome for Testing | puppeteer 快取無瀏覽器致 spawn UNKNOWN，系統 Chrome 實測可用 |
+| 2026-07-10（Sprint 3，技術發現） | @page margin box 會繼承 vertical-rl，頁碼 margin box 必須顯式 writing-mode: horizontal-tb | 樣本頁碼被直排的實測缺陷與修正 |
+| 2026-07-10（Sprint 3） | Spike 2b（TeX Live）確認不安裝：2a 已達標，依原閘門條件 | GAPS #4 條件成就 |
 
 ## 11. 證據附錄（關鍵引用）
 

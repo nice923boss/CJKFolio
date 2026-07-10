@@ -22,6 +22,6 @@
 **留證**：
 - 時戳：2026-07-10
 - 樣本：spikes/spike1-vertical-core/out/{spread_sample.png, spread_comparison.png, tcy_demo.png}（含參考書內容，僅本機）
-- commit：本篇提交時寫入 git log（Sprint 2 起有 commit hash）
+- commit：0c99541（root commit，13 檔 1575 行；hash 於提交後回填）
 
 **下個 Sprint 預定範圍**：Spike 2a 輸出後端（Vivliostyle）：npm 安裝 @vivliostyle/cli，以自擬／自由散布文本走 CSS 直排產 PDF，pdffonts／qpdf preflight，比對直排品質與字型嵌入；若時間盒內有餘，啟動 Spike 4 授權桌面研究（盒 2 天）。

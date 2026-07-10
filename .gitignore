@@ -10,3 +10,7 @@ local/
 __pycache__/
 *.pyc
 .pytest_cache/
+# Node
+node_modules/
+# Spike 2 長文件為程式產生物，不入 repo
+spikes/spike2-output-backend/long.html

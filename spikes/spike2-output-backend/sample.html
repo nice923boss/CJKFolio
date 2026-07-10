@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Spike 2a 直排輸出驗證樣本</title>
+<style>
+/* A5 成品 + 3mm 出血 + 裁切標記；版心近似《內在整理》規格 */
+@page {
+  size: 148mm 210mm;
+  bleed: 3mm;
+  marks: crop;
+  margin: 32.5mm 13mm 25mm 13mm;
+  @bottom-center {
+    content: counter(page);
+    writing-mode: horizontal-tb;  /* 頁碼是直排中的橫排，不繼承 vertical-rl */
+    font-family: "Times New Roman", serif;
+    font-size: 8pt;
+  }
+}
+html { writing-mode: vertical-rl; }
+body {
+  font-family: "PMingLiU", "MingLiU", serif;
+  font-size: 11.5pt;
+  line-height: 2;            /* 23pt，行距＝欄距 */
+  text-align: justify;
+  line-break: strict;        /* 禁則：嚴格 */
+  word-break: normal;
+  margin: 0;
+}
+p { margin: 0; text-indent: 2em; }
+p.cont { text-indent: 0; }
+h1 {
+  font-family: "Microsoft JhengHei", sans-serif;
+  font-size: 16pt;
+  font-weight: 700;
+  margin: 0 0 0 23pt;        /* 直排：標題與內文隔一行 */
+}
+.tcy { text-combine-upright: all; }  /* 縱中橫 */
+.quote { margin-left: 23pt; margin-right: 23pt; font-family: "DFKai-SB", "PMingLiU", serif; }
+</style>
+</head>
+<body>
+<h1>直排輸出驗證：第<span class="tcy">12</span>章</h1>
+<p>排版是一門手藝，也是一場對細節的凝視。「好的直排，讀者感覺不到它的存在。」這句話說的是禁則：句號、逗號不落行首；開引號不懸行尾。若規則失守，閱讀的河道便處處礁石。此樣本以西元<span class="tcy">20</span><span class="tcy">26</span>年的 Vivliostyle 引擎組版，行長由版心決定，行距二十三點，縱中橫共<span class="tcy">8</span>處，並以 HarfBuzz 一詞驗證拉丁串的旋轉行為。</p>
+<p>直排書冊的頁序右翻，行序右起。頁碼置於地腳，以橫排小字標示，這正是「直排中的橫排」：數字直立，閱讀不歪頭。標點擠壓？台灣慣例句逗置中，橫直排同形，無須替換字形，只在行末視需要收縮。問號與驚嘆號亦直立！括號（如此般）則旋轉九十度。</p>
+<p class="quote">晉太元中，武陵人捕魚為業。緣溪行，忘路之遠近。忽逢桃花林，夾岸數百步，中無雜樹，芳草鮮美，落英繽紛。漁人甚異之，復前行，欲窮其林。林盡水源，便得一山，山有小口，彷彿若有光。便舍船，從口入。初極狹，纔通人。復行數十步，豁然開朗。土地平曠，屋舍儼然，有良田、美池、桑竹之屬。阡陌交通，雞犬相聞。其中往來種作，男女衣著，悉如外人。黃髮垂髫，並怡然自樂。</p>
+<p>上引〈桃花源記〉為公有領域文本，用以驗證長段落的斷行與禁則。凡二百餘字一氣呵成，段中頓號、逗號、句號交錯，恰是行首禁則的天然試場。共<span class="tcy">88</span>處標點，無一應落行首；若見「，」或「。」開行，即為違規。</p>
+<p>最後驗證跨頁：本段之後刻意加長文字，使內容溢出至第二頁，以確認頁碼遞增、右翻頁序與版心鏡像。書冊的節奏藏在重複之中，一頁一頁，如潮汐往復。文字的河流沿著行軸向下，再自右而左換行，最終在地腳的頁碼處靠岸。組版引擎的責任，是讓這條河永遠不決堤：禁則不破、字距不亂、版心不移。倘若某一行的行首出現了句號，那不是風格，是缺陷；倘若開引號孤懸行末，那不是留白，是失守。出版級的標準沒有妥協的餘地，只有規則被完整執行之後，設計才有自由可言。願每一本直排的書，都能在讀者手中安靜地流動，像未曾被打擾的溪水，載著桃花，向第二頁去。</p>
+</body>
+</html>
