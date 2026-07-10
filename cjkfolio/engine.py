@@ -5,9 +5,13 @@
 每段行容量（大級數標題行高換算）、縮排、段後空槽與行槽寬。
 
 純邏輯層，不碰字型與渲染。規則依據 W3C CLREQ（繁中）：
-- 行首禁則：句逗號、閉引號括號等不得落行首，以追出處理（前字隨之下移）。
+- 行首禁則：句逗號、閉引號括號等不得落行首。優先「擠入」本行行尾（行寬容忍
+  溢出，Sprint 11 依參考書 −0.4pt 齊行實測）；連續句逗超過擠入上限時改「追出」
+  （錨字連同整串句逗下移，本行由齊行撐開）。
 - 行尾禁則：開引號括號不得懸行尾，退至下一行。
 - 縱中橫：1〜2 位數字直立橫排（tcy）；3 位以上數字與拉丁串旋轉 90 度（latin），串不拆。
+- Line 帶 cap（該行內容容量）與 para_end（段末行），供 layout 層齊行
+  （非段末行行首行尾雙錨定，字距均勻縮放）。
 """
 import unicodedata
 from dataclasses import dataclass
@@ -18,6 +22,10 @@ from typing import Optional
 LINE_START_FORBIDDEN = set("，。、：；！？」』）〕》〉｝〗…‥·．％")
 # 行尾禁則（不得懸在行尾）
 LINE_END_FORBIDDEN = set("「『（〔《〈｛〖")
+
+# 行首禁則擠入上限（槽）：整串句逗溢出超過此值改追出（參考書實測 ±0.4pt
+# 對應 ±1 槽；連續兩句逗跨行為罕見情形，容忍至 2）
+MAX_SQUEEZE_SLOTS = 2
 
 # 直排／相容表現形 → 標準形（PDF 抽取常見）
 _PRESENTATION_FORMS = {
@@ -45,6 +53,8 @@ class Cell:
 class Line:
     cells: tuple
     start_slot: int = 0  # 段首縮排時 > 0
+    cap: int = 0         # 本行內容容量（槽；0＝未知，不齊行）
+    para_end: bool = True  # 段末行不齊行
 
 
 @dataclass(frozen=True)
@@ -125,23 +135,44 @@ def _break_cells(cells: list, chars_per_line: int, indent: int = 2) -> list:
             line.append(cells[idx])
             used += cells[idx].width
             idx += 1
-        # 行尾禁則：開括弧不懸行尾（後面還有字才需處理）
-        while line and idx < len(cells) and line[-1].text in LINE_END_FORBIDDEN:
-            idx -= 1
-            line.pop()
-        # 行首禁則：下一行首不得為禁則字，前字追出
-        while line and idx < len(cells) and cells[idx].text in LINE_START_FORBIDDEN:
-            if len(line) > 1:
+        # 禁則解消（迭代至穩定；每輪或推進 idx、或縮短 line，必然終止）
+        while True:
+            # 行尾禁則：開括弧不懸行尾（後面還有字才需處理）
+            if line and idx < len(cells) and line[-1].text in LINE_END_FORBIDDEN:
                 idx -= 1
+                used -= line[-1].width
                 line.pop()
-            else:  # 無字可追出：改為追入（禁則字掛入本行，允許溢出一格）
-                line.append(cells[idx])
-                idx += 1
+                continue
+            # 行首禁則：整串句逗一次決策，擠入或追出
+            if line and idx < len(cells) and cells[idx].text in LINE_START_FORBIDDEN:
+                run_w, j = 0, idx
+                while j < len(cells) and cells[j].text in LINE_START_FORBIDDEN:
+                    run_w += cells[j].width
+                    j += 1
+                if used + run_w - cap <= MAX_SQUEEZE_SLOTS or len(line) <= 1:
+                    while idx < j:  # 擠入：句逗掛本行行尾，齊行負調整
+                        line.append(cells[idx])
+                        used += cells[idx].width
+                        idx += 1
+                else:  # 追出：退到非禁則錨字，錨字連同整串句逗下移
+                    while len(line) > 1 and line[-1].text in LINE_START_FORBIDDEN:
+                        idx -= 1
+                        used -= line[-1].width
+                        line.pop()
+                    if len(line) > 1:
+                        idx -= 1
+                        used -= line[-1].width
+                        line.pop()
+                continue
+            break
         if not line:  # 病理情形防護：強制收一字避免死循環
             line.append(cells[idx])
             idx += 1
-        lines.append(Line(tuple(line), start))
+        lines.append(Line(tuple(line), start, cap=cap, para_end=False))
         start = 0
+    if lines:
+        last = lines[-1]
+        lines[-1] = Line(last.cells, last.start_slot, cap=last.cap, para_end=True)
     return lines
 
 

@@ -105,11 +105,27 @@ def test_break_first_line_indent_reduces_capacity():
 
 # ---------- 禁則 ----------
 
-def test_line_start_kinsoku_pushes_previous_char_down():
+def test_line_start_kinsoku_pulls_punctuation_in():
+    # 行首禁則優先擠入本行（Sprint 11：參考書 −0.4pt 齊行實測），行寬容忍溢出
     lines = break_paragraph("一二三四五。六七", 5, indent=0)
     texts = ["".join(c.text for c in l.cells) for l in lines]
-    assert texts == ["一二三四", "五。六七"]
+    assert texts == ["一二三四五。", "六七"]
+    assert lines[0].cap == 5 and not lines[0].para_end
+    assert lines[1].para_end
     assert check_kinsoku(lines) == []
+
+
+def test_line_start_kinsoku_run_over_limit_pushes_out_anchor():
+    # 連續句逗超過擠入上限（2 槽）：錨字連同整串句逗追出，本行撐開齊行
+    lines = break_paragraph("一二三四五。。。六", 5, indent=0)
+    texts = ["".join(c.text for c in l.cells) for l in lines]
+    assert texts == ["一二三四", "五。。。六"]
+    assert check_kinsoku(lines) == []
+
+
+def test_break_lines_carry_cap_and_para_end():
+    lines = break_paragraph("一二三四五六七八", 5, indent=2)
+    assert [(l.cap, l.para_end) for l in lines] == [(3, False), (5, True)]
 
 
 def test_line_start_kinsoku_consecutive_pushed_together():

@@ -194,6 +194,25 @@ def test_export_missing_glyph_warns_not_crash(template, tmp_path):
     assert any("無字形" in w for w in result.font_warnings), result.font_warnings
 
 
+# ---------- 齊行（Sprint 11） ----------
+
+@needs_fonts
+def test_export_justified_line_anchors_column_ends(template, tmp_path):
+    # 擠入行（31 字入 30 槽）行首行尾雙錨定：內容字距 = 12.08 × 30/31
+    doc = make_doc([{"text": "字" * 30 + "。續行結束", "style": "內文-明體直排"}])
+    out = tmp_path / "just.pdf"
+    export_pdf(doc, template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    ys = [float(m.group(2)) for m in re.finditer(
+        r"1 0 0 1 ([\d.\-]+) ([\d.\-]+) Tm", content)]
+    assert len(ys) >= 31
+    adv = 12.08 * 30 / 31
+    for i in range(30):
+        d = ys[i] - ys[i + 1]
+        assert d == pytest.approx(adv, abs=0.02), f"第 {i} 格字距 {d}，齊行應為 {adv}"
+
+
 # ---------- PDF/X-1a:2001 識別（Sprint 10） ----------
 
 def fake_icc(space: bytes = b"CMYK", klass: bytes = b"prtr") -> bytes:

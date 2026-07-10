@@ -54,6 +54,11 @@ def cmd_import_md(args) -> int:
     return 0
 
 
+def _justify_line(stats: dict) -> str:
+    return (f"齊行統計：擠入 {stats['squeezed']} 行、撐開 {stats['stretched']} 行、"
+            f"超容忍 {stats['beyond']} 行（維持網格）")
+
+
 def _check_style_refs(doc, template) -> int:
     unknown = unknown_style_refs(doc, template)
     if unknown:
@@ -77,6 +82,7 @@ def cmd_render(args) -> int:
     )
     print(f"渲染完成：{len(result.paths)} 頁 → {args.output}")
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
+    print(_justify_line(result.justify_stats))
     for warning in result.font_warnings:
         print(f"字型警告：{warning}")
     print("使用字型：" + "、".join(Path(f).name for f in result.fonts_used))
@@ -102,6 +108,7 @@ def cmd_export_pdf(args) -> int:
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
     print(f"PDF/X-1a:2001 識別：OutputIntent {result.output_condition_identifier}"
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
+    print(_justify_line(result.justify_stats))
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:
         print(f"字型警告：{warning}")

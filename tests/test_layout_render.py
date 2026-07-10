@@ -9,7 +9,13 @@ import pytest
 from PIL import Image, ImageOps
 
 from cjkfolio.document import document_from_dict
-from cjkfolio.layout import layout_document, style_advance_pt, style_line_capacity
+from cjkfolio.engine import Cell, Line
+from cjkfolio.layout import (
+    layout_document,
+    line_justified_advance,
+    style_advance_pt,
+    style_line_capacity,
+)
 from cjkfolio.render import line_axis_x_pt, mm_to_pt, render_document
 from cjkfolio.styles import load_template
 
@@ -90,6 +96,43 @@ def test_layout_unknown_char_style_raises(template):
     }])
     with pytest.raises(KeyError, match="不存在的字元樣式"):
         layout_document(doc, template)
+
+
+# ---------- 齊行（justification，Sprint 11） ----------
+
+def _cjk_line(text, cap, para_end):
+    return Line(tuple(Cell(c, "cjk", 1) for c in text), 0, cap=cap, para_end=para_end)
+
+
+def test_line_justified_advance_statuses():
+    full = _cjk_line("一二三四五", cap=5, para_end=False)
+    assert line_justified_advance(full, 10.0) == (10.0, "grid")
+
+    squeezed = _cjk_line("一二三四五。", cap=5, para_end=False)
+    adv, status = line_justified_advance(squeezed, 10.0)
+    assert status == "squeezed"
+    assert adv == pytest.approx(50 / 6)
+    assert 6 * adv == pytest.approx(5 * 10.0)  # 行尾錨定：內容總長＝欄容量
+
+    stretched = _cjk_line("一二三四", cap=5, para_end=False)
+    adv, status = line_justified_advance(stretched, 10.0)
+    assert status == "stretched"
+    assert adv == pytest.approx(12.5)
+
+    last = _cjk_line("尾行", cap=5, para_end=True)
+    assert line_justified_advance(last, 10.0) == (10.0, "grid")
+
+    beyond = _cjk_line("孤", cap=5, para_end=False)
+    assert line_justified_advance(beyond, 10.0) == (10.0, "beyond")
+
+
+def test_layout_justify_stats(template):
+    # 30 字滿行＋句號擠入 → 31 字入 30 槽（縮排 2 後容量 30）
+    doc = make_doc([{"text": "字" * 30 + "。續行結束", "style": "內文-明體直排"}])
+    result = layout_document(doc, template)
+    assert result.violations == []
+    assert result.justify_stats["squeezed"] == 1
+    assert result.justify_stats["beyond"] == 0
 
 
 # ---------- render 幾何（純數學） ----------

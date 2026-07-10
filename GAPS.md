@@ -13,7 +13,7 @@
 | 6 | AI 金鑰與私有 endpoint（紅線） | 私有 Tailscale 位址與金鑰，他人連不到也不可洩漏 | 只存 local/ai-config.local.json，git init 時 local/ 進 .gitignore；產品介面預設空值 | git init 時落實 .gitignore | 黃政文 |
 | 7 | ~~Spike 5 僅過第一輪~~ **已關閉（2026-07-10 Sprint 4）**：真書 72 段重測完成（嚴格 50%、粗分 69.4%、吞吐可行），四項設計修正入 PLAN §4.4；AI 指派維持 [Spike]，正式 [實作] 於 Phase 3 依新設計驗收 | 真章重測完成 | 「8/8 全對」不得對外宣稱 | 已完成 | 黃政文 |
 | 8 | 樣張頁腳字型替位：Gill Sans MT 代 GillSans-Light、標楷體代華康手札體 | 原字型無授權（GAPS #2 同源） | 頁腳字形風格與參考書不同，位置與級數對位正確 | Phase 1 內建 OFL 字型組時改用可散布字型 | 黃政文 |
-| 9 | Spike 1 引擎為等距網格，無 InDesign 式齊行（justification）微調與標點擠壓變寬 | 齊行演算法超出 spike 時間盒，且本書實測無半形擠壓 | 斷行點與參考書偶有 ±1 字漂移（行數與版面結構一致） | Phase 1 直排引擎補齊行與約物擠壓 | 黃政文 |
+| 9 | ~~引擎為等距網格，無 InDesign 式齊行微調~~ **已關閉（2026-07-11 Sprint 11）**：行首禁則改擠入優先（整串句逗一次決策、溢出 ≤2 槽，超過追出錨字），非段末行行首行尾雙錨定齊行（字距均勻縮放，±1 槽 ≈ ±0.4pt 與 §1 實測一致）；偏差超容忍（2 槽）維持網格並入統計不沉默。半形「約物寬度壓縮」（JLREQ 式）非本書形態（§1 實測句逗置中無半形擠壓），不實作 | 參考書僅 ±0.4pt 齊行微調，策略對齊其特徵 | 第一章 23→22 頁（擠入縮減行數）、擠入 10 行撐開 1 行超容忍 0；斷行逐行一致率待 Owner 抽檢比對 | 已完成 | 黃政文 |
 | 10 | Spike 1 人工抽檢僅 AI 全圖掃描，Owner 未抽檢 | Owner 尚未過目樣張 | R5 真實素材驗收的人類抽檢項未滿足，Spike 1 不得關閉 | Owner 檢視 spikes/spike1-vertical-core/out/spread_comparison.png 後打勾 | 黃政文 |
 | 11 | Spike 2a 的 CMYK／PDF-X 後處理未驗證 | 本機無 Ghostscript（vivliostyle --preflight press-ready 依賴其一） | Vivliostyle 直出為 RGB／灰 PDF 1.7，PDF/X-1a 轉換品質無一手數據 | Owner 同意安裝 Ghostscript 後補測，或 Phase 1 自寫 PDF 後端時一併驗 | 黃政文 |
 | 12 | 內建字型組尚缺全字庫正楷體 TW-Kai（題詞、目錄條目）與全字庫正宋體（仿宋引文替代）。**2026-07-11 Sprint 7 已入庫**：思源黑體 TC Medium/Bold、辰宇落雁體、jf open 粉圓（皆驗 vert，來源與重現指令見 FONTS.md） | 全字庫下載包大（國發會 Open_Data 整包），對應樣式尚未進渲染驗收 | 楷書／仿宋樣式仍 fallback 思源宋體並列警告（不沉默）；另思源宋體無 Bold 檔，明體 W7 以 Heavy 替（渲染警告） | 題詞／引文樣式驗收 Sprint 一併下載驗證 | 黃政文 |

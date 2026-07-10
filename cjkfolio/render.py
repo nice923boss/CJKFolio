@@ -13,7 +13,12 @@ import uharfbuzz as hb
 from PIL import Image
 
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
-from .layout import layout_document, style_advance_pt, style_line_slots
+from .layout import (
+    layout_document,
+    line_justified_advance,
+    style_advance_pt,
+    style_line_slots,
+)
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -192,9 +197,12 @@ class PageRenderer:
                 template, master, placed.slot, page.number,
                 line_slots=style_line_slots(style, master.grid),
             )
-            slot_i = placed.line.start_slot
+            # 齊行：非段末行行首行尾雙錨定（縮排偏移用網格字距，內容用實效字距）
+            adv, _status = line_justified_advance(placed.line, advance)
+            line_top = top_pt + placed.line.start_slot * advance
+            content_i = 0
             for cell in placed.line.cells:
-                cell_top = top_pt + slot_i * advance
+                cell_top = line_top + content_i * adv
                 if cell.char_style:  # run 覆寫字型與級數；字槽網格仍依段落樣式
                     cstyle = template.character_styles[cell.char_style]
                     use_shaper, use_size = self._shaper_for(cstyle), cstyle.size_pt
@@ -203,10 +211,10 @@ class PageRenderer:
                 if cell.kind == "cjk":
                     _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
                 elif cell.kind == "tcy":
-                    _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, advance, self.scale)
+                    _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, adv, self.scale)
                 elif cell.kind == "latin":
                     _draw_rotated_latin(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
-                slot_i += cell.width  # space 留白即可
+                content_i += cell.width  # space 留白即可
         if footer_texts:
             self._draw_footer(img, page, footer_texts)
         return img
@@ -218,6 +226,7 @@ class RenderResult:
     violations: list
     fonts_used: list
     font_warnings: list
+    justify_stats: dict
 
 
 def render_document(doc, template: Template, out_dir, dpi: int = 150,
@@ -244,4 +253,5 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
         violations=list(layout.violations),
         fonts_used=sorted(renderer.fonts_used),
         font_warnings=list(renderer.registry.warnings),
+        justify_stats=dict(layout.justify_stats),
     )

@@ -24,7 +24,12 @@ from fontTools import subset as ft_subset
 from fontTools.ttLib import TTFont
 
 from .fonts import DEFAULT_FONT_DIR, FontError, FontRegistry
-from .layout import layout_document, style_advance_pt, style_line_slots
+from .layout import (
+    layout_document,
+    line_justified_advance,
+    style_advance_pt,
+    style_line_slots,
+)
 from .placement import (
     horizontal_placements,
     rotated_latin_placements,
@@ -428,9 +433,12 @@ class _PdfPageWriter:
                 template, master, placed.slot, page.number,
                 line_slots=style_line_slots(style, master.grid),
             )
-            slot_i = placed.line.start_slot
+            # 齊行：非段末行行首行尾雙錨定（縮排偏移用網格字距，內容用實效字距）
+            adv, _status = line_justified_advance(placed.line, advance)
+            line_top = top_pt + placed.line.start_slot * advance
+            content_i = 0
             for cell in placed.line.cells:
-                cell_top = top_pt + slot_i * advance
+                cell_top = line_top + content_i * adv
                 if cell.char_style:  # run 覆寫字型與級數；字槽網格仍依段落樣式
                     cstyle = template.character_styles[cell.char_style]
                     use_key, use_shaper = self._shaper_for(cstyle)
@@ -440,13 +448,13 @@ class _PdfPageWriter:
                 if cell.kind == "cjk":
                     pls = ttb_char_placements(use_shaper, cell.text, axis, cell_top, use_size)
                 elif cell.kind == "tcy":
-                    pls = tcy_placements(use_shaper, cell.text, axis, cell_top, use_size, advance)
+                    pls = tcy_placements(use_shaper, cell.text, axis, cell_top, use_size, adv)
                 elif cell.kind == "latin":
                     pls = rotated_latin_placements(use_shaper, cell.text, axis, cell_top, use_size)
                 else:
                     pls = []
                 self._emit(content, use_key, pls)
-                slot_i += cell.width
+                content_i += cell.width
         if footer_texts:
             self._footer(content, page, footer_texts)
         return content.finish()
@@ -464,6 +472,7 @@ class PdfResult:
     embedded_fonts: list  # [{base, file, glyphs, bytes}]
     output_condition_identifier: str
     icc_embedded: bool
+    justify_stats: dict
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -570,4 +579,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         embedded_fonts=embedded,
         output_condition_identifier=output_condition_identifier,
         icc_embedded=icc_bytes is not None,
+        justify_stats=dict(layout.justify_stats),
     )

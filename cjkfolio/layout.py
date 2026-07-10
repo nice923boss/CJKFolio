@@ -27,6 +27,24 @@ def style_line_slots(style: ParagraphStyle, grid: Grid) -> int:
     return max(1, ceil(style.size_pt / grid.line_pitch_pt - _EPS))
 
 
+JUSTIFY_TOLERANCE_SLOTS = 2  # 齊行容忍（槽）：偏差超過維持等距網格（列入統計不沉默）
+
+
+def line_justified_advance(line, advance_pt: float):
+    """非段末行的齊行實效字距（行首行尾雙錨定，字距均勻縮放）。
+
+    回傳 (advance_pt', status)，status ∈ {"grid","squeezed","stretched","beyond"}；
+    grid＝不調整（滿行、段末行或無容量資訊），beyond＝偏差超容忍維持網格。
+    """
+    used = sum(c.width for c in line.cells)
+    if line.para_end or line.cap <= 0 or used <= 0 or used == line.cap:
+        return advance_pt, "grid"
+    if abs(used - line.cap) > JUSTIFY_TOLERANCE_SLOTS:
+        return advance_pt, "beyond"
+    status = "squeezed" if used > line.cap else "stretched"
+    return advance_pt * line.cap / used, status
+
+
 @dataclass(frozen=True)
 class LayoutPage:
     number: int  # 1 起算；奇數＝右頁
@@ -37,6 +55,7 @@ class LayoutPage:
 class LayoutResult:
     pages: tuple
     violations: list  # 禁則違規訊息（runtime 檢查，應為空）
+    justify_stats: dict  # {"squeezed": n, "stretched": n, "beyond": n}
 
 
 def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
@@ -67,4 +86,10 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
     )
     pages = tuple(LayoutPage(i + 1, tuple(page)) for i, page in enumerate(raw_pages))
     violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
-    return LayoutResult(pages=pages, violations=violations)
+    stats = {"squeezed": 0, "stretched": 0, "beyond": 0}
+    for page in pages:
+        for pl in page.placed:
+            _, status = line_justified_advance(pl.line, 1.0)
+            if status in stats:
+                stats[status] += 1
+    return LayoutResult(pages=pages, violations=violations, justify_stats=stats)
