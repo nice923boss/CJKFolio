@@ -1,0 +1,264 @@
+{
+ "schema": "cjkfolio/template@1",
+ "name": "《內在整理》起始模版",
+ "version": 1,
+ "source": "PLAN §4.2 樣式清單；級數與字型取自全書 (font,size) 掃描（tools/scan_reference_styles.py，2026-07-10，A 級一手證據）與跨頁實測（assets/reference/measurements.json）。字型家族一律對映 PLAN §8 可散布字型組，source_font 記原書字型；未入庫家族由 FontRegistry fallback 並警告。",
+ "page": {
+  "width_mm": 148.0,
+  "height_mm": 210.0
+ },
+ "colors": {
+  "暖黑": "#231f20",
+  "紙白": "#ffffff"
+ },
+ "colors_note": "暖黑為實測內文色（建議印刷轉單 K90-92）。灰階 K、CMYK 四色、虛線灰未逐一量測，待色票管理功能（Phase 3）補。",
+ "paragraph_styles": {
+  "內文-明體直排": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 11.5,
+   "indent_chars": 2,
+   "para_gap_slots": 1,
+   "source_font": "DFMingStd-W3",
+   "note": "主力 57,536 字；行距＝欄距 23.0pt、滿行 32 字、字距 12.08pt（跨頁逐字實測）"
+  },
+  "訪談發言body": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 11.5,
+   "indent_chars": 2,
+   "para_gap_slots": 1,
+   "source_font": "DFMingStd-W3",
+   "note": "訪談章內文；發言人以字元樣式「發言人標籤-黑體」區隔"
+  },
+  "引文-仿宋語錄": {
+   "font_family": "全字庫正宋體",
+   "font_weight": "regular",
+   "size_pt": 11.5,
+   "indent_chars": 2,
+   "para_gap_slots": 1,
+   "source_font": "DFFangSongStd-W4",
+   "note": "2,505 字、6 頁；仿宋無 OFL 對應，暫以全字庫正宋體對映（風格近似待評估）"
+  },
+  "題詞-楷書": {
+   "font_family": "全字庫正楷體 TW-Kai",
+   "font_weight": "regular",
+   "size_pt": 11.2,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFKaiShuStd-W3",
+   "note": "章扉題詞（掃描 10 頁）"
+  },
+  "推薦序大標-楷書W5": {
+   "font_family": "全字庫正楷體 TW-Kai",
+   "font_weight": "medium",
+   "size_pt": 16.3,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFKaiShuStd-W5",
+   "note": "推薦序標題與裝飾線（掃描 7 頁）"
+  },
+  "章節小標-黑體": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "size_pt": 13.0,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFHeiStd-W7",
+   "note": "內文小標，全書 110 頁出現"
+  },
+  "個案大標-NotoSans": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "size_pt": 17.9,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "NotoSansCJKtc-Medium",
+   "note": "個案扉與內頁大標（42 頁）；原書即用思源黑體 Medium（OFL）"
+  },
+  "個案中標-NotoSans": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "size_pt": 11.4,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "NotoSansCJKtc-Medium",
+   "note": "個案扉資訊列（22 頁）；另有 12.9pt 變體見掃描"
+  },
+  "部扉大標-明體W9": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 21.9,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFMingStd-W9",
+   "note": "三篇部扉（掃描 p18/68/114）"
+  },
+  "章名大標-明體W7": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "size_pt": 21.9,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFMingStd-W7",
+   "note": "十章章扉；§4.2 原記明體W9，全書掃描修正為 W7"
+  },
+  "標籤-篇序小標": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "size_pt": 14.9,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFMingStd-W7",
+   "note": "部扉「第X篇」標籤"
+  },
+  "目錄-部名": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "size_pt": 16.0,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFMingStd-W7",
+   "note": "目次部名詩句（p1-2）"
+  },
+  "目錄-篇章條目": {
+   "font_family": "全字庫正楷體 TW-Kai",
+   "font_weight": "regular",
+   "size_pt": 9.5,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "source_font": "DFKaiShuStd-W3",
+   "note": "目次條目 608 字；章名另有黑體 W5 條目層（掃描）"
+  },
+  "版權頁-CIP橫排": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 8.0,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "writing_mode": "horizontal-tb",
+   "source_font": "DFMingStd-W3",
+   "note": "全書唯一橫排（p178 CIP 細框）；Phase 1 渲染器尚未支援橫排"
+  },
+  "旁注-手札圖注": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "size_pt": 8.0,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "source_font": "HanziPenTC-W5",
+   "note": "圖注與旁注；另有 9pt 變體（掃描 4 頁）"
+  }
+ },
+ "character_styles": {
+  "發言人標籤-黑體": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "size_pt": 11.5,
+   "source_font": "DFHeiStd-W7",
+   "note": "「廖：」「鄧：」等發言人（32 頁）"
+  },
+  "內文強調-明體W9": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 11.1,
+   "source_font": "DFMingStd-W9",
+   "note": "內文重點字（35 頁）"
+  },
+  "角色註記-仿宋小字": {
+   "font_family": "全字庫正宋體",
+   "font_weight": "regular",
+   "size_pt": 11.5,
+   "source_font": "DFFangSongStd-W4",
+   "note": "職稱括註；與引文同級數，語意區分"
+  },
+  "頁碼數字-GillSans": {
+   "font_family": "jf open 粉圓",
+   "font_weight": "regular",
+   "size_pt": 8.0,
+   "source_font": "GillSans-Light",
+   "note": "切口下角頁碼；Gill Sans 無授權，以 OFL 粉圓對映"
+  },
+  "Case編號-手寫拉丁": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "size_pt": 9.0,
+   "source_font": "PepitaMT",
+   "note": "個案頁 Case N 手寫編號；章扉大號 15.9pt 變體（掃描）"
+  },
+  "書眉副標-手札體": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "size_pt": 8.0,
+   "source_font": "HanziPenTC-W5",
+   "note": "書眉章節副標，全書 173 頁"
+  },
+  "裝飾大字-辰宇落雁體": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "size_pt": 15.9,
+   "source_font": "ChenYuluoyan-Thin",
+   "note": "原書即用辰宇落雁體（OFL，可內建）"
+  },
+  "拉丁正文-Times": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 11.5,
+   "source_font": "TimesNewRomanPSMT",
+   "note": "內文西文；Times 無授權，以思源宋體拉丁字面替"
+  },
+  "西文書名-ACaslon": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "size_pt": 11.5,
+   "source_font": "ACaslonPro-Bold",
+   "note": "全書掃描未見著字（來源為 PLAN §1 字型資源清單），級數未量測，暫記 11.5"
+  }
+ },
+ "masters": {
+  "A-內文版": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": true,
+   "evidence": "跨頁實測（measurements.json、calibration.json）；inner 與 bottom 由版心網格反推（148mm − 書口 21mm − 13 行網格寬 287.5pt）",
+   "note": "雙頁書眉頁腳鏡像；頁腳三件組（頁碼＋書名＋Case 編號）於後續 Sprint 進場"
+  },
+  "B-部扉": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": true,
+   "evidence": "版心承 A；部扉佈局（雙線菱形裝飾框、部名置中）未逐頁量測",
+   "note": "掃描定位 p18/68/114"
+  },
+  "C-個案扉頁": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": true,
+   "evidence": "版心承 A；個案扉佈局（大標＋資訊列＋Case 編號）未逐頁量測"
+  },
+  "D-目錄": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": true,
+   "evidence": "版心承 A；水平虛線分隔與直排數字頁碼佈局未量測（p1-2）"
+  },
+  "E-序文版": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": true,
+   "evidence": "版心承 A；序文頁未逐頁量測（掃描 p3-17）"
+  },
+  "F-版權頁": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": false,
+   "evidence": "單頁橫排 CIP（p178）；橫排版心未量測，Phase 1 渲染器未支援橫排"
+  },
+  "G-圖文版": {
+   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "mirror": true,
+   "evidence": "版心承 A；圖文繞排為 Phase 4 範圍，佈局未量測"
+  }
+ }
+}

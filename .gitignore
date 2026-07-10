@@ -6,6 +6,8 @@ assets/reference/
 spikes/*/out/
 # 金鑰紅線（GAPS #6）：私有 LLM 設定僅本機
 local/
+# Phase 1 渲染輸出多含參考書內容，一律本機（GAPS #1）
+out/
 # Python
 __pycache__/
 *.pyc
