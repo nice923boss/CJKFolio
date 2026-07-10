@@ -20,6 +20,7 @@ from .layout import (
     style_advance_pt,
     style_line_slots,
 )
+from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -42,6 +43,20 @@ def line_axis_x_pt(
     margin_mm = master.margins.outer_mm if outer_side else master.margins.inner_mm
     axis0 = page_w - mm_to_pt(margin_mm) - master.grid.base_size_pt / 2
     return axis0 - (slot + (line_slots - 1) / 2) * master.grid.line_pitch_pt
+
+
+def horizontal_left_x_pt(master: MasterPage, book_number: int) -> float:
+    """橫排頁文字左起 x（pt）：奇數（右頁）訂口在左，自訂口內推；偶數鏡像用書口。"""
+    odd = (book_number % 2 == 1) or not master.mirror
+    left_mm = master.margins.inner_mm if odd else master.margins.outer_mm
+    return mm_to_pt(left_mm)
+
+
+def horizontal_baseline_y_pt(master: MasterPage, slot: int, size_pt: float,
+                             line_slots: int = 1) -> float:
+    """橫排第 slot 行（由上而下）的基線 y（pt）。v1 CIP 皆 line_slots=1。"""
+    top = mm_to_pt(master.margins.top_mm)
+    return top + slot * master.grid.line_pitch_pt + size_pt * ASCENT_RATIO
 
 
 class Shaper:
@@ -144,6 +159,25 @@ def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scal
     return missing
 
 
+def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, scale):
+    """橫排一個 cell：LTR 塑形直接落在頁面 (pen_x, baseline)。回傳缺字來源字元。
+
+    與 pdf_writer 橫排路徑同源：字形擺放走 hb ltr，頁面 pen 推進由 layout 決定
+    （cjk 走 em 格、latin 走自然寬，見 placement.horizontal_cell_advance_pt）。
+    """
+    sf = shaper.set_size(size_pt)
+    infos, poss = shaper.shape(text, "ltr")
+    pen_x, base_y = pen_x_pt * scale, baseline_y_pt * scale
+    for info, pos in zip(infos, poss):
+        tile, g = shaper.glyph_tile(info.codepoint)
+        if tile is not None:
+            gx = round(pen_x + pos.x_offset * sf) + g.bitmap_left
+            gy = round(base_y - pos.y_offset * sf) - g.bitmap_top
+            img.paste(0, (gx, gy), tile)
+        pen_x += pos.x_advance * sf
+    return _missing_chars(text, infos)
+
+
 class PageRenderer:
     def __init__(self, template: Template, master_name: str, dpi: int = 150, font_dir=None):
         self.template = template
@@ -196,23 +230,11 @@ class PageRenderer:
                 x = round(item.outer_offset_pt * self.scale)
             img.paste(0, (x, y), strip)
 
-    def render_page(self, page, footer_texts=None, book_number=None) -> Image.Image:
+    def _draw_vertical_body(self, img, page, book_number: int) -> None:
         master, template = self.master, self.template
-        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
-            book_number = page.number
-        size_px = (
-            round(mm_to_pt(template.page_width_mm) * self.scale),
-            round(mm_to_pt(template.page_height_mm) * self.scale),
-        )
-        img = Image.new("L", size_px, 255)
         top_pt = mm_to_pt(master.margins.top_mm)
         for placed in page.placed:
             style = template.paragraph_styles[placed.style]
-            if style.writing_mode != "vertical-rl":
-                raise ValueError(
-                    f"樣式「{style.name}」writing_mode={style.writing_mode}，"
-                    "Phase 1 渲染僅支援 vertical-rl（橫排於後續 Sprint）"
-                )
             shaper = self._shaper_for(style)
             advance = style_advance_pt(style, master.grid)
             axis = line_axis_x_pt(
@@ -240,6 +262,45 @@ class PageRenderer:
                     missing = []
                 self._note_missing(use_shaper, missing)
                 content_i += cell.width  # space 留白即可
+
+    def _draw_horizontal_body(self, img, page, book_number: int) -> None:
+        """橫排 body（版權頁-CIP）：行由上而下、字由左而右，不齊行。"""
+        master, template = self.master, self.template
+        for placed in page.placed:
+            style = template.paragraph_styles[placed.style]
+            shaper = self._shaper_for(style)
+            char_adv = style_advance_pt(style, master.grid)
+            baseline_y = horizontal_baseline_y_pt(
+                master, placed.slot, style.size_pt,
+                style_line_slots(style, master.grid),
+            )
+            pen_x = horizontal_left_x_pt(master, book_number) + placed.line.start_slot * char_adv
+            for cell in placed.line.cells:
+                if cell.char_style:  # run 覆寫字型與級數
+                    cstyle = template.character_styles[cell.char_style]
+                    use_shaper, use_size = self._shaper_for(cstyle), cstyle.size_pt
+                else:
+                    use_shaper, use_size = shaper, style.size_pt
+                if cell.kind != "space":
+                    missing = _draw_horizontal_cell(
+                        img, use_shaper, cell.text, pen_x, baseline_y, use_size, self.scale)
+                    self._note_missing(use_shaper, missing)
+                pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
+
+    def render_page(self, page, footer_texts=None, book_number=None,
+                    vertical: bool = True) -> Image.Image:
+        template = self.template
+        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
+            book_number = page.number
+        size_px = (
+            round(mm_to_pt(template.page_width_mm) * self.scale),
+            round(mm_to_pt(template.page_height_mm) * self.scale),
+        )
+        img = Image.new("L", size_px, 255)
+        if vertical:
+            self._draw_vertical_body(img, page, book_number)
+        else:
+            self._draw_horizontal_body(img, page, book_number)
         if footer_texts:
             self._draw_footer(img, book_number, footer_texts)
         return img
@@ -270,7 +331,8 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
                 "number": str(book_number),
                 "title": doc.title,
             }
-        img = renderer.render_page(page, footer_texts=texts, book_number=book_number)
+        img = renderer.render_page(page, footer_texts=texts, book_number=book_number,
+                                   vertical=layout.vertical)
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)

@@ -150,7 +150,7 @@
    "para_gap_slots": 0,
    "writing_mode": "horizontal-tb",
    "source_font": "DFMingStd-W3",
-   "note": "全書唯一橫排（p178 CIP 細框）；Phase 1 渲染器尚未支援橫排"
+   "note": "全書唯一橫排（p178 CIP 細框）；Sprint 13 渲染器已支援橫排（horizontal-tb），版心自擬待 GAPS #13 量測"
   },
   "旁注-手札圖注": {
    "font_family": "辰宇落雁體",
@@ -278,9 +278,9 @@
   },
   "F-版權頁": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "grid": {"chars_per_line": 34, "lines_per_page": 27, "char_advance_pt": 8.4, "line_pitch_pt": 14.0, "base_size_pt": 8.0},
    "mirror": false,
-   "evidence": "單頁橫排 CIP（p178）；橫排版心未量測，Phase 1 渲染器未支援橫排"
+   "evidence": "全書唯一橫排（p178 CIP 細框）；Sprint 13 渲染器已支援橫排（horizontal-tb）。橫排版心為自擬合理幾何（8pt CIP、字距 8.4pt＝×1.05、行距 14pt），p178 真實版心未量測留 GAPS #13"
   },
   "G-圖文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},

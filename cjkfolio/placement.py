@@ -67,6 +67,18 @@ def run_width_pt(shaper, text: str, size_pt: float) -> float:
     return horizontal_run(shaper, text, size_pt)[1]
 
 
+def horizontal_cell_advance_pt(shaper, cell, size_pt: float,
+                               char_advance_pt: float) -> float:
+    """橫排一個 cell 的水平推進量（render 與 pdf_writer 共用同一套 advance 數學）。
+
+    latin（連續 ascii 串）走塑形自然寬；cjk 與全形空格走 em 格（char_advance）。
+    橫排無縱中橫（tokenize 已不產 tcy），故不特判 tcy。
+    """
+    if cell.kind == "latin":
+        return run_width_pt(shaper, cell.text, size_pt)
+    return char_advance_pt
+
+
 def horizontal_placements(shaper, text: str, pen_x_pt: float, baseline_y_pt: float,
                           size_pt: float) -> list:
     """水平字條（頁腳三件組）：自基線左端 pen 起排。"""

@@ -13,6 +13,36 @@ from .styles import Grid, ParagraphStyle, Template
 
 _EPS = 1e-6
 
+VERTICAL_MODE = "vertical-rl"
+HORIZONTAL_MODE = "horizontal-tb"
+WRITING_MODES = (VERTICAL_MODE, HORIZONTAL_MODE)
+
+
+def page_is_vertical(doc, template: Template) -> bool:
+    """由文件實際引用的段落樣式判定頁面書寫方向（v1：全文件單一方向）。
+
+    混用 vertical-rl 與 horizontal-tb（版面軸不同、slot 幾何不相容）快速失敗；
+    未知 writing_mode 亦快速失敗（系統邊界驗證）。
+    """
+    modes = []
+    for p in doc.paragraphs:
+        st = template.paragraph_styles.get(p.style)
+        if st is None:
+            continue  # 未知樣式由 layout_document 另行 raise
+        if st.writing_mode not in WRITING_MODES:
+            raise ValueError(
+                f"樣式「{st.name}」writing_mode={st.writing_mode!r} 非法，"
+                f"支援 {WRITING_MODES}"
+            )
+        if st.writing_mode not in modes:
+            modes.append(st.writing_mode)
+    if len(modes) > 1:
+        raise ValueError(
+            f"v1 不支援單一文件混用書寫方向（本文件含 {modes}）；"
+            "橫排頁（版權頁）與直排內文請分屬不同文件"
+        )
+    return modes[0] != HORIZONTAL_MODE if modes else True
+
 
 def style_advance_pt(style: ParagraphStyle, grid: Grid) -> float:
     return style.size_pt * (grid.char_advance_pt / grid.base_size_pt)
@@ -56,11 +86,13 @@ class LayoutResult:
     pages: tuple
     violations: list  # 禁則違規訊息（runtime 檢查，應為空）
     justify_stats: dict  # {"squeezed": n, "stretched": n, "beyond": n}
+    vertical: bool = True  # 頁面書寫方向（False＝橫排 horizontal-tb）
 
 
 def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
     master = template.masters[doc.master]
     grid = master.grid
+    vertical = page_is_vertical(doc, template)
     specs = []
     for p in doc.paragraphs:
         if p.style not in template.paragraph_styles:
@@ -82,14 +114,16 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
         )
     raw_pages = flow_pages(
         specs, grid.chars_per_line, grid.lines_per_page,
-        first_para_continues=first_para_continues,
+        first_para_continues=first_para_continues, vertical=vertical,
     )
     pages = tuple(LayoutPage(i + 1, tuple(page)) for i, page in enumerate(raw_pages))
     violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
     stats = {"squeezed": 0, "stretched": 0, "beyond": 0}
-    for page in pages:
-        for pl in page.placed:
-            _, status = line_justified_advance(pl.line, 1.0)
-            if status in stats:
-                stats[status] += 1
-    return LayoutResult(pages=pages, violations=violations, justify_stats=stats)
+    if vertical:  # 齊行為直排內文特徵；橫排版權頁短行左齊、不字距縮放
+        for page in pages:
+            for pl in page.placed:
+                _, status = line_justified_advance(pl.line, 1.0)
+                if status in stats:
+                    stats[status] += 1
+    return LayoutResult(pages=pages, violations=violations, justify_stats=stats,
+                        vertical=vertical)

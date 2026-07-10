@@ -85,42 +85,52 @@ def normalize(text: str) -> str:
     )
 
 
-def _flush_ascii(run: str, out: list, char_style=None) -> None:
+def _flush_ascii(run: str, out: list, char_style=None, vertical: bool = True) -> None:
     if not run:
         return
-    if run.isdigit() and len(run) <= 2:
+    # 直排：1〜2 位數字走縱中橫（tcy）；橫排數字/拉丁一律正常 LTR，不轉。
+    if vertical and run.isdigit() and len(run) <= 2:
         out.append(Cell(run, "tcy", 1, char_style))
     else:
         out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5)), char_style))
 
 
-def tokenize(text: str, char_style=None) -> list:
+def _is_run_char(ch: str, vertical: bool) -> bool:
+    # 直排：只把英數收成串（拉丁串旋轉、短數字縱中橫）。
+    # 橫排：整段連續 ascii（含空格、連字號、句點）收成一個 latin run，走自然寬。
+    if vertical:
+        return ch.isascii() and ch.isalnum()
+    return ch.isascii()
+
+
+def tokenize(text: str, char_style=None, vertical: bool = True) -> list:
     cells: list = []
     run = ""
     for ch in text:
-        if ch.isascii() and ch.isalnum():
+        if _is_run_char(ch, vertical):
             run += ch
             continue
-        _flush_ascii(run, cells, char_style)
+        _flush_ascii(run, cells, char_style, vertical)
         run = ""
         if ch in (" ", "　"):
             cells.append(Cell(ch, "space", 1, char_style))
         else:
             cells.append(Cell(ch, "cjk", 1, char_style))
-    _flush_ascii(run, cells, char_style)
+    _flush_ascii(run, cells, char_style, vertical)
     return cells
 
 
-def cells_from_runs(runs) -> list:
+def cells_from_runs(runs, vertical: bool = True) -> list:
     """run 序列 → cells（各 run 內部正規化＋標注字元樣式；拉丁串不跨 run 合併）。"""
     cells: list = []
     for text, char_style in runs:
-        cells.extend(tokenize(normalize(text), char_style))
+        cells.extend(tokenize(normalize(text), char_style, vertical))
     return cells
 
 
-def break_paragraph(text: str, chars_per_line: int, indent: int = 2) -> list:
-    return _break_cells(tokenize(normalize(text)), chars_per_line, indent)
+def break_paragraph(text: str, chars_per_line: int, indent: int = 2,
+                    vertical: bool = True) -> list:
+    return _break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
 
 
 def _break_cells(cells: list, chars_per_line: int, indent: int = 2) -> list:
@@ -194,11 +204,13 @@ def flow_pages(
     chars_per_line: int,
     slots_per_page: int,
     first_para_continues: bool = False,
+    vertical: bool = True,
 ) -> list:
     """把 ParagraphSpec 序列流排成頁。
 
-    回傳 pages，每頁為 [PlacedLine, ...]，行槽右起為 0。
+    回傳 pages，每頁為 [PlacedLine, ...]，行槽起算為 0（直排右起、橫排上起）。
     段後空槽跨頁時歸零（不帶進次頁），與參考書實測一致。
+    斷行與禁則規則與方向無關；vertical 只決定 tokenize（橫排不轉縱中橫）。
     """
     pages: list = []
     cur: list = []
@@ -216,7 +228,8 @@ def flow_pages(
     for pi, spec in enumerate(specs):
         indent = 0 if (pi == 0 and first_para_continues) else spec.indent
         cap = spec.chars_per_line if spec.chars_per_line else chars_per_line
-        cells = cells_from_runs(spec.runs) if spec.runs else tokenize(normalize(spec.text))
+        cells = (cells_from_runs(spec.runs, vertical) if spec.runs
+                 else tokenize(normalize(spec.text), vertical=vertical))
         for line in _break_cells(cells, cap, indent=indent):
             emit(line, spec.style, spec.line_slots)
         if pi < len(specs) - 1:

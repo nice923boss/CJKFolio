@@ -88,6 +88,38 @@ def test_tokenize_space_occupies_one_slot():
     ]
 
 
+# ---------- tokenize 橫排（Sprint 13：版權頁-CIP，不轉縱中橫） ----------
+
+def test_tokenize_horizontal_digits_not_tcy():
+    # 橫排：短數字走正常 latin LTR，不轉縱中橫
+    cells = tokenize("第12章", vertical=False)
+    assert [(c.text, c.kind) for c in cells] == [
+        ("第", "cjk"), ("12", "latin"), ("章", "cjk"),
+    ]
+
+
+def test_tokenize_horizontal_groups_ascii_including_spaces_and_hyphens():
+    # 橫排：整串 ascii（含空格、連字號、句點）成一個 latin run，走自然寬
+    cells = tokenize("ISBN 978-0-00-0（平裝）", vertical=False)
+    latin = [c for c in cells if c.kind == "latin"]
+    assert len(latin) == 1
+    assert latin[0].text == "ISBN 978-0-00-0"
+    # 全形括號為非 ascii → cjk cell
+    assert [c.text for c in cells if c.kind == "cjk"] == ["（", "平", "裝", "）"]
+
+
+def test_tokenize_horizontal_fullwidth_space_is_space_cell():
+    cells = tokenize("123.45　1140700", vertical=False)
+    kinds = [(c.text, c.kind) for c in cells]
+    assert kinds == [("123.45", "latin"), ("　", "space"), ("1140700", "latin")]
+
+
+def test_break_paragraph_horizontal_direction_agnostic():
+    # 斷行邏輯與方向無關（吃 cells＋容量）
+    lines = break_paragraph("一二三四五六七八九十", 5, indent=0, vertical=False)
+    assert ["".join(c.text for c in l.cells) for l in lines] == ["一二三四五", "六七八九十"]
+
+
 # ---------- break_paragraph ----------
 
 def test_break_even_lines_no_punctuation():

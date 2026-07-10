@@ -10,7 +10,12 @@ import pytest
 
 from cjkfolio.document import document_from_dict
 from cjkfolio.pdf_writer import export_pdf, page_boxes_pt, subset_tag
-from cjkfolio.render import line_axis_x_pt, mm_to_pt
+from cjkfolio.render import (
+    horizontal_baseline_y_pt,
+    horizontal_left_x_pt,
+    line_axis_x_pt,
+    mm_to_pt,
+)
 from cjkfolio.styles import load_template
 
 fitz = pytest.importorskip("fitz")
@@ -180,11 +185,66 @@ def test_export_text_is_single_k(template, tmp_path):
     assert b" rg" not in content and b" RG" not in content, "內容流殘留 RGB 色彩"
 
 
+def make_cip_doc(lines):
+    """自擬橫排版權頁文件（master F、樣式 版權頁-CIP橫排）。"""
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "橫排樣張", "template": "neizai-zhengli", "master": "F-版權頁"},
+        "paragraphs": [{"text": t, "style": "版權頁-CIP橫排"} for t in lines],
+    })
+
+
 @needs_fonts
-def test_export_rejects_horizontal_style(template, tmp_path):
-    doc = make_doc([{"text": "橫排未支援", "style": "版權頁-CIP橫排"}])
-    with pytest.raises(ValueError, match="vertical-rl"):
-        export_pdf(doc, template, tmp_path / "h.pdf")
+def test_export_horizontal_cip_matrix_and_reading_order(template, tmp_path):
+    """橫排 CIP：內容流用水平 Tm（非旋轉）、抽字為 LTR 由上而下閱讀序。"""
+    doc = make_cip_doc([
+        "自由排版工作室出版品預行編目資料",
+        "ISBN 978-0-00-000000-0（平裝）",
+    ])
+    out = tmp_path / "cip.pdf"
+    result = export_pdf(doc, template, out, footer=False)
+    assert result.violations == []
+    assert result.page_count == 1
+
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    assert re.search(r"1 0 0 1 [\d.\-]+ [\d.\-]+ Tm", content), "橫排須用水平文字矩陣"
+    assert "0 -1 1 0" not in content, "橫排不得有旋轉矩陣（縱中橫／旋轉拉丁）"
+    # 抽字：LTR 閱讀序，latin 串連續
+    text = pdf[0].get_text()
+    assert "自由排版工作室出版品預行編目資料" in text
+    assert "ISBN 978-0-00-000000-0" in text
+
+
+@needs_fonts
+def test_export_horizontal_two_backend_position_parity(template, tmp_path):
+    """兩後端同源：PDF 抽字座標＝render 幾何助手（left_x／baseline_y）＋出血偏移。"""
+    doc = make_cip_doc(["自由排版工作室", "臺北市出版"])
+    out = tmp_path / "parity.pdf"
+    export_pdf(doc, template, out, footer=False)
+    pdf = fitz.open(str(out))
+    raw = pdf[0].get_text("rawdict")
+    lines = [
+        (l["spans"][0]["chars"][0]["c"], l["spans"][0]["chars"][0]["origin"])
+        for b in raw["blocks"] for l in b.get("lines", []) if l.get("spans")
+    ]
+    assert [c for c, _ in lines] == ["自", "臺"]  # 兩行首字（由上而下）
+
+    master = template.masters["F-版權頁"]
+    expect_x = BLEED_PT + horizontal_left_x_pt(master, book_number=1)
+    for i, (_, (ox, oy)) in enumerate(lines):
+        expect_y = BLEED_PT + horizontal_baseline_y_pt(master, slot=i, size_pt=8.0)
+        assert ox == pytest.approx(expect_x, abs=0.3), f"行 {i} 左緣 {ox} vs {expect_x}"
+        assert oy == pytest.approx(expect_y, abs=0.3), f"行 {i} 基線 {oy} vs {expect_y}"
+
+
+@needs_fonts
+def test_export_horizontal_preflight_green(template, tmp_path):
+    from cjkfolio.preflight import check_pdfx1a
+    out = tmp_path / "cipx.pdf"
+    export_pdf(make_cip_doc(["ISBN 978-0-00-000000-0（平裝）"]), template, out, footer=False)
+    report = check_pdfx1a(out)
+    assert report.ok, [f for f in report.findings if not f.ok]
 
 
 @needs_fonts

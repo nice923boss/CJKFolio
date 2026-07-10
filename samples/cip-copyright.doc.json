@@ -1,0 +1,18 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "橫排測試範例",
+  "template": "neizai-zhengli",
+  "master": "F-版權頁",
+  "language": "zh-TW"
+ },
+ "paragraphs": [
+  {"text": "自由排版工作室出版品預行編目資料", "style": "版權頁-CIP橫排"},
+  {"text": "橫排測試範例／測試作者著．初版．", "style": "版權頁-CIP橫排"},
+  {"text": "臺北市：自由排版工作室，2026.07", "style": "版權頁-CIP橫排"},
+  {"text": "面；公分", "style": "版權頁-CIP橫排"},
+  {"text": "ISBN 978-0-00-000000-0（平裝）", "style": "版權頁-CIP橫排"},
+  {"text": "1.CST：排版 2.CST：出版", "style": "版權頁-CIP橫排"},
+  {"text": "123.45　1140700", "style": "版權頁-CIP橫排"}
+ ]
+}

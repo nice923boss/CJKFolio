@@ -31,13 +31,20 @@ from .layout import (
     style_line_slots,
 )
 from .placement import (
+    horizontal_cell_advance_pt,
     horizontal_placements,
     rotated_latin_placements,
     run_width_pt,
     tcy_placements,
     ttb_char_placements,
 )
-from .render import Shaper, line_axis_x_pt, mm_to_pt
+from .render import (
+    Shaper,
+    horizontal_baseline_y_pt,
+    horizontal_left_x_pt,
+    line_axis_x_pt,
+    mm_to_pt,
+)
 
 BLEED_MM = 3.0
 TEXT_K = 0.92  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92）
@@ -416,19 +423,11 @@ class _PdfPageWriter:
             self._emit(content, key, horizontal_placements(
                 shaper, text, pen_x, item.baseline_from_top_pt, style.size_pt))
 
-    def build_page(self, page, footer_texts=None, book_number=None) -> bytes:
+    def _vertical_body(self, content: _Content, page, book_number: int) -> None:
         master, template = self.master, self.template
-        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
-            book_number = page.number
-        content = _Content()
         top_pt = mm_to_pt(master.margins.top_mm)
         for placed in page.placed:
             style = template.paragraph_styles[placed.style]
-            if style.writing_mode != "vertical-rl":
-                raise ValueError(
-                    f"樣式「{style.name}」writing_mode={style.writing_mode}，"
-                    "Phase 1 寫出層僅支援 vertical-rl（橫排於後續 Sprint）"
-                )
             key, shaper = self._shaper_for(style)
             advance = style_advance_pt(style, master.grid)
             axis = line_axis_x_pt(
@@ -457,6 +456,43 @@ class _PdfPageWriter:
                     pls = []
                 self._emit(content, use_key, pls)
                 content_i += cell.width
+
+    def _horizontal_body(self, content: _Content, page, book_number: int) -> None:
+        """橫排 body（版權頁-CIP）：行由上而下、字由左而右，不齊行。
+
+        幾何與 render._draw_horizontal_body 同源（同一組 left_x／baseline_y／advance）。
+        """
+        master, template = self.master, self.template
+        for placed in page.placed:
+            style = template.paragraph_styles[placed.style]
+            key, shaper = self._shaper_for(style)
+            char_adv = style_advance_pt(style, master.grid)
+            baseline_y = horizontal_baseline_y_pt(
+                master, placed.slot, style.size_pt,
+                style_line_slots(style, master.grid),
+            )
+            pen_x = horizontal_left_x_pt(master, book_number) + placed.line.start_slot * char_adv
+            for cell in placed.line.cells:
+                if cell.char_style:  # run 覆寫字型與級數
+                    cstyle = template.character_styles[cell.char_style]
+                    use_key, use_shaper = self._shaper_for(cstyle)
+                    use_size = cstyle.size_pt
+                else:
+                    use_key, use_shaper, use_size = key, shaper, style.size_pt
+                if cell.kind != "space":
+                    self._emit(content, use_key, horizontal_placements(
+                        use_shaper, cell.text, pen_x, baseline_y, use_size))
+                pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
+
+    def build_page(self, page, footer_texts=None, book_number=None,
+                   vertical: bool = True) -> bytes:
+        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
+            book_number = page.number
+        content = _Content()
+        if vertical:
+            self._vertical_body(content, page, book_number)
+        else:
+            self._horizontal_body(content, page, book_number)
         if footer_texts:
             self._footer(content, book_number, footer_texts)
         return content.finish()
@@ -513,7 +549,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         texts = None
         if footer and writer.master.footer:
             texts = {"number": str(book_number), "title": doc.title}
-        contents.append(writer.build_page(page, footer_texts=texts, book_number=book_number))
+        contents.append(writer.build_page(
+            page, footer_texts=texts, book_number=book_number, vertical=layout.vertical))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []

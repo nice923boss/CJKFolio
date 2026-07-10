@@ -8,16 +8,23 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageOps
 
-from cjkfolio.document import document_from_dict
+from cjkfolio.document import Document, Paragraph, document_from_dict
 from cjkfolio.engine import Cell, Line
 from cjkfolio.layout import (
     layout_document,
     line_justified_advance,
+    page_is_vertical,
     style_advance_pt,
     style_line_capacity,
 )
-from cjkfolio.render import line_axis_x_pt, mm_to_pt, render_document
-from cjkfolio.styles import load_template
+from cjkfolio.render import (
+    horizontal_baseline_y_pt,
+    horizontal_left_x_pt,
+    line_axis_x_pt,
+    mm_to_pt,
+    render_document,
+)
+from cjkfolio.styles import ParagraphStyle, Template, load_template
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -39,6 +46,15 @@ def make_doc(paragraphs):
         "schema": "cjkfolio/document@2",
         "meta": {"title": "自擬樣張", "template": "neizai-zhengli", "master": "A-內文版"},
         "paragraphs": paragraphs,
+    })
+
+
+def make_cip_doc(lines):
+    """自擬橫排版權頁文件（master F、樣式 版權頁-CIP橫排）。"""
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "橫排樣張", "template": "neizai-zhengli", "master": "F-版權頁"},
+        "paragraphs": [{"text": t, "style": "版權頁-CIP橫排"} for t in lines],
     })
 
 
@@ -252,6 +268,87 @@ def test_body_axis_mirrors_by_book_page(template, tmp_path):
     odd = render_document(doc, template, tmp_path / "odd", dpi=150, footer=False, first_page=21)
     # 版面頁號同為 1；書頁號 20（偶＝左頁，訂口在右→行軸偏左）vs 21（奇＝右頁，書口在右→行軸偏右）
     assert _ink_cx(odd.paths[0]) > _ink_cx(even.paths[0])
+
+
+# ---------- 橫排版面軸（Sprint 13：版權頁-CIP，GAPS #13） ----------
+
+def test_page_is_vertical_detects_direction(template):
+    assert page_is_vertical(make_doc([{"text": "直排內文。", "style": "內文-明體直排"}]), template)
+    assert not page_is_vertical(make_cip_doc(["橫排版權頁資料"]), template)
+
+
+def test_layout_rejects_mixed_direction(template):
+    # v1 不支援單一文件混用直排與橫排（slot 幾何不相容）
+    doc = document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "混向", "master": "F-版權頁"},
+        "paragraphs": [
+            {"text": "橫排列", "style": "版權頁-CIP橫排"},
+            {"text": "直排列", "style": "內文-明體直排"},
+        ],
+    })
+    with pytest.raises(ValueError, match="混用書寫方向"):
+        layout_document(doc, template)
+
+
+def test_page_is_vertical_rejects_unknown_mode():
+    tpl = Template(
+        name="t", page_width_mm=148, page_height_mm=210,
+        paragraph_styles={"壞樣式": ParagraphStyle(
+            "壞樣式", "思源宋體 TC", "regular", 10.0, writing_mode="sideways-lr")},
+    )
+    doc = Document(title="", template="", master="A", paragraphs=(Paragraph("字", "壞樣式"),))
+    with pytest.raises(ValueError, match="非法"):
+        page_is_vertical(doc, tpl)
+
+
+def test_layout_horizontal_no_justify_and_flags_direction(template):
+    doc = make_cip_doc(["橫排一行短資料"])
+    result = layout_document(doc, template)
+    assert result.vertical is False
+    assert result.violations == []
+    # 橫排短行左齊、不字距縮放 → 齊行統計皆 0
+    assert result.justify_stats == {"squeezed": 0, "stretched": 0, "beyond": 0}
+    assert len(result.pages) == 1
+
+
+def test_horizontal_geometry_left_and_baseline(template):
+    master = template.masters["F-版權頁"]
+    # 左起 x：mirror=false → 恆用訂口（inner）內推
+    left = horizontal_left_x_pt(master, book_number=1)
+    assert left == pytest.approx(mm_to_pt(master.margins.inner_mm))
+    assert horizontal_left_x_pt(master, book_number=2) == pytest.approx(left)  # 無鏡像
+    # 基線：行由上而下，每行 +line_pitch；首行含 ascent
+    b0 = horizontal_baseline_y_pt(master, slot=0, size_pt=8.0)
+    b1 = horizontal_baseline_y_pt(master, slot=1, size_pt=8.0)
+    top = mm_to_pt(master.margins.top_mm)
+    assert b0 == pytest.approx(top + 8.0 * 0.88)
+    assert b1 - b0 == pytest.approx(master.grid.line_pitch_pt)
+
+
+@needs_fonts
+def test_render_horizontal_page_lands_top_left(template, tmp_path):
+    doc = make_cip_doc([
+        "自由排版工作室出版品預行編目資料",
+        "ISBN 978-0-00-000000-0（平裝）",
+    ])
+    result = render_document(doc, template, tmp_path, dpi=200, footer=False)
+    assert len(result.paths) == 1
+    assert result.violations == []
+    master = template.masters["F-版權頁"]
+    scale = 200 / 72.0
+    img = Image.open(result.paths[0])
+    ink = ImageOps.invert(img.convert("L")).getbbox()
+    assert ink is not None, "橫排頁整頁空白"
+    # 左起貼訂口（inner）內推：著墨左緣接近 left margin
+    left_px = mm_to_pt(master.margins.inner_mm) * scale
+    assert abs(ink[0] - left_px) < 12, f"橫排左緣 {ink[0]} vs {left_px}"
+    # 由上而下兩行：著墨頂緣接近天頭
+    top_px = mm_to_pt(master.margins.top_mm) * scale
+    assert ink[1] < top_px + 8.0 * scale, "橫排首行應貼天頭"
+    # 橫向鋪展：著墨寬度遠大於高度（LTR 兩短行）
+    assert (ink[2] - ink[0]) > (ink[3] - ink[1])
+    assert "SourceHanSerifTC-Regular.otf" in {Path(f).name for f in result.fonts_used}
 
 
 # ---------- PNG 缺字警告（GAPS #17） ----------
