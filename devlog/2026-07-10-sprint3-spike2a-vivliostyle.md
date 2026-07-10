@@ -21,6 +21,6 @@
 **留證**：
 - 時戳：2026-07-10
 - 樣本：spikes/spike2-output-backend/out/{spike2a-sample.pdf, spike2a_p1.png, spike2a_p2.png, spike3-long.pdf, spike3_p190.png}（自擬＋公有領域，本機保存）
-- commit：本篇提交後回填
+- commit：65fb272
 
 **下個 Sprint 預定範圍**：Spike 3 後半（自製引擎單章重排延遲量測）＋ Spike 4 授權桌面研究（AGPL-3.0 對散布／SaaS 的約束與進程隔離方案，盒 2 天）＋ Spike 5 真章重測（endpoint 可達才做）。完成後做 Phase 0 閘門判定。

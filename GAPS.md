@@ -11,7 +11,7 @@
 | 4 | Spike 2b（TeX Live）暫不安裝 | 數 GB 安裝成本，2a Vivliostyle 不達標才裝 | LuaLaTeX 路線暫無一手驗證數據 | Spike 2a 結果出爐後決定 | 黃政文 |
 | 5 | ~~專案尚未 git init~~ **已關閉（2026-07-10）**：依 Owner 全權授權代決，git init 本機 repo（無遠端），.gitignore 落實紅線（local/、assets/reference/、內在整理-*.pdf、spikes/*/out/ 不入 repo） | 使用者授權「需要問的直接代決」 | dev-log 自此含 commit hash | 已完成 | 黃政文 |
 | 6 | AI 金鑰與私有 endpoint（紅線） | 私有 Tailscale 位址與金鑰，他人連不到也不可洩漏 | 只存 local/ai-config.local.json，git init 時 local/ 進 .gitignore；產品介面預設空值 | git init 時落實 .gitignore | 黃政文 |
-| 7 | Spike 5 僅過第一輪（自擬段落 8/8） | 真實整章書稿未測 | 長文批次的正確率與耗時未知，AI 指派功能先標 [Spike] 不標 [實作] | Spike 5 剩餘時間盒（2 天）內以參考書整章重測 | 黃政文 |
+| 7 | ~~Spike 5 僅過第一輪~~ **已關閉（2026-07-10 Sprint 4）**：真書 72 段重測完成（嚴格 50%、粗分 69.4%、吞吐可行），四項設計修正入 PLAN §4.4；AI 指派維持 [Spike]，正式 [實作] 於 Phase 3 依新設計驗收 | 真章重測完成 | 「8/8 全對」不得對外宣稱 | 已完成 | 黃政文 |
 | 8 | 樣張頁腳字型替位：Gill Sans MT 代 GillSans-Light、標楷體代華康手札體 | 原字型無授權（GAPS #2 同源） | 頁腳字形風格與參考書不同，位置與級數對位正確 | Phase 1 內建 OFL 字型組時改用可散布字型 | 黃政文 |
 | 9 | Spike 1 引擎為等距網格，無 InDesign 式齊行（justification）微調與標點擠壓變寬 | 齊行演算法超出 spike 時間盒，且本書實測無半形擠壓 | 斷行點與參考書偶有 ±1 字漂移（行數與版面結構一致） | Phase 1 直排引擎補齊行與約物擠壓 | 黃政文 |
 | 10 | Spike 1 人工抽檢僅 AI 全圖掃描，Owner 未抽檢 | Owner 尚未過目樣張 | R5 真實素材驗收的人類抽檢項未滿足，Spike 1 不得關閉 | Owner 檢視 spikes/spike1-vertical-core/out/spread_comparison.png 後打勾 | 黃政文 |
