@@ -6,6 +6,7 @@
 > 規劃日期：2026-06-16　規劃紀律：證據先行、不浮誇、實作與空殼分清、未驗證項明確標示。
 > 修訂：2026-07-10 執行層補強（Phase 0 執行細則、spike 語言與依賴、素材版權紅線、驗收檢核清單）；同日擴充內容匯入與 AI 輔助樣式指派（§4.4、Spike 5，PoC 8/8 已驗證）。
 > 修訂：2026-07-10 Sprint 2：Spike 1 引擎與跨頁樣張完成（詳 devlog/2026-07-10-sprint2-spike1-spread.md）；§1 量測修正（滿行 32 字、字距 12.08pt、縮排與段距網格）；新增 §10 決議紀錄。
+> 修訂：2026-07-10 Sprint 6：Phase 1 開工第一片落地（文件模型、三層樣式讀取、《內在整理》起始模版、txt 匯入、思源宋體 TC 單頁 PNG 渲染，詳 devlog/2026-07-10-sprint6-phase1-pipeline.md）；§4.2 依全書掃描修正章名／部扉大標字重。
 
 ---
 
@@ -121,6 +122,8 @@
 **主版（7 種）：** A-內文版（雙頁書眉頁腳鏡像）、B-部扉、C-個案扉頁、D-目錄、E-序文版、F-版權頁（單頁橫排）、G-圖文版。
 
 **色票：** 暖黑 #231f20（內文，建議印刷轉單 K90-92）、紙白、灰階 K、CMYK 四色、虛線灰。
+
+**實作與修正（2026-07-10 Sprint 6）：** 起始模版落地為 templates/neizai-zhengli.json（cjkfolio/template@1），級數與字型參數取自全書 (font,size) 掃描（tools/scan_reference_styles.py，A 級一手證據）。掃描修正兩處：章名大標為明體 **W7** 21.9pt（原記 W9）、部扉大標為明體 **W9** 21.9pt；另證實原書即用思源黑體 Medium 與辰宇落雁體（皆 OFL，可直接內建）。字型對映採 §8 可散布字型組並以 source_font 記原書字型；未入庫家族 fallback 思源宋體並警告（GAPS #12）。
 
 ### 4.3 模版管理（新增／修改／複用）
 
@@ -271,6 +274,7 @@ CJKFolio/
 - txt／Markdown 匯入（內容入口，md 結構直接對映樣式）。
 - 先支援單一內建模版（《內在整理》風格），命令列或極簡介面驅動。
 - **DoD**：以本書真實文字匯出單頁完稿 PDF/X-1a，直排／版心／頁碼／書眉與參考一致度人工抽檢，印刷廠 preflight 全綠。
+- **進度（2026-07-10 Sprint 6）**：第一片完成 [實作]：文件模型（cjkfolio/document@1）、三層樣式讀取（template@1：15 段落樣式＋9 字元樣式＋7 主版）、起始模版（templates/neizai-zhengli.json）、txt 匯入、樣式驅動直排引擎（自 Spike 1 產品化，ParagraphSpec 承載每段幾何）、單頁 A5 PNG 渲染（思源宋體 TC，GAPS #3 關閉；奇偶頁鏡像版心）、CLI（import-txt／render）。新增測試 46 項（合計 61）。本機真實素材驗收：第一章（PDF 頁 19〜34）79 段 5,408 字 → 23 頁、禁則 0 違規，page-001/002 目檢通過。**未完**：md 匯入、頁腳三件組與書眉、齊行與約物擠壓（GAPS #9）、橫排、PDF/X 寫出層（皆後續 Sprint）。
 
 ### Phase 2：WYSIWYG 編輯器（12〜16 週）[實作]
 
@@ -364,6 +368,12 @@ CJKFolio/
 | 2026-07-10（Sprint 4） | AI 指派四項設計修正定案（結構優先、AI 粗分、樣式清單候選集、不外推宣稱） | Spike 5 真章重測一手數據 |
 | 2026-07-10（Sprint 5） | Vivliostyle 整合形態定案：CLI 子程序＋檔案介面，禁止 in-process import；散布採首次使用隨裝 | Spike 4 報告（官方 FAQ＋GPL FAQ 臂長準則） |
 | 2026-07-10（Sprint 5） | Phase 0 閘門條件性通過，可進 Phase 1（唯 Owner 抽檢 GAPS #10 為正式通過前提） | 五 spike 全數有一手結論 |
+| 2026-07-10（Sprint 6） | Phase 1 管線語言定 Python：Spike 3 實測純邏輯重排 7.67ms/章已達互動級；Phase 2 GUI／效能語言屆時再議 | §5.2 執行校正原則＋Spike 3 一手數據 |
+| 2026-07-10（Sprint 6） | 產品碼結構：cjkfolio/（套件）＋templates/＋tests/＋tools/；out/ 渲染輸出與 assets/reference/ 素材一律本機不入 repo | 版權紅線落實 |
+| 2026-07-10（Sprint 6） | 基線指令更新：typecheck 為 python -m py_compile spikes/spike1-vertical-core/\*.py cjkfolio/\*.py tools/\*.py；test 為 python -m pytest spikes tests -q | 產品碼進場 |
+| 2026-07-10（Sprint 6） | 樣式幾何換算規則：字距＝級數×(12.08/11.5)、行容量＝floor(欄高／字距)、行槽寬＝ceil(級數／行距)；版面幾何一律引擎確定性計算 | 跨頁實測比例＋§4.4 分工鐵律 |
+| 2026-07-10（Sprint 6） | 起始模版字型對映：模版寫 §8 可散布家族、source_font 記原書字型；未入庫家族 FontRegistry fallback 思源宋體並警告 | 字型授權紅線（GAPS #12） |
+| 2026-07-10（Sprint 6） | §4.2 修正：章名大標＝明體 W7 21.9pt、部扉大標＝明體 W9 21.9pt；第一章界定為 PDF 頁 19〜34 | 全書 (font,size) 掃描（A 級） |
 
 ## 11. 證據附錄（關鍵引用）
 
