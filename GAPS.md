@@ -7,7 +7,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | 參考書《內在整理》內容版權（紅線） | 出版社版權物，僅限本機 spike 驗證 | 開源 repo 與公開樣張不得含其文字／圖像；公開測試素材須另備自由散布文本 | 開源釋出前備妥替代文本 | 黃政文 |
 | 2 | 華康／Monotype 商用字型不可內建 | 商業授權 | 編輯器只內建 OFL／政府開放授權字型；匯出時做授權檢查提示 | Phase 4 授權檢查功能 | 黃政文 |
-| 3 | spike 階段用系統新細明體驗管線 | PMingLiU 隨 Windows 授權，不可隨產品散布 | 僅限本機驗證；正式樣張與內建字型組換思源宋體 TC | Spike 1 正式樣張前下載思源宋體 | 黃政文 |
+| 3 | spike 階段用系統新細明體驗管線 | PMingLiU 隨 Windows 授權，不可隨產品散布 | 僅限本機驗證；正式樣張與內建字型組換思源宋體 TC | **字型已下載並驗 vert（2026-07-10，assets/fonts/）**；引擎換用於 Phase 1 首個 Sprint | 黃政文 |
 | 4 | Spike 2b（TeX Live）暫不安裝 | 數 GB 安裝成本，2a Vivliostyle 不達標才裝 | LuaLaTeX 路線暫無一手驗證數據 | Spike 2a 結果出爐後決定 | 黃政文 |
 | 5 | ~~專案尚未 git init~~ **已關閉（2026-07-10）**：依 Owner 全權授權代決，git init 本機 repo（無遠端），.gitignore 落實紅線（local/、assets/reference/、內在整理-*.pdf、spikes/*/out/ 不入 repo） | 使用者授權「需要問的直接代決」 | dev-log 自此含 commit hash | 已完成 | 黃政文 |
 | 6 | AI 金鑰與私有 endpoint（紅線） | 私有 Tailscale 位址與金鑰，他人連不到也不可洩漏 | 只存 local/ai-config.local.json，git init 時 local/ 進 .gitignore；產品介面預設空值 | git init 時落實 .gitignore | 黃政文 |

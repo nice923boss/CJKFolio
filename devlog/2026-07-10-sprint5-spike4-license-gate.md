@@ -18,6 +18,6 @@
 **留證**：
 - 時戳：2026-07-10
 - 樣本：spikes/spike4-license/report.md
-- commit：本篇提交後回填
+- commit：78577e9
 
 **下個 Sprint 預定範圍**：Phase 1 核心排版管線 MVP 開工。首個 Sprint 建議切片：文件模型（段落＋樣式參照的最小 JSON schema）＋三層樣式系統讀取＋以《內在整理》起始模版（§4.2）驅動 spike 引擎排版 txt 匯入的第一章，輸出多頁 PNG；PDF/X 寫出層後續 Sprint 進場。前置：思源宋體 TC 下載入 assets/fonts/（OFL，可入 repo）。

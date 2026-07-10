@@ -12,5 +12,8 @@ __pycache__/
 .pytest_cache/
 # Node
 node_modules/
+# 字型二進位不入 repo（assets/fonts/FONTS.md 有重現下載指令；LICENSE 與說明照常入 repo）
+assets/fonts/*.otf
+assets/fonts/*.ttf
 # Spike 2 長文件為程式產生物，不入 repo
 spikes/spike2-output-backend/long.html
