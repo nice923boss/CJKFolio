@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .document import load_document, save_document, unknown_style_refs
 from .md_import import import_markdown_file
+from .pdf_writer import export_pdf
 from .render import render_document
 from .styles import load_template
 from .txt_import import DEFAULT_BODY_STYLE, import_txt_file
@@ -66,6 +67,27 @@ def cmd_render(args) -> int:
     return 0
 
 
+def cmd_export_pdf(args) -> int:
+    doc = load_document(args.document)
+    template = load_template(args.template)
+    unknown = unknown_style_refs(doc, template)
+    if unknown:
+        print(f"錯誤：文件引用模版沒有的樣式：{unknown}")
+        return 2
+    result = export_pdf(
+        doc, template, args.output,
+        pages=[args.page] if args.page else None,
+        footer=not args.no_footer, first_page=args.first_page,
+    )
+    print(f"匯出完成：{result.page_count} 頁 → {result.path}")
+    print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
+    for warning in result.font_warnings:
+        print(f"字型警告：{warning}")
+    for emb in result.embedded_fonts:
+        print(f"嵌入字型：{emb['base']}（{emb['glyphs']} 字形，子集 {emb['bytes']:,} bytes）")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="cjkfolio", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -93,6 +115,15 @@ def main(argv=None) -> int:
     p_render.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳用）")
     p_render.add_argument("--no-footer", action="store_true", help="不畫頁腳三件組")
     p_render.set_defaults(func=cmd_render)
+
+    p_pdf = sub.add_parser("export-pdf", help="文件 JSON 匯出 PDF（字型子集嵌入，盒框依 PLAN §9）")
+    p_pdf.add_argument("document")
+    p_pdf.add_argument("-o", "--output", required=True)
+    p_pdf.add_argument("--template", default=str(DEFAULT_TEMPLATE))
+    p_pdf.add_argument("--page", type=int, default=None, help="只匯出此版面頁（1 起算；預設全頁）")
+    p_pdf.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳用）")
+    p_pdf.add_argument("--no-footer", action="store_true", help="不排頁腳三件組")
+    p_pdf.set_defaults(func=cmd_export_pdf)
 
     args = parser.parse_args(argv)
     return args.func(args)

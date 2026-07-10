@@ -23,6 +23,13 @@ def test_normalize_vertical_presentation_forms():
     assert normalize("句讀﹐﹒") == "句讀，．"
 
 
+def test_normalize_strips_control_chars():
+    # PDF 抽取素材殘留的控制字元（如 U+0007）不得進排版流
+    assert normalize("發言\x07內容") == "發言內容"
+    assert normalize("縮\t排\n") == "縮排"
+    assert normalize("　全形空白保留") == "　全形空白保留"
+
+
 # ---------- tokenize ----------
 
 def test_tokenize_pure_cjk_one_cell_per_char():

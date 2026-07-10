@@ -9,6 +9,7 @@
 - 行尾禁則：開引號括號不得懸行尾，退至下一行。
 - 縱中橫：1〜2 位數字直立橫排（tcy）；3 位以上數字與拉丁串旋轉 90 度（latin），串不拆。
 """
+import unicodedata
 from dataclasses import dataclass
 from math import ceil
 from typing import Optional
@@ -64,7 +65,12 @@ class PlacedLine:
 
 
 def normalize(text: str) -> str:
-    return "".join(_PRESENTATION_FORMS.get(ch, ch) for ch in text)
+    # 控制字元（Cc）非排版內容：PDF 抽取素材常殘留（如發言標籤後的 U+0007）
+    return "".join(
+        _PRESENTATION_FORMS.get(ch, ch)
+        for ch in text
+        if unicodedata.category(ch) != "Cc"
+    )
 
 
 def _flush_ascii(run: str, out: list) -> None:
