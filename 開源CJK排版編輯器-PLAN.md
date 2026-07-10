@@ -206,10 +206,21 @@
 - **Spike 1 直排版面核心**：用 HarfBuzz vert/vrt2（Python uharfbuzz）＋ 自寫逐字斷行與最小禁則／約物擠壓，排出《內在整理》一個真實跨頁（直排明體 11.5pt 內文 32 字／行、含直排中橫排頁碼、書眉頁腳），依下方執行細則的檢核清單逐項驗收。**進度（2026-07-10 Sprint 2）：檢核清單七項證據齊備（引擎 15 項單元測試、真實跨頁 0 禁則違規、並排對比圖、縱中橫示範條），待 Owner 人工抽檢後關閉。**原規劃的 ICU 斷行降為非必要：CJK 書冊斷行＝逐字可斷＋禁則表調整，無需詞典斷行，僅拉丁連續串不拆（簡單規則即可），避開 PyICU 在 Windows 的安裝成本。
 - **Spike 2 輸出後端**：同一份內容分別走 Vivliostyle 與 LuaLaTeX-ja，產 PDF/X，比較直排品質、CMYK、字型嵌入、preflight 結果。**進度（2026-07-10 Sprint 3）：2a Vivliostyle 核心驗證通過：直排（vert 形、句逗置中、strict 禁則 0 違規、縱中橫、拉丁旋轉）、TrimBox 148×210 精確＋BleedBox 154×216＋裁切標記、字型 100% 嵌入子集化（pdffonts 全綠、無 Type3）、PDF Catalog /Direction /R2L 右翻。CMYK／PDF-X 後處理未驗（本機無 Ghostscript，GAPS #11）。2b LuaLaTeX 依 GAPS #4 維持不裝（2a 達標）。**
 - **Spike 3 效能**：依賴 Spike 1、2 產出，殿後執行。量測候選輸出後端的全書（179 頁級）編譯時間，與 spike 引擎的單章重排延遲，決定是否需增量重排與分章快取。**進度（2026-07-10 Sprint 3）：Vivliostyle 全書級實測 192 頁 26.0 秒（約 7.4 頁/秒，含瀏覽器啟動），匯出路徑可接受。（Sprint 4）spike 引擎單章重排實測：8,164 字章純邏輯重排中位 7.67ms、首跨頁渲染 60ms（Python 原型即互動級）；結論為分章快取即足、無需增量重排，Phase 2 以背景渲染＋快取設計。Spike 3 關閉。**
-- **Spike 4 授權**：釐清 Vivliostyle AGPL-3.0 對產品形態（散布／SaaS）的約束，確認進程隔離或商業授權方案。
+- **Spike 4 授權**：釐清 Vivliostyle AGPL-3.0 對產品形態（散布／SaaS）的約束，確認進程隔離或商業授權方案。**完成（2026-07-10 Sprint 5，spikes/spike4-license/report.md）：Core 與 cli 皆 AGPL-3.0（package.json 實查）；官方 FAQ 明言獨立程式可與專有程式並用；GPL FAQ 臂長準則下「CLI 子程序＋檔案介面」不受傳染，編輯器主體可用自有授權；散布採「首次使用隨裝」最乾淨；禁止 in-process import vivliostyle 模組。非法律意見，正式釋出前律師覆核。Spike 4 關閉。**
 - **Spike 5 AI 樣式指派（2026-07-10 增）**：私有 LLM 對書稿段落做樣式分類（見 §4.4）。第一輪已完成：8 段自擬段落 8/8 全對。**第二輪（Sprint 4）已完成：真書 72 段重測，嚴格 6 類 50%、粗分類 69.4%、吞吐全書級約 2 分鐘；結論為可行性成立但需 §4.4 四項設計修正（結構優先、AI 粗分、樣式清單為候選集、不外推宣稱）。Spike 5 關閉。**
 - **DoD**：真實素材（本書內容）跑過；至少 1 名人類抽檢直排品質；dev-log 留證（時戳、commit、樣本 PDF 路徑）。
 - **閘門**：Spike 1＋2 未達可接受品質，不進 Phase 1，須重選架構或核心。
+
+#### Phase 0 閘門判定（2026-07-10 Sprint 5）
+
+**條件性通過，可進 Phase 1。** 五個 spike 全數有一手結論：
+- Spike 1 直排核心：檢核清單 7 項中 6 項證據齊備；真實跨頁 0 禁則違規、與參考頁同行數。**唯一未關項＝Owner 人工抽檢（GAPS #10）**，抽檢通過即正式通過；若挑出重大排版瑕疵則回 spike 修正。
+- Spike 2 輸出後端：2a Vivliostyle 達標（嵌入子集化全綠、TrimBox 精確、/R2L）；CMYK／PDF-X 深化屬 Phase 4 範圍（GAPS #11）。2b 不裝（條件成就）。
+- Spike 3 效能：關閉（引擎重排 7.67ms／章、Vivliostyle 全書 26 秒）。
+- Spike 4 授權：關閉（子程序隔離可行，報告見 spikes/spike4-license/report.md）。
+- Spike 5 AI 指派：關閉（可行性成立＋四項設計修正入 §4.4）。
+
+**Phase 1 開工前置**：下載思源宋體 TC（GAPS #3，正式樣張與內建字型組）；Owner 抽檢 Spike 1 對比圖（GAPS #10）。
 
 #### Phase 0 執行細則（2026-07-10 補強：從「驗什麼」到「怎麼動手」）
 
@@ -350,6 +361,9 @@ CJKFolio/
 | 2026-07-10（Sprint 3） | Vivliostyle 於本機以系統 Chrome 執行（--executable-browser），不下載 Chrome for Testing | puppeteer 快取無瀏覽器致 spawn UNKNOWN，系統 Chrome 實測可用 |
 | 2026-07-10（Sprint 3，技術發現） | @page margin box 會繼承 vertical-rl，頁碼 margin box 必須顯式 writing-mode: horizontal-tb | 樣本頁碼被直排的實測缺陷與修正 |
 | 2026-07-10（Sprint 3） | Spike 2b（TeX Live）確認不安裝：2a 已達標，依原閘門條件 | GAPS #4 條件成就 |
+| 2026-07-10（Sprint 4） | AI 指派四項設計修正定案（結構優先、AI 粗分、樣式清單候選集、不外推宣稱） | Spike 5 真章重測一手數據 |
+| 2026-07-10（Sprint 5） | Vivliostyle 整合形態定案：CLI 子程序＋檔案介面，禁止 in-process import；散布採首次使用隨裝 | Spike 4 報告（官方 FAQ＋GPL FAQ 臂長準則） |
+| 2026-07-10（Sprint 5） | Phase 0 閘門條件性通過，可進 Phase 1（唯 Owner 抽檢 GAPS #10 為正式通過前提） | 五 spike 全數有一手結論 |
 
 ## 11. 證據附錄（關鍵引用）
 

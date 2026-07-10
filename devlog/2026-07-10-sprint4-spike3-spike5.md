@@ -21,6 +21,6 @@
 **留證**：
 - 時戳：2026-07-10
 - 樣本：spikes/spike1-vertical-core/perf_probe.py 輸出（console）、spikes/spike5-ai-style-tagging/out/real_chapter_results.json（僅本機）
-- commit：本篇提交後回填
+- commit：eba3b4b
 
 **下個 Sprint 預定範圍**：Spike 4 授權桌面研究（AGPL-3.0 傳染範圍、進程隔離是否成立、對散布／SaaS 形態的約束，產出 spikes/spike4-license/report.md，含引證 URL）。完成後 Phase 0 五個 spike 全數有結論，做閘門判定並更新 PLAN。
