@@ -9,7 +9,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from .document import load_document, save_document, unknown_style_refs
+from .document import (
+    load_document,
+    save_document,
+    unknown_char_style_refs,
+    unknown_style_refs,
+)
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
 from .render import render_document
@@ -36,6 +41,7 @@ def cmd_import_md(args) -> int:
     doc = import_markdown_file(
         args.input,
         mapping=template.md_mapping,
+        inline_mapping=template.md_inline_mapping,
         title=args.title or Path(args.input).stem,
     )
     save_document(doc, args.output)
@@ -45,12 +51,22 @@ def cmd_import_md(args) -> int:
     return 0
 
 
-def cmd_render(args) -> int:
-    doc = load_document(args.document)
-    template = load_template(args.template)
+def _check_style_refs(doc, template) -> int:
     unknown = unknown_style_refs(doc, template)
     if unknown:
         print(f"錯誤：文件引用模版沒有的樣式：{unknown}")
+        return 2
+    unknown_char = unknown_char_style_refs(doc, template)
+    if unknown_char:
+        print(f"錯誤：文件引用模版沒有的字元樣式：{unknown_char}")
+        return 2
+    return 0
+
+
+def cmd_render(args) -> int:
+    doc = load_document(args.document)
+    template = load_template(args.template)
+    if _check_style_refs(doc, template):
         return 2
     result = render_document(
         doc, template, args.output, dpi=args.dpi, basename=args.basename,
@@ -70,9 +86,7 @@ def cmd_render(args) -> int:
 def cmd_export_pdf(args) -> int:
     doc = load_document(args.document)
     template = load_template(args.template)
-    unknown = unknown_style_refs(doc, template)
-    if unknown:
-        print(f"錯誤：文件引用模版沒有的樣式：{unknown}")
+    if _check_style_refs(doc, template):
         return 2
     result = export_pdf(
         doc, template, args.output,

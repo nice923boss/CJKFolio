@@ -46,6 +46,9 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
     for p in doc.paragraphs:
         if p.style not in template.paragraph_styles:
             raise KeyError(f"文件引用未知段落樣式：{p.style}")
+        for r in p.runs:
+            if r.char_style and r.char_style not in template.character_styles:
+                raise KeyError(f"文件引用未知字元樣式：{r.char_style}")
         st = template.paragraph_styles[p.style]
         specs.append(
             ParagraphSpec(
@@ -55,6 +58,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 gap_after=st.para_gap_slots,
                 chars_per_line=style_line_capacity(st, grid),
                 line_slots=style_line_slots(st, grid),
+                runs=tuple((r.text, r.char_style) for r in p.runs),
             )
         )
     raw_pages = flow_pages(

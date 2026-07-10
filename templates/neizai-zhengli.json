@@ -19,6 +19,11 @@
   "blockquote": "引文-仿宋語錄",
   "paragraph": "內文-明體直排"
  },
+ "md_inline_mapping": {
+  "strong": "內文強調-明體W9",
+  "em": "內文強調-明體W9"
+ },
+ "md_inline_mapping_note": "行內強調對映字元樣式（run 模型）；em v1 同映強調（原書無斜體慣例）",
  "paragraph_styles": {
   "內文-明體直排": {
    "font_family": "思源宋體 TC",

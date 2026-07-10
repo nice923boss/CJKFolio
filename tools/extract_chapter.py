@@ -14,6 +14,7 @@
 """
 import argparse
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 
@@ -38,7 +39,7 @@ DECOR_FONTS = {"PepitaMT", "GillSans-Light", "HanziPenTC-W5", "ChenYuluoyan-Thin
 MD_LEVELS = [(20.0, "# "), (14.5, "## "), (0.0, "### ")]
 
 
-def page_chars(page) -> list:
+def page_chars(page, ctrl_dropped: list) -> list:
     chars = []
     for block in page.get_text("rawdict")["blocks"]:
         if block.get("type") != 0:
@@ -50,6 +51,9 @@ def page_chars(page) -> list:
                 for ch in span["chars"]:
                     c = ch["c"]
                     if not c.strip():
+                        continue
+                    if unicodedata.category(c) == "Cc":  # 抽取殘留控制字元（如 U+0007）
+                        ctrl_dropped.append(f"U+{ord(c):04X}")
                         continue
                     x0, y0, x1, _ = ch["bbox"]
                     chars.append(
@@ -73,10 +77,12 @@ def cluster_columns(chars: list) -> list:
 
 
 def extract(start: int, end: int, fmt: str = "txt"):
-    """回傳 (paragraphs, dropped)。fmt="md" 時標題段帶 #/##/### 前綴、仿宋引文帶 >。"""
+    """回傳 (paragraphs, dropped, ctrl_dropped)。
+    fmt="md" 時標題段帶 #/##/### 前綴、仿宋引文帶 >、W9 強調 span 包 **…**。"""
     doc = fitz.open(PDF)
     paragraphs: list = []
     dropped: list = []
+    ctrl_dropped: list = []
     current: list = []
 
     def close_paragraph() -> None:
@@ -94,7 +100,7 @@ def extract(start: int, end: int, fmt: str = "txt"):
         return ""
 
     for pno in range(start, end + 1):
-        in_band = [c for c in page_chars(doc[pno]) if c["size"] >= BODY_MIN_PT]
+        in_band = [c for c in page_chars(doc[pno], ctrl_dropped) if c["size"] >= BODY_MIN_PT]
         columns = []
         for col in cluster_columns(in_band):
             items = sorted(col["items"], key=lambda c: c["y0"])
@@ -123,9 +129,26 @@ def extract(start: int, end: int, fmt: str = "txt"):
                 close_paragraph()
             if fmt == "md" and not current and _is_fangsong(items):
                 current.append("> ")  # 仿宋引文欄 → blockquote（段起始）
-            current.extend(c["c"] for c in items)
+            current.extend(_body_chars(items, fmt))
     close_paragraph()
-    return paragraphs, dropped
+    return paragraphs, dropped, ctrl_dropped
+
+
+def _body_chars(items, fmt: str) -> list:
+    """body 欄字元序列；fmt=md 時把明體 W9 強調 span 包成 **…**（欄內閉合，跨欄各自成對）。"""
+    if fmt != "md":
+        return [c["c"] for c in items]
+    out: list = []
+    strong_open = False
+    for c in items:
+        strong = "MingStd-W9" in c.get("font", "")
+        if strong != strong_open:
+            out.append("**")
+            strong_open = strong
+        out.append(c["c"])
+    if strong_open:
+        out.append("**")
+    return out
 
 
 def _is_fangsong(items) -> bool:
@@ -141,7 +164,7 @@ def main() -> None:
     parser.add_argument("--format", choices=("txt", "md"), default="txt")
     args = parser.parse_args()
 
-    paragraphs, dropped = extract(args.start, args.end, fmt=args.format)
+    paragraphs, dropped, ctrl_dropped = extract(args.start, args.end, fmt=args.format)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n\n".join(paragraphs) + "\n", encoding="utf-8")
@@ -151,6 +174,8 @@ def main() -> None:
     print(f"非正文流字型固定排除（設計行為）：{sorted(DECOR_FONTS)}")
     if dropped:
         print(f"剔除標題帶碎欄 {len(dropped)} 筆（不沉默）：{dropped}")
+    if ctrl_dropped:
+        print(f"剔除控制字元 {len(ctrl_dropped)} 筆（不沉默）：{Counter(ctrl_dropped)}")
     print("各段（首 6 字＋字數，供人工核對）：")
     for i, p in enumerate(paragraphs, 1):
         print(f"  段 {i:>2}（{len(p):>4} 字）：{p[:6]}…")

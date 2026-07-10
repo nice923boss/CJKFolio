@@ -12,6 +12,7 @@ from cjkfolio.document import (
     document_to_dict,
     load_document,
     save_document,
+    unknown_char_style_refs,
     unknown_style_refs,
 )
 from cjkfolio.styles import load_template
@@ -70,3 +71,59 @@ def test_unknown_style_refs_against_template():
     doc = document_from_dict(d)
     template = load_template(TEMPLATE)
     assert unknown_style_refs(doc, template) == ["不存在的樣式"]
+
+
+# ---------- document@2：段內 run ----------
+
+def test_document_v2_runs_load_and_text_property():
+    d = valid_dict()
+    d["paragraphs"] = [{
+        "style": "內文-明體直排",
+        "runs": [
+            {"text": "前段"},
+            {"text": "重點", "char_style": "內文強調-明體W9"},
+            {"text": "後段。"},
+        ],
+    }]
+    p = document_from_dict(d).paragraphs[0]
+    assert p.text == "前段重點後段。"
+    assert [r.char_style for r in p.runs] == [None, "內文強調-明體W9", None]
+
+
+def test_document_v2_runs_round_trip(tmp_path):
+    d = valid_dict()
+    d["paragraphs"].append({
+        "style": "內文-明體直排",
+        "runs": [{"text": "甲"}, {"text": "乙", "char_style": "內文強調-明體W9"}],
+    })
+    doc = document_from_dict(d)
+    path = tmp_path / "doc.json"
+    save_document(doc, path)
+    assert load_document(path) == doc
+
+
+def test_document_v1_still_loads_and_v1_rejects_runs():
+    d = valid_dict()
+    d["schema"] = "cjkfolio/document@1"
+    assert document_from_dict(d).paragraphs[0].text == "第一段自擬文字。"
+    d["paragraphs"][0] = {"style": "內文-明體直排", "runs": [{"text": "字"}]}
+    with pytest.raises(DocumentError, match="document@2"):
+        document_from_dict(d)
+
+
+def test_document_v2_rejects_bad_run():
+    d = valid_dict()
+    d["paragraphs"][0] = {"style": "內文-明體直排", "runs": [{"char_style": "無文字"}]}
+    with pytest.raises(DocumentError, match="0"):
+        document_from_dict(d)
+
+
+def test_unknown_char_style_refs_against_template():
+    d = valid_dict()
+    d["paragraphs"].append({
+        "style": "內文-明體直排",
+        "runs": [{"text": "字", "char_style": "不存在的字元樣式"}],
+    })
+    doc = document_from_dict(d)
+    template = load_template(TEMPLATE)
+    assert unknown_char_style_refs(doc, template) == ["不存在的字元樣式"]

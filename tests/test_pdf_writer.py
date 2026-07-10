@@ -34,7 +34,7 @@ def template():
 
 def make_doc(paragraphs):
     return document_from_dict({
-        "schema": "cjkfolio/document@1",
+        "schema": "cjkfolio/document@2",
         "meta": {"title": "自擬樣張", "template": "neizai-zhengli", "master": "A-內文版"},
         "paragraphs": paragraphs,
     })
@@ -168,6 +168,21 @@ def test_export_rejects_horizontal_style(template, tmp_path):
     doc = make_doc([{"text": "橫排未支援", "style": "版權頁-CIP橫排"}])
     with pytest.raises(ValueError, match="vertical-rl"):
         export_pdf(doc, template, tmp_path / "h.pdf")
+
+
+@needs_fonts
+def test_export_char_style_run_embeds_style_font(template, tmp_path):
+    doc = make_doc([{
+        "style": "內文-明體直排",
+        "runs": [{"text": "平文與"}, {"text": "重點強調", "char_style": "內文強調-明體W9"}],
+    }])
+    out = tmp_path / "run.pdf"
+    result = export_pdf(doc, template, out, footer=False)
+    bases = {e["base"].split("+", 1)[1] for e in result.embedded_fonts}
+    assert {"SourceHanSerifTC-Regular", "SourceHanSerifTC-Heavy"} <= bases
+    extracted = fitz.open(str(out))[0].get_text()
+    for ch in "平文與重點強調":
+        assert ch in extracted
 
 
 @needs_fonts

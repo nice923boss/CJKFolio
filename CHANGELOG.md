@@ -2,6 +2,26 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.4.0（2026-07-11，Sprint 9）字元樣式 run 模型＋md 行內強調
+
+### 新增
+
+- [實作] document@2：段內 run（text＋char_style），Paragraph 正規化不變式（text＝runs 串接）；@1 相容照載、@1 帶 runs 明確拒絕；save 一律寫 @2。
+- [實作] 引擎與雙後端 run 支援：Cell 帶字元樣式、PNG／PDF per-cell 覆寫字型與級數（字槽網格仍依段落樣式）、layout 與 CLI 對未知字元樣式快速失敗。
+- [實作] md 行內強調：**strong**／*em* 對映模版 md_inline_mapping（v1 皆映內文強調-明體W9）；相鄰同樣式合併、未閉合保留字面。
+- [實作] 抽取工具：body 欄明體 W9 強調 span 標 **…**；控制字元（Cc）源頭剔除並列計數。
+- 測試 83 → 96（+13）。
+
+### 已知限制（詳 GAPS.md）
+
+- md 行內標記 v1 不支援嵌套；em 與 strong 同映強調樣式（原書無斜體慣例）。
+- 發言人標籤自動指派（訪談章黑體標籤）屬 Phase 3 AI 指派範圍。
+- X-1a 收尾（#15）、鏡像依書頁號（#16）、PNG 缺字警告（#17）未動。
+
+### 待 Owner 真實素材驗收
+
+- out/chapter1-md/（本機，重生成）：強調頁（書頁 25）page-006.png 與 pdf-render-strong.png，真書整句強調＋對談發言標籤以宋 Heavy 呈現，已 AI 目檢雙後端一致，待 Owner 過目。
+
 ## v0.3.0（2026-07-11，Sprint 8）PDF 寫出層第一片
 
 ### 新增

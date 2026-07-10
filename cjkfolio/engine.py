@@ -38,6 +38,7 @@ class Cell:
     text: str
     kind: str  # "cjk" | "tcy" | "latin" | "space"
     width: int = 1  # 佔用的直排字槽數
+    char_style: Optional[str] = None  # 字元樣式名（run 模型；None＝依段落樣式）
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class ParagraphSpec:
     gap_after: int = 1  # 段後空槽（最後一段不留）
     chars_per_line: Optional[int] = None  # None → 用頁面預設
     line_slots: int = 1  # 每行佔的行槽數（特大級數標題 > 1）
+    runs: Optional[tuple] = None  # ((text, char_style|None), ...)；None → 全段無字元樣式
 
 
 @dataclass(frozen=True)
@@ -73,34 +75,45 @@ def normalize(text: str) -> str:
     )
 
 
-def _flush_ascii(run: str, out: list) -> None:
+def _flush_ascii(run: str, out: list, char_style=None) -> None:
     if not run:
         return
     if run.isdigit() and len(run) <= 2:
-        out.append(Cell(run, "tcy", 1))
+        out.append(Cell(run, "tcy", 1, char_style))
     else:
-        out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5))))
+        out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5)), char_style))
 
 
-def tokenize(text: str) -> list:
+def tokenize(text: str, char_style=None) -> list:
     cells: list = []
     run = ""
     for ch in text:
         if ch.isascii() and ch.isalnum():
             run += ch
             continue
-        _flush_ascii(run, cells)
+        _flush_ascii(run, cells, char_style)
         run = ""
         if ch in (" ", "　"):
-            cells.append(Cell(ch, "space", 1))
+            cells.append(Cell(ch, "space", 1, char_style))
         else:
-            cells.append(Cell(ch, "cjk", 1))
-    _flush_ascii(run, cells)
+            cells.append(Cell(ch, "cjk", 1, char_style))
+    _flush_ascii(run, cells, char_style)
+    return cells
+
+
+def cells_from_runs(runs) -> list:
+    """run 序列 → cells（各 run 內部正規化＋標注字元樣式；拉丁串不跨 run 合併）。"""
+    cells: list = []
+    for text, char_style in runs:
+        cells.extend(tokenize(normalize(text), char_style))
     return cells
 
 
 def break_paragraph(text: str, chars_per_line: int, indent: int = 2) -> list:
-    cells = tokenize(normalize(text))
+    return _break_cells(tokenize(normalize(text)), chars_per_line, indent)
+
+
+def _break_cells(cells: list, chars_per_line: int, indent: int = 2) -> list:
     lines: list = []
     idx = 0
     start = indent
@@ -172,7 +185,8 @@ def flow_pages(
     for pi, spec in enumerate(specs):
         indent = 0 if (pi == 0 and first_para_continues) else spec.indent
         cap = spec.chars_per_line if spec.chars_per_line else chars_per_line
-        for line in break_paragraph(spec.text, cap, indent=indent):
+        cells = cells_from_runs(spec.runs) if spec.runs else tokenize(normalize(spec.text))
+        for line in _break_cells(cells, cap, indent=indent):
             emit(line, spec.style, spec.line_slots)
         if pi < len(specs) - 1:
             slot += spec.gap_after

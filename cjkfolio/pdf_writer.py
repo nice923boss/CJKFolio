@@ -353,15 +353,21 @@ class _PdfPageWriter:
             slot_i = placed.line.start_slot
             for cell in placed.line.cells:
                 cell_top = top_pt + slot_i * advance
+                if cell.char_style:  # run 覆寫字型與級數；字槽網格仍依段落樣式
+                    cstyle = template.character_styles[cell.char_style]
+                    use_key, use_shaper = self._shaper_for(cstyle)
+                    use_size = cstyle.size_pt
+                else:
+                    use_key, use_shaper, use_size = key, shaper, style.size_pt
                 if cell.kind == "cjk":
-                    pls = ttb_char_placements(shaper, cell.text, axis, cell_top, style.size_pt)
+                    pls = ttb_char_placements(use_shaper, cell.text, axis, cell_top, use_size)
                 elif cell.kind == "tcy":
-                    pls = tcy_placements(shaper, cell.text, axis, cell_top, style.size_pt, advance)
+                    pls = tcy_placements(use_shaper, cell.text, axis, cell_top, use_size, advance)
                 elif cell.kind == "latin":
-                    pls = rotated_latin_placements(shaper, cell.text, axis, cell_top, style.size_pt)
+                    pls = rotated_latin_placements(use_shaper, cell.text, axis, cell_top, use_size)
                 else:
                     pls = []
-                self._emit(content, key, pls)
+                self._emit(content, use_key, pls)
                 slot_i += cell.width
         if footer_texts:
             self._footer(content, page, footer_texts)

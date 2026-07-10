@@ -30,7 +30,7 @@ def template():
 
 def make_doc(paragraphs):
     return document_from_dict({
-        "schema": "cjkfolio/document@1",
+        "schema": "cjkfolio/document@2",
         "meta": {"title": "自擬樣張", "template": "neizai-zhengli", "master": "A-內文版"},
         "paragraphs": paragraphs,
     })
@@ -80,6 +80,15 @@ def test_layout_title_style_uses_own_capacity_and_indent(template):
 def test_layout_unknown_style_raises(template):
     doc = make_doc([{"text": "壞段", "style": "不存在的樣式"}])
     with pytest.raises(KeyError, match="不存在的樣式"):
+        layout_document(doc, template)
+
+
+def test_layout_unknown_char_style_raises(template):
+    doc = make_doc([{
+        "style": "內文-明體直排",
+        "runs": [{"text": "字", "char_style": "不存在的字元樣式"}],
+    }])
+    with pytest.raises(KeyError, match="不存在的字元樣式"):
         layout_document(doc, template)
 
 
@@ -134,6 +143,18 @@ def test_render_multipage_and_style_fonts(template, tmp_path):
     used = {Path(f).name for f in result.fonts_used}
     assert "SourceHanSerifTC-Regular.otf" in used
     assert "SourceHanSerifTC-Heavy.otf" in used  # 章名 W7→Heavy（字重 fallback）
+
+
+@needs_fonts
+def test_render_char_style_run_switches_font(template, tmp_path):
+    doc = make_doc([{
+        "style": "內文-明體直排",
+        "runs": [{"text": "平文與"}, {"text": "重點", "char_style": "內文強調-明體W9"}],
+    }])
+    result = render_document(doc, template, tmp_path, dpi=150, footer=False)
+    used = {Path(f).name for f in result.fonts_used}
+    assert "SourceHanSerifTC-Regular.otf" in used
+    assert "SourceHanSerifTC-Heavy.otf" in used  # 強調 run 用 W9→Heavy
 
 
 # ---------- 頁腳三件組（主版層） ----------

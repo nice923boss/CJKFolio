@@ -73,3 +73,36 @@ def test_unmapped_heading_level_falls_back_to_paragraph():
 def test_mapping_requires_paragraph_key():
     with pytest.raises(ValueError, match="paragraph"):
         import_markdown("字", mapping={})
+
+
+# ---------- 行內強調（run 模型） ----------
+
+def test_inline_strong_maps_char_style(template):
+    doc = import_markdown(
+        "前**重點**後。",
+        mapping=template.md_mapping,
+        inline_mapping=template.md_inline_mapping,
+    )
+    p = doc.paragraphs[0]
+    assert p.text == "前重點後。"
+    assert [(r.text, r.char_style) for r in p.runs] == [
+        ("前", None), ("重點", "內文強調-明體W9"), ("後。", None),
+    ]
+
+
+def test_inline_em_and_unclosed_literal(template):
+    doc = import_markdown(
+        "斜*體*與**未閉合",
+        mapping=template.md_mapping,
+        inline_mapping=template.md_inline_mapping,
+    )
+    p = doc.paragraphs[0]
+    assert p.text == "斜體與**未閉合"  # 未閉合標記保留字面
+    assert p.runs[1].char_style == "內文強調-明體W9"  # em v1 同映強調
+
+
+def test_inline_without_mapping_strips_markers():
+    doc = import_markdown("看**重點**了", mapping={"paragraph": "內文"})
+    p = doc.paragraphs[0]
+    assert p.text == "看重點了"
+    assert all(r.char_style is None for r in p.runs)

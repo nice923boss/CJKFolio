@@ -23,6 +23,25 @@ def test_normalize_vertical_presentation_forms():
     assert normalize("句讀﹐﹒") == "句讀，．"
 
 
+def test_tokenize_tags_char_style():
+    cells = tokenize("重點2026", char_style="強調")
+    assert all(c.char_style == "強調" for c in cells)
+    assert tokenize("平文")[0].char_style is None
+
+
+def test_flow_runs_carry_char_style_and_kinsoku():
+    spec = ParagraphSpec(
+        text="前段重點，後段。",
+        runs=(("前段", None), ("重點，", "強調"), ("後段。", None)),
+        indent=0, gap_after=0,
+    )
+    pages = flow_pages([spec], chars_per_line=8, slots_per_page=13)
+    lines = [pl.line for pl in pages[0]]
+    styles = [c.char_style for line in lines for c in line.cells]
+    assert styles == [None, None, "強調", "強調", "強調", None, None, None]
+    assert check_kinsoku(lines) == []
+
+
 def test_normalize_strips_control_chars():
     # PDF 抽取素材殘留的控制字元（如 U+0007）不得進排版流
     assert normalize("發言\x07內容") == "發言內容"

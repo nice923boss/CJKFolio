@@ -9,6 +9,7 @@
 > 修訂：2026-07-10 Sprint 6：Phase 1 開工第一片落地（文件模型、三層樣式讀取、《內在整理》起始模版、txt 匯入、思源宋體 TC 單頁 PNG 渲染，詳 devlog/2026-07-10-sprint6-phase1-pipeline.md）；§4.2 依全書掃描修正章名／部扉大標字重。
 > 修訂：2026-07-11 Sprint 7：md 匯入（結構直接對映樣式）、主版頁腳書眉、字型組入庫（黑體／辰宇／粉圓），第一章樣式化實排（詳 devlog/2026-07-11-sprint7-md-footer-fonts.md）。
 > 修訂：2026-07-11 Sprint 8：PDF 寫出層第一片（自寫 PDF 1.4：§9 盒框＋單 K92 文字＋六款字型子集嵌入＋R2L），第一章 23 頁全章與單頁完稿 pdffonts 全綠（詳 devlog/2026-07-11-sprint8-pdf-writer.md）。
+> 修訂：2026-07-11 Sprint 9：字元樣式 run 模型（document@2）＋md 行內強調＋抽取工具 W9 強調標記，真書強調句雙後端實排（詳 devlog/2026-07-11-sprint9-run-model.md）。
 
 ---
 
@@ -279,6 +280,7 @@ CJKFolio/
 - **進度（2026-07-10 Sprint 6）**：第一片完成 [實作]：文件模型（cjkfolio/document@1）、三層樣式讀取（template@1：15 段落樣式＋9 字元樣式＋7 主版）、起始模版（templates/neizai-zhengli.json）、txt 匯入、樣式驅動直排引擎（自 Spike 1 產品化，ParagraphSpec 承載每段幾何）、單頁 A5 PNG 渲染（思源宋體 TC，GAPS #3 關閉；奇偶頁鏡像版心）、CLI（import-txt／render）。新增測試 46 項（合計 61）。本機真實素材驗收：第一章（PDF 頁 19〜34）79 段 5,408 字 → 23 頁、禁則 0 違規，page-001/002 目檢通過。
 - **進度（2026-07-11 Sprint 7）**：md 匯入 [實作]（block 級：標題層級／引文／清單直接對映樣式，模版帶 md_mapping，§4.4 修正 1 落地）、主版頁腳 [實作]（頁碼全頁＋書名書眉奇數頁，foot_elements 實測座標、奇偶鏡像；左頁章節副標與 Case 編號待章節結構）、字型組入庫（思源黑體 TC Medium/Bold、辰宇落雁體、jf open 粉圓，皆驗 vert；GAPS #12 縮至全字庫兩款）。測試 61→74。真實素材驗收：第一章 md 樣式化實排 4 種樣式同頁（章名 Heavy／個案大標黑 Medium／小標黑 Bold／內文宋 Regular）＋頁腳，23 頁禁則 0 違規，page-001/002 目檢通過。**未完**：字元樣式 run（行內強調）、齊行與約物擠壓（GAPS #9）、橫排、題詞／引文字型（GAPS #12）、PDF/X 寫出層。
 - **進度（2026-07-11 Sprint 8）**：PDF 寫出層第一片 [實作]：自寫 PDF 1.4 寫出層（cjkfolio/pdf_writer）＋共用字形佈局層（cjkfolio/placement，與 PNG 同一套 pen 數學）。盒框依 §9（MediaBox 154×216mm、TrimBox 148×210 置中、BleedBox＝MediaBox）、文字 DeviceCMYK 單 K92、Catalog /Direction /R2L、逐字顯式 Tm（禁則與斷行在排版層烘焙）。字型子集嵌入：CFF 原 CID＋charset（探針實證思源 CID==GID，較 retain_gids 小 30 倍）、TTF retain_gids＋CIDToGIDMap Identity，皆帶 ToUnicode＋CIDSet；CLI 新增 export-pdf（--page 單頁完稿）。順手修正：engine.normalize 剝除控制字元（真章素材 U+0007 實測缺陷）、缺字警告不沉默。測試 74→83。真實素材驗收：第一章 md 23 頁全章＋單頁 PDF，pdffonts 六款全綠（emb/sub/uni yes、無 Type3）、PyMuPDF 獨立渲染 page 1/2 目檢通過、禁則 0 違規。**未完**：OutputIntent／XMP 識別／preflight 全綠（GAPS #15）、鏡像依書頁號（#16）、PNG 缺字警告（#17）。
+- **進度（2026-07-11 Sprint 9）**：字元樣式 run 模型 [實作]：document@2（Run＋Paragraph 正規化不變式，@1 相容照載、@1 帶 runs 明確拒絕）、Cell 帶字元樣式、雙後端 per-cell 覆寫（字型＋級數；字槽網格仍依段落樣式）、layout 未知字元樣式快速失敗。md 行內強調 [實作]：**strong**／*em* → 模版 md_inline_mapping（v1 皆映內文強調-明體W9；不嵌套、未閉合保留字面）。抽取工具 [實作]：body 欄 DFMingStd-W9 span 標 **…**、控制字元（Cc）源頭剔除列報。測試 83→96。真實素材驗收：重抽第一章（強調 8 對：整句強調 1＋對談發言標籤 7，PDF 實測皆明體 W9）→ 雙後端 23 頁重排 0 違規，強調頁（書頁 25）PNG 與 PDF 渲染目檢一致、Heavy 子集 11→26 字形。**未完**：發言人標籤自動指派（訪談章黑體標籤，Phase 3 AI 指派範圍）、md 嵌套標記（v1 設計外）。
 
 ### Phase 2：WYSIWYG 編輯器（12〜16 週）[實作]
 
@@ -385,6 +387,9 @@ CJKFolio/
 | 2026-07-11（Sprint 8） | PDF 寫出層 v1 形態定案：自寫 PDF 1.4 寫出層（不依賴外部 PDF 函式庫）；盒框依 §9；文字 DeviceCMYK 單 K92（§9 K90〜92 區間取 92）；Catalog /ViewerPreferences /Direction /R2L；逐字顯式 Tm 定位，幾何與 PNG 渲染同源（placement 層） | Sprint 8 探針＋PyMuPDF/pdffonts 獨立驗證（A 級） |
 | 2026-07-11（Sprint 8） | 字型子集嵌入形態：CFF（思源，CID-keyed）不保留 GID、內容流用原 CID 走 charset 對映（探針實證思源 CID==GID、體積較 retain_gids 小 30 倍）；TTF（辰宇／粉圓）retain_gids＋CIDToGIDMap /Identity；皆帶 ToUnicode 與 CIDSet（X-1a 對子集 CID 字型要求） | 探針 A/B 兩形態實測比較 |
 | 2026-07-11（Sprint 8） | engine.normalize 剝除控制字元（Unicode Cc 類）；缺字（gid 0）PDF 端警告不沉默、仍以 .notdef 輸出 | 真章 md 素材殘留 U+0007 的實測缺陷與修正 |
+| 2026-07-11（Sprint 9） | document@2 定案：Paragraph 正規化不變式（text＝runs 串接）、@1 相容照載、@1 帶 runs 拒絕、save 一律寫 @2（單純段用 text 捷徑） | 模型演進與相容策略 |
+| 2026-07-11（Sprint 9） | run 覆寫字型與級數，但字槽網格一律依段落樣式（InDesign 慣例：行內樣式不改網格）；md 行內 strong 與 em v1 皆映「內文強調-明體W9」（原書無斜體慣例）；v1 不支援嵌套標記 | 真書強調實排＋排版慣例 |
+| 2026-07-11（Sprint 9） | 抽取工具 md 模式把 body 欄 DFMingStd-W9 span 標 **…**（欄內閉合）；控制字元（Cc）於抽取層剔除並列計數 | 第一章實測：整句強調＋對談發言標籤皆 W9（A 級） |
 
 ## 11. 證據附錄（關鍵引用）
 

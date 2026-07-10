@@ -195,12 +195,17 @@ class PageRenderer:
             slot_i = placed.line.start_slot
             for cell in placed.line.cells:
                 cell_top = top_pt + slot_i * advance
+                if cell.char_style:  # run 覆寫字型與級數；字槽網格仍依段落樣式
+                    cstyle = template.character_styles[cell.char_style]
+                    use_shaper, use_size = self._shaper_for(cstyle), cstyle.size_pt
+                else:
+                    use_shaper, use_size = shaper, style.size_pt
                 if cell.kind == "cjk":
-                    _draw_ttb_char(img, shaper, cell.text, axis, cell_top, style.size_pt, self.scale)
+                    _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
                 elif cell.kind == "tcy":
-                    _draw_tcy(img, shaper, cell.text, axis, cell_top, style.size_pt, advance, self.scale)
+                    _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, advance, self.scale)
                 elif cell.kind == "latin":
-                    _draw_rotated_latin(img, shaper, cell.text, axis, cell_top, style.size_pt, self.scale)
+                    _draw_rotated_latin(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
                 slot_i += cell.width  # space 留白即可
         if footer_texts:
             self._draw_footer(img, page, footer_texts)

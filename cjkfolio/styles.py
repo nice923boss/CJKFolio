@@ -87,6 +87,7 @@ class Template:
     character_styles: dict = field(default_factory=dict)
     masters: dict = field(default_factory=dict)
     md_mapping: dict = field(default_factory=dict)  # md block kind → 段落樣式名
+    md_inline_mapping: dict = field(default_factory=dict)  # md 行內 kind（strong/em）→ 字元樣式名
 
 
 def _require(data: dict, key: str, context: str):
@@ -184,6 +185,7 @@ def template_from_dict(data) -> Template:
         },
         masters={name: _master(name, d) for name, d in data["masters"].items()},
         md_mapping=dict(data.get("md_mapping", {})),
+        md_inline_mapping=dict(data.get("md_inline_mapping", {})),
     )
 
 

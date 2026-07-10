@@ -1,14 +1,39 @@
 """Markdown 匯入（PLAN §4.4 設計修正 1）：標題層級由結構直接對映樣式，不經 AI。
 
-v1 支援 block 級：#〜###### 標題、> 引文、清單項（各自成段）、空行段落。
-行內強調（**粗體**）需字元樣式 run 模型，於後續 Sprint 進場，v1 保留原字面。
+block 級：#〜###### 標題、> 引文、清單項（各自成段）、空行段落。
+行內：**強調** 與 *強調* 對映字元樣式 run（模版 md_inline_mapping 的
+strong／em 鍵；未對映仍剝除標記、不掛樣式）。v1 不支援嵌套標記，
+未閉合標記保留原字面。
 """
 import re
 
-from .document import Document, Paragraph
+from .document import Document, Paragraph, Run
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _LIST_RE = re.compile(r"^[-*+]\s+(.*)$")
+_INLINE_RE = re.compile(r"(\*\*[^*\n]+\*\*|\*[^*\n]+\*)")
+
+
+def inline_runs(text: str, inline_mapping: dict) -> tuple:
+    """行內標記 → Run 序列；相鄰同樣式片段合併。"""
+    runs: list = []
+
+    def push(t: str, style) -> None:
+        if not t:
+            return
+        if runs and runs[-1].char_style == style:
+            runs[-1] = Run(runs[-1].text + t, style)
+        else:
+            runs.append(Run(t, style))
+
+    for piece in _INLINE_RE.split(text):
+        if piece.startswith("**") and piece.endswith("**") and len(piece) > 4:
+            push(piece[2:-2], inline_mapping.get("strong"))
+        elif piece.startswith("*") and piece.endswith("*") and len(piece) > 2:
+            push(piece[1:-1], inline_mapping.get("em"))
+        else:
+            push(piece, None)
+    return tuple(runs) if runs else (Run(""),)
 
 
 def blocks_from_markdown(text: str) -> list:
@@ -60,16 +85,19 @@ def blocks_from_markdown(text: str) -> list:
 def import_markdown(
     text: str,
     mapping: dict,
+    inline_mapping: dict = None,
     title: str = "",
     template_id: str = "neizai-zhengli",
     master: str = "A-內文版",
 ) -> Document:
-    """mapping：模版的 md_mapping（kind → 段落樣式名）；缺層級退回 paragraph 樣式。"""
+    """mapping：模版 md_mapping（kind → 段落樣式名），缺層級退回 paragraph 樣式；
+    inline_mapping：模版 md_inline_mapping（strong／em → 字元樣式名）。"""
     if "paragraph" not in mapping:
         raise ValueError("md_mapping 需含 paragraph 對映（預設內文樣式）")
     default = mapping["paragraph"]
+    inline = inline_mapping or {}
     paragraphs = tuple(
-        Paragraph(text=t, style=mapping.get(kind, default))
+        Paragraph(style=mapping.get(kind, default), runs=inline_runs(t, inline))
         for kind, t in blocks_from_markdown(text)
     )
     return Document(
