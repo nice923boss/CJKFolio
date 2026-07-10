@@ -1,7 +1,7 @@
 # 開源 CJK 直排書冊排版編輯器 PLAN
 
 > 一套對標 InDesign、讓創作者免月費也能做出版級直排書冊的開源編輯器。
-> 以出版社印製的《內在整理》（148×210mm A5 直排、CMYK、PDF/X）為品質驗收標竿。
+> 以出版社印製的《內在整理》（148×210mm A5 直排、CMYK；2026-07-11 實測交印檔無 PDF/X 識別，見 §1）為品質驗收標竿。
 >
 > 規劃日期：2026-06-16　規劃紀律：證據先行、不浮誇、實作與空殼分清、未驗證項明確標示。
 > 修訂：2026-07-10 執行層補強（Phase 0 執行細則、spike 語言與依賴、素材版權紅線、驗收檢核清單）；同日擴充內容匯入與 AI 輔助樣式指派（§4.4、Spike 5，PoC 8/8 已驗證）。
@@ -10,6 +10,7 @@
 > 修訂：2026-07-11 Sprint 7：md 匯入（結構直接對映樣式）、主版頁腳書眉、字型組入庫（黑體／辰宇／粉圓），第一章樣式化實排（詳 devlog/2026-07-11-sprint7-md-footer-fonts.md）。
 > 修訂：2026-07-11 Sprint 8：PDF 寫出層第一片（自寫 PDF 1.4：§9 盒框＋單 K92 文字＋六款字型子集嵌入＋R2L），第一章 23 頁全章與單頁完稿 pdffonts 全綠（詳 devlog/2026-07-11-sprint8-pdf-writer.md）。
 > 修訂：2026-07-11 Sprint 9：字元樣式 run 模型（document@2）＋md 行內強調＋抽取工具 W9 強調標記，真書強調句雙後端實排（詳 devlog/2026-07-11-sprint9-run-model.md）。
+> 修訂：2026-07-11 Sprint 10：PDF/X-1a:2001 識別（OutputIntent／XMP／GTS 鍵／Trapped／header 1.3）＋自寫機械 preflight（veraPDF 不支援 PDF/X，實查）；實測參考書交印檔非 PDF/X，§0 與 §1 描述修正（詳 devlog/2026-07-11-sprint10-pdfx1a.md）。
 
 ---
 
@@ -34,6 +35,7 @@
 | 項目 | 量測結果 |
 | --- | --- |
 | 製作軟體 | Adobe InDesign 21.2（Windows）→ Adobe PDF Library 18.0，PDF 1.4 |
+| PDF/X 識別 | **無**（2026-07-11 Sprint 10 實測：Info 無 GTS 鍵、無 OutputIntents、含 SMask 透明、TrimBox 與 ArtBox 並存；交印為一般 PDF 1.4。產品仍依 §9 預設輸出 X-1a:2001） |
 | 開本 | 148×210mm（A5 直式右翻書），179 頁 |
 | PDF 呈現 | 177 頁為 296×210mm 跨頁對開（148×2），僅首末 2 頁單頁 |
 | 書寫方向 | **直排（縱書 vertical-rl），右至左頁序與欄序** |
@@ -281,6 +283,7 @@ CJKFolio/
 - **進度（2026-07-11 Sprint 7）**：md 匯入 [實作]（block 級：標題層級／引文／清單直接對映樣式，模版帶 md_mapping，§4.4 修正 1 落地）、主版頁腳 [實作]（頁碼全頁＋書名書眉奇數頁，foot_elements 實測座標、奇偶鏡像；左頁章節副標與 Case 編號待章節結構）、字型組入庫（思源黑體 TC Medium/Bold、辰宇落雁體、jf open 粉圓，皆驗 vert；GAPS #12 縮至全字庫兩款）。測試 61→74。真實素材驗收：第一章 md 樣式化實排 4 種樣式同頁（章名 Heavy／個案大標黑 Medium／小標黑 Bold／內文宋 Regular）＋頁腳，23 頁禁則 0 違規，page-001/002 目檢通過。**未完**：字元樣式 run（行內強調）、齊行與約物擠壓（GAPS #9）、橫排、題詞／引文字型（GAPS #12）、PDF/X 寫出層。
 - **進度（2026-07-11 Sprint 8）**：PDF 寫出層第一片 [實作]：自寫 PDF 1.4 寫出層（cjkfolio/pdf_writer）＋共用字形佈局層（cjkfolio/placement，與 PNG 同一套 pen 數學）。盒框依 §9（MediaBox 154×216mm、TrimBox 148×210 置中、BleedBox＝MediaBox）、文字 DeviceCMYK 單 K92、Catalog /Direction /R2L、逐字顯式 Tm（禁則與斷行在排版層烘焙）。字型子集嵌入：CFF 原 CID＋charset（探針實證思源 CID==GID，較 retain_gids 小 30 倍）、TTF retain_gids＋CIDToGIDMap Identity，皆帶 ToUnicode＋CIDSet；CLI 新增 export-pdf（--page 單頁完稿）。順手修正：engine.normalize 剝除控制字元（真章素材 U+0007 實測缺陷）、缺字警告不沉默。測試 74→83。真實素材驗收：第一章 md 23 頁全章＋單頁 PDF，pdffonts 六款全綠（emb/sub/uni yes、無 Type3）、PyMuPDF 獨立渲染 page 1/2 目檢通過、禁則 0 違規。**未完**：OutputIntent／XMP 識別／preflight 全綠（GAPS #15）、鏡像依書頁號（#16）、PNG 缺字警告（#17）。
 - **進度（2026-07-11 Sprint 9）**：字元樣式 run 模型 [實作]：document@2（Run＋Paragraph 正規化不變式，@1 相容照載、@1 帶 runs 明確拒絕）、Cell 帶字元樣式、雙後端 per-cell 覆寫（字型＋級數；字槽網格仍依段落樣式）、layout 未知字元樣式快速失敗。md 行內強調 [實作]：**strong**／*em* → 模版 md_inline_mapping（v1 皆映內文強調-明體W9；不嵌套、未閉合保留字面）。抽取工具 [實作]：body 欄 DFMingStd-W9 span 標 **…**、控制字元（Cc）源頭剔除列報。測試 83→96。真實素材驗收：重抽第一章（強調 8 對：整句強調 1＋對談發言標籤 7，PDF 實測皆明體 W9）→ 雙後端 23 頁重排 0 違規，強調頁（書頁 25）PNG 與 PDF 渲染目檢一致、Heavy 子集 11→26 字形。**未完**：發言人標籤自動指派（訪談章黑體標籤，Phase 3 AI 指派範圍）、md 嵌套標記（v1 設計外）。
+- **進度（2026-07-11 Sprint 10）**：PDF/X-1a:2001 識別 [實作]：header 1.3、Info GTS 兩鍵＋Trapped＋ModDate（Title 必填快速失敗）、OutputIntent（預設 JC200103 registry 識別免嵌 ICC；自訂識別強制嵌 CMYK prtr ICC 並驗 /N 4）、XMP metadata（不壓縮、pdfx＋pdfxid 雙命名空間）。機械 preflight [實作]（cjkfolio/preflight＋CLI preflight）：12 規則 PyMuPDF 獨立解析、未涵蓋項誠實列印、exit 0/1；veraPDF 不支援 PDF/X（實查）故本機 preflight＝自寫檢查器＋pdffonts。CLI export-pdf 加 --output-condition-identifier／--output-condition／--icc。測試 96→107。真實素材驗收：第一章 23 頁全章＋單頁完稿 preflight 12/12 全綠、pdffonts 六款全綠、渲染目檢與 Sprint 9 一致；參考書對照 6/12 未過（實測非 X-1a，§1 修正）。GAPS #15 關閉、新 #18（認證級 preflight）。**未完**：齊行（#9）、鏡像書頁號（#16）、PNG 缺字警告（#17）；Phase 1 DoD 的「印刷廠 preflight 全綠」目前以自寫機械檢查認定，認證級屬 #18。
 
 ### Phase 2：WYSIWYG 編輯器（12〜16 週）[實作]
 
@@ -390,6 +393,9 @@ CJKFolio/
 | 2026-07-11（Sprint 9） | document@2 定案：Paragraph 正規化不變式（text＝runs 串接）、@1 相容照載、@1 帶 runs 拒絕、save 一律寫 @2（單純段用 text 捷徑） | 模型演進與相容策略 |
 | 2026-07-11（Sprint 9） | run 覆寫字型與級數，但字槽網格一律依段落樣式（InDesign 慣例：行內樣式不改網格）；md 行內 strong 與 em v1 皆映「內文強調-明體W9」（原書無斜體慣例）；v1 不支援嵌套標記 | 真書強調實排＋排版慣例 |
 | 2026-07-11（Sprint 9） | 抽取工具 md 模式把 body 欄 DFMingStd-W9 span 標 **…**（欄內閉合）；控制字元（Cc）於抽取層剔除並列計數 | 第一章實測：整句強調＋對談發言標籤皆 W9（A 級） |
+| 2026-07-11（Sprint 10） | X-1a:2001 識別形態定案：header %PDF-1.3；Info GTS_PDFXVersion (PDF/X-1:2001)＋GTS_PDFXConformance (PDF/X-1a:2001)＋Trapped /False＋ModDate 帶時區＋Title 必填；OutputIntent 預設 JC200103（ICC registry 特性化條件，依 ISO 15930-1 免嵌 DestOutputProfile，避開 Adobe ICC 的 EULA 轉嫁義務）；自訂識別強制嵌 CMYK 輸出（prtr）ICC；XMP 不壓縮、pdfx＋pdfxid 雙命名空間 | ISO 15930-1 與 color.org/pdfx.pdf（B 級）＋輸出探針實測（A 級） |
+| 2026-07-11（Sprint 10） | 本機 preflight 工具鏈定案：veraPDF 僅驗 PDF/A／UA、不支援 PDF/X（官方文件實查）→ 自寫機械檢查器（cjkfolio/preflight，12 規則、PyMuPDF 獨立解析、未涵蓋項誠實列印）＋pdffonts；Acrobat／印廠認證級列 GAPS #18 | veraPDF 官方 flavour 清單 |
+| 2026-07-11（Sprint 10） | 參考書交印檔實測非 PDF/X（無 GTS 識別、無 OutputIntent、含 SMask 透明、TrimBox 與 ArtBox 並存），§0 與 §1 描述據實修正；品質標竿與 §9 硬條件不變 | 探針一手實測（A 級） |
 
 ## 11. 證據附錄（關鍵引用）
 

@@ -192,3 +192,138 @@ def test_export_missing_glyph_warns_not_crash(template, tmp_path):
     result = export_pdf(doc, template, tmp_path / "m.pdf", footer=False)
     assert result.page_count == 1
     assert any("無字形" in w for w in result.font_warnings), result.font_warnings
+
+
+# ---------- PDF/X-1a:2001 識別（Sprint 10） ----------
+
+def fake_icc(space: bytes = b"CMYK", klass: bytes = b"prtr") -> bytes:
+    """最小可驗 ICC：128 byte header＋tag 數 0；寫出層只驗長度／類別／色彩空間。"""
+    head = bytearray(132)
+    head[0:4] = (132).to_bytes(4, "big")
+    head[12:16] = klass
+    head[16:20] = space
+    return bytes(head)
+
+
+def _info_dict(pdf):
+    trailer = pdf.xref_object(-1, compressed=True)
+    m = re.search(r"/Info\s+(\d+)\s+0\s+R", trailer)
+    assert m, f"trailer 無 /Info：{trailer}"
+    return trailer, pdf.xref_object(int(m.group(1)), compressed=True)
+
+
+def _output_intent(pdf):
+    cat = pdf.xref_object(pdf.pdf_catalog(), compressed=True)
+    m = re.search(r"/OutputIntents\s*\[\s*(\d+)\s+0\s+R\s*\]", cat)
+    assert m, f"Catalog 無 OutputIntents 陣列：{cat}"
+    return cat, pdf.xref_object(int(m.group(1)), compressed=True)
+
+
+@needs_fonts
+def test_export_pdfx_header_info_and_id(template, tmp_path):
+    doc = make_doc([{"text": "識別檢查。", "style": "內文-明體直排"}])
+    out = tmp_path / "x.pdf"
+    export_pdf(doc, template, out, footer=False)
+    assert out.read_bytes().startswith(b"%PDF-1.3"), "X-1a:2001 須為 PDF 1.3"
+
+    pdf = fitz.open(str(out))
+    trailer, info = _info_dict(pdf)
+    assert re.search(r"/ID\s*\[", trailer)
+    assert "/Encrypt" not in trailer
+    assert re.search(r"/Title\s*[<(]", info)
+    assert re.search(r"/CreationDate\s*\(D:\d{14}[+\-Z]", info), "日期須帶時區"
+    assert re.search(r"/ModDate\s*\(D:", info)
+    assert re.search(r"/Trapped\s*/False", info)
+    assert re.search(r"/GTS_PDFXVersion\s*\(PDF/X-1:2001\)", info)
+    assert re.search(r"/GTS_PDFXConformance\s*\(PDF/X-1a:2001\)", info)
+
+
+@needs_fonts
+def test_export_pdfx_output_intent_default_registry(template, tmp_path):
+    doc = make_doc([{"text": "輸出意圖。", "style": "內文-明體直排"}])
+    out = tmp_path / "oi.pdf"
+    result = export_pdf(doc, template, out, footer=False)
+    assert result.output_condition_identifier == "JC200103"
+    assert result.icc_embedded is False
+
+    pdf = fitz.open(str(out))
+    _, oi = _output_intent(pdf)
+    assert re.search(r"/S\s*/GTS_PDFX(?![A-Za-z])", oi)
+    assert re.search(r"/OutputConditionIdentifier\s*\(JC200103\)", oi)
+    assert re.search(r"/RegistryName\s*\(http://www\.color\.org\)", oi)
+    assert re.search(r"/OutputCondition\s*[<(]", oi)
+    assert "/DestOutputProfile" not in oi, "registry 識別預設不嵌 ICC"
+
+
+@needs_fonts
+def test_export_pdfx_xmp_metadata(template, tmp_path):
+    doc = make_doc([{"text": "中繼資料。", "style": "內文-明體直排"}])
+    out = tmp_path / "xmp.pdf"
+    export_pdf(doc, template, out, footer=False)
+    pdf = fitz.open(str(out))
+    cat = pdf.xref_object(pdf.pdf_catalog(), compressed=True)
+    m = re.search(r"/Metadata\s+(\d+)\s+0\s+R", cat)
+    assert m, f"Catalog 無 /Metadata：{cat}"
+    meta_dict = pdf.xref_object(int(m.group(1)), compressed=True)
+    assert "/Filter" not in meta_dict, "XMP metadata stream 不壓縮"
+    xmp = pdf.get_xml_metadata()
+    assert "PDF/X-1:2001" in xmp and "PDF/X-1a:2001" in xmp
+    assert "自擬樣張" in xmp  # dc:title 與 Info 一致
+    assert "GTS_PDFXVersion" in xmp
+    assert ">False<" in xmp  # pdf:Trapped
+
+
+@needs_fonts
+def test_export_pdfx_custom_condition_requires_icc(template, tmp_path):
+    doc = make_doc([{"text": "自訂條件。", "style": "內文-明體直排"}])
+    with pytest.raises(ValueError, match="ICC"):
+        export_pdf(doc, template, tmp_path / "c.pdf", footer=False,
+                   output_condition_identifier="ShopX Custom")
+
+
+@needs_fonts
+def test_export_pdfx_custom_condition_embeds_icc(template, tmp_path):
+    icc_path = tmp_path / "fake.icc"
+    icc_path.write_bytes(fake_icc())
+    doc = make_doc([{"text": "嵌入描述檔。", "style": "內文-明體直排"}])
+    out = tmp_path / "icc.pdf"
+    result = export_pdf(doc, template, out, footer=False,
+                        output_condition_identifier="ShopX Custom",
+                        output_condition="測試條件", icc_profile=icc_path)
+    assert result.icc_embedded is True
+
+    pdf = fitz.open(str(out))
+    _, oi = _output_intent(pdf)
+    assert re.search(r"/OutputConditionIdentifier\s*\(ShopX Custom\)", oi)
+    assert "/RegistryName" not in oi, "自訂識別不得掛 color.org registry"
+    m = re.search(r"/DestOutputProfile\s+(\d+)\s+0\s+R", oi)
+    assert m, f"自訂識別須嵌 DestOutputProfile：{oi}"
+    icc_x = int(m.group(1))
+    assert re.search(r"/N\s*4", pdf.xref_object(icc_x, compressed=True))
+    assert pdf.xref_stream(icc_x) == fake_icc()
+
+
+@needs_fonts
+def test_export_pdfx_icc_rejects_wrong_profile(template, tmp_path):
+    doc = make_doc([{"text": "描述檔驗證。", "style": "內文-明體直排"}])
+    rgb = tmp_path / "rgb.icc"
+    rgb.write_bytes(fake_icc(space=b"RGB "))
+    with pytest.raises(ValueError, match="CMYK"):
+        export_pdf(doc, template, tmp_path / "r.pdf", footer=False,
+                   output_condition_identifier="ShopX", icc_profile=rgb)
+    mntr = tmp_path / "mntr.icc"
+    mntr.write_bytes(fake_icc(klass=b"mntr"))
+    with pytest.raises(ValueError, match="prtr"):
+        export_pdf(doc, template, tmp_path / "m.pdf", footer=False,
+                   output_condition_identifier="ShopX", icc_profile=mntr)
+
+
+@needs_fonts
+def test_export_pdfx_requires_title(template, tmp_path):
+    doc = document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "", "template": "neizai-zhengli", "master": "A-內文版"},
+        "paragraphs": [{"text": "無題測試。", "style": "內文-明體直排"}],
+    })
+    with pytest.raises(ValueError, match="Title"):
+        export_pdf(doc, template, tmp_path / "t.pdf", footer=False)

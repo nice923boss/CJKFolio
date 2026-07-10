@@ -4,6 +4,8 @@
   python -m cjkfolio.cli import-txt 稿.txt -o doc.json --title 書名
   python -m cjkfolio.cli import-md 稿.md -o doc.json --title 書名
   python -m cjkfolio.cli render doc.json -o out/樣張 --dpi 150 --first-page 30
+  python -m cjkfolio.cli export-pdf doc.json -o out/書.pdf
+  python -m cjkfolio.cli preflight out/書.pdf
 """
 import argparse
 import sys
@@ -17,6 +19,7 @@ from .document import (
 )
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
+from .preflight import check_pdfx1a
 from .render import render_document
 from .styles import load_template
 from .txt_import import DEFAULT_BODY_STYLE, import_txt_file
@@ -92,14 +95,29 @@ def cmd_export_pdf(args) -> int:
         doc, template, args.output,
         pages=[args.page] if args.page else None,
         footer=not args.no_footer, first_page=args.first_page,
+        output_condition_identifier=args.output_condition_identifier,
+        output_condition=args.output_condition,
+        icc_profile=args.icc,
     )
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
+    print(f"PDF/X-1a:2001 識別：OutputIntent {result.output_condition_identifier}"
+          + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:
         print(f"字型警告：{warning}")
     for emb in result.embedded_fonts:
         print(f"嵌入字型：{emb['base']}（{emb['glyphs']} 字形，子集 {emb['bytes']:,} bytes）")
     return 0
+
+
+def cmd_preflight(args) -> int:
+    report = check_pdfx1a(args.pdf)
+    for finding in report.findings:
+        print(f"{'通過' if finding.ok else '不過'}｜{finding.rule}：{finding.detail}")
+    print("未涵蓋（誠實聲明）：" + "；".join(report.not_covered))
+    passed = sum(1 for finding in report.findings if finding.ok)
+    print(f"結論：{'全數通過' if report.ok else '未通過'}（{passed}/{len(report.findings)}）")
+    return 0 if report.ok else 1
 
 
 def main(argv=None) -> int:
@@ -137,7 +155,17 @@ def main(argv=None) -> int:
     p_pdf.add_argument("--page", type=int, default=None, help="只匯出此版面頁（1 起算；預設全頁）")
     p_pdf.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳用）")
     p_pdf.add_argument("--no-footer", action="store_true", help="不排頁腳三件組")
+    p_pdf.add_argument("--output-condition-identifier", default="JC200103",
+                       help="OutputIntent 印刷條件識別（ICC registry 名；預設 Japan Color 2001 Coated）")
+    p_pdf.add_argument("--output-condition", default="Japan Color 2001 Coated",
+                       help="印刷條件人讀描述")
+    p_pdf.add_argument("--icc", default=None,
+                       help="嵌入 DestOutputProfile 的 CMYK 輸出 ICC 檔（自訂識別時必填）")
     p_pdf.set_defaults(func=cmd_export_pdf)
+
+    p_pre = sub.add_parser("preflight", help="PDF/X-1a 機械檢查（自寫規則；非 Acrobat 認證級）")
+    p_pre.add_argument("pdf")
+    p_pre.set_defaults(func=cmd_preflight)
 
     args = parser.parse_args(argv)
     return args.func(args)

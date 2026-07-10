@@ -8,7 +8,10 @@
   皆帶 ToUnicode 與 CIDSet（PDF/X-1a 對子集 CID 字型的要求）。
 - 幾何與 PNG 渲染同源（placement 層），逐字顯式 Tm 定位；禁則與斷行已在
   排版層完成並烘焙（§9：PDF/X 只忠實嵌入已排好的結果）。
-- PDF/X-1a 剩餘（OutputIntent／XMP 識別／preflight 全綠）列 GAPS，後續 Sprint。
+- X-1a:2001 識別（Sprint 10）：header 1.3、Info GTS 鍵＋Trapped＋ModDate、
+  OutputIntent（預設 JC200103 registry 識別，依 ISO 15930-1 免嵌描述檔；
+  自訂識別須以 icc_profile 嵌 DestOutputProfile）、XMP metadata stream。
+  機械 preflight 見 preflight.py（獨立解析驗證）。
 """
 import hashlib
 import zlib
@@ -33,6 +36,18 @@ from .render import Shaper, line_axis_x_pt, mm_to_pt
 
 BLEED_MM = 3.0
 TEXT_K = 0.92  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92）
+
+PDFX_VERSION = "PDF/X-1:2001"       # Info /GTS_PDFXVersion（ISO 15930-1）
+PDFX_CONFORMANCE = "PDF/X-1a:2001"  # Info /GTS_PDFXConformance
+REGISTRY_URL = "http://www.color.org"
+# ICC 特性化資料登錄名（www.color.org/chardata）常用子集；命中者依 ISO 15930-1
+# 可免嵌 DestOutputProfile。未列名（印廠自訂條件）須以 icc_profile 補描述檔。
+KNOWN_PRINT_CONDITIONS = frozenset({
+    "CGATS TR 001",
+    "FOGRA27", "FOGRA39", "FOGRA51", "FOGRA52",
+    "IFRA26",
+    "JC200103", "JC200104", "JCN2002", "JCW2003",
+})
 
 
 def page_boxes_pt(template, bleed_mm: float = BLEED_MM):
@@ -59,6 +74,67 @@ def _pdf_text_string(s: str) -> str:
     return "<FEFF" + s.encode("utf-16-be").hex().upper() + ">"
 
 
+def _pdf_string(s: str) -> str:
+    """PDF 字串：純 ASCII 走括號字面（跳脫 \\ 與括號），否則 UTF-16 hex。"""
+    if all(ord(c) < 128 for c in s):
+        esc = s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        return f"({esc})"
+    return _pdf_text_string(s)
+
+
+def _pdf_date(dt: datetime) -> str:
+    off = dt.strftime("%z")  # astimezone() 保證帶時區，如 +0800
+    return f"D:{dt.strftime('%Y%m%d%H%M%S')}{off[:3]}'{off[3:]}'"
+
+
+def _xml_escape(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _xmp_packet(title: str, date_iso: str) -> bytes:
+    """X-1a 識別與文件中繼資料的最小 XMP（與 Info dict 同值）。"""
+    t = _xml_escape(title)
+    return (
+        f'<?xpacket begin="{chr(0xFEFF)}" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+        '<rdf:Description rdf:about=""\n'
+        ' xmlns:dc="http://purl.org/dc/elements/1.1/"\n'
+        ' xmlns:xmp="http://ns.adobe.com/xap/1.0/"\n'
+        ' xmlns:pdf="http://ns.adobe.com/pdf/1.3/"\n'
+        ' xmlns:pdfx="http://ns.adobe.com/pdfx/1.3/"\n'
+        ' xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/">\n'
+        f'<dc:title><rdf:Alt><rdf:li xml:lang="x-default">{t}</rdf:li></rdf:Alt></dc:title>\n'
+        f'<xmp:CreateDate>{date_iso}</xmp:CreateDate>\n'
+        f'<xmp:ModifyDate>{date_iso}</xmp:ModifyDate>\n'
+        '<xmp:CreatorTool>CJKFolio</xmp:CreatorTool>\n'
+        '<pdf:Producer>CJKFolio</pdf:Producer>\n'
+        '<pdf:Trapped>False</pdf:Trapped>\n'
+        f'<pdfx:GTS_PDFXVersion>{PDFX_VERSION}</pdfx:GTS_PDFXVersion>\n'
+        f'<pdfx:GTS_PDFXConformance>{PDFX_CONFORMANCE}</pdfx:GTS_PDFXConformance>\n'
+        f'<pdfxid:GTS_PDFXVersion>{PDFX_VERSION}</pdfxid:GTS_PDFXVersion>\n'
+        f'<pdfxid:GTS_PDFXConformance>{PDFX_CONFORMANCE}</pdfxid:GTS_PDFXConformance>\n'
+        '</rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n'
+        '<?xpacket end="w"?>'
+    ).encode("utf-8")
+
+
+def _validate_output_profile(data: bytes, source) -> None:
+    """X-1a DestOutputProfile 須為 CMYK 輸出裝置（prtr）ICC。"""
+    name = Path(source).name
+    if len(data) < 132:
+        raise ValueError(f"ICC 描述檔 {name} 過短（{len(data)} bytes），非有效 ICC")
+    if data[12:16] != b"prtr":
+        raise ValueError(
+            f"ICC 描述檔 {name} 裝置類別 {data[12:16]!r} 非輸出裝置 prtr，"
+            "X-1a 的 DestOutputProfile 須為印刷輸出描述檔"
+        )
+    if data[16:20] != b"CMYK":
+        raise ValueError(
+            f"ICC 描述檔 {name} 色彩空間 {data[16:20]!r} 非 CMYK（PLAN §9：全文 CMYK）"
+        )
+
+
 # ---------- 低階 PDF 組裝（物件表＋xref） ----------
 
 class _PdfBuilder:
@@ -80,8 +156,10 @@ class _PdfBuilder:
             body = body.encode("latin-1")
         self._bodies[num] = body
 
-    def stream(self, extra_dict: str, data: bytes) -> int:
-        if self.compress:
+    def stream(self, extra_dict: str, data: bytes, compress=None) -> int:
+        if compress is None:
+            compress = self.compress
+        if compress:
             data = zlib.compress(data)
             extra_dict += " /Filter /FlateDecode"
         return self.add(
@@ -89,9 +167,9 @@ class _PdfBuilder:
             + data + b"\nendstream"
         )
 
-    def build(self, root_num: int, info_num: int) -> bytes:
+    def build(self, root_num: int, info_num: int, version: str = "1.4") -> bytes:
         out = BytesIO()
-        out.write(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+        out.write(f"%PDF-{version}\n".encode("latin-1") + b"%\xe2\xe3\xcf\xd3\n")
         offsets = [0] * len(self._bodies)
         for i, body in enumerate(self._bodies[1:], 1):
             offsets[i] = out.tell()
@@ -384,11 +462,31 @@ class PdfResult:
     fonts_used: list
     font_warnings: list
     embedded_fonts: list  # [{base, file, glyphs, bytes}]
+    output_condition_identifier: str
+    icc_embedded: bool
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
-               first_page: int = 1, font_dir=None, compress: bool = True) -> PdfResult:
-    """文件＋模版 → PDF。pages=None 全頁；否則為版面頁號清單（1 起算）。"""
+               first_page: int = 1, font_dir=None, compress: bool = True,
+               output_condition_identifier: str = "JC200103",
+               output_condition: str = "Japan Color 2001 Coated",
+               icc_profile=None) -> PdfResult:
+    """文件＋模版 → PDF/X-1a:2001。pages=None 全頁；否則為版面頁號清單（1 起算）。
+
+    output_condition_identifier 命中 KNOWN_PRINT_CONDITIONS（ICC registry 名）時
+    免嵌描述檔；自訂識別必須以 icc_profile 提供 CMYK 輸出 ICC。
+    """
+    if not doc.title:
+        raise ValueError("PDF/X-1a 要求 Info /Title：文件 meta.title 不可為空")
+    icc_bytes = None
+    if icc_profile is not None:
+        icc_bytes = Path(icc_profile).read_bytes()
+        _validate_output_profile(icc_bytes, icc_profile)
+    elif output_condition_identifier not in KNOWN_PRINT_CONDITIONS:
+        raise ValueError(
+            f"印刷條件識別 {output_condition_identifier!r} 不在已知 ICC registry 名單，"
+            "X-1a 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
+        )
     layout = layout_document(doc, template)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir)
     selected = list(layout.pages)
@@ -427,19 +525,42 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         ))
     pdf.set(pages_num,
             f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>")
+    # --- PDF/X-1a:2001 識別（§9 預設 X-1a；形態依 ISO 15930-1）---
+    oi_parts = [
+        "/Type /OutputIntent", "/S /GTS_PDFX",
+        f"/OutputConditionIdentifier {_pdf_string(output_condition_identifier)}",
+        f"/OutputCondition {_pdf_string(output_condition)}",
+        f"/Info {_pdf_string(output_condition)}",
+    ]
+    if output_condition_identifier in KNOWN_PRINT_CONDITIONS:
+        oi_parts.append(f"/RegistryName {_pdf_string(REGISTRY_URL)}")
+    if icc_bytes is not None:
+        icc_num = pdf.stream(" /N 4", icc_bytes)
+        oi_parts.append(f"/DestOutputProfile {icc_num} 0 R")
+    oi_num = pdf.add(f"<< {' '.join(oi_parts)} >>")
+
+    now = datetime.now().astimezone()
+    xmp_num = pdf.stream(
+        " /Type /Metadata /Subtype /XML",
+        _xmp_packet(doc.title, now.isoformat(timespec="seconds")),
+        compress=False,  # metadata stream 不壓縮，外部工具可直讀
+    )
     catalog_num = pdf.add(
         f"<< /Type /Catalog /Pages {pages_num} 0 R "
+        f"/Metadata {xmp_num} 0 R /OutputIntents [{oi_num} 0 R] "
         f"/ViewerPreferences << /Direction /R2L >> >>"
     )
-    info_parts = [f"/Producer (CJKFolio)", f"/Creator (CJKFolio)"]
-    if doc.title:
-        info_parts.insert(0, f"/Title {_pdf_text_string(doc.title)}")
-    info_parts.append(f"/CreationDate (D:{datetime.now().strftime('%Y%m%d%H%M%S')})")
-    info_num = pdf.add(f"<< {' '.join(info_parts)} >>")
+    date = _pdf_date(now)
+    info_num = pdf.add(
+        f"<< /Title {_pdf_text_string(doc.title)} "
+        f"/Producer (CJKFolio) /Creator (CJKFolio) "
+        f"/CreationDate ({date}) /ModDate ({date}) /Trapped /False "
+        f"/GTS_PDFXVersion ({PDFX_VERSION}) /GTS_PDFXConformance ({PDFX_CONFORMANCE}) >>"
+    )
 
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(pdf.build(catalog_num, info_num))
+    out.write_bytes(pdf.build(catalog_num, info_num, version="1.3"))
     return PdfResult(
         path=out,
         page_count=len(contents),
@@ -447,4 +568,6 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         fonts_used=sorted(writer.fonts_used),
         font_warnings=list(writer.registry.warnings) + list(writer.notdef_warnings),
         embedded_fonts=embedded,
+        output_condition_identifier=output_condition_identifier,
+        icc_embedded=icc_bytes is not None,
     )
