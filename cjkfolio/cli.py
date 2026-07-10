@@ -151,7 +151,7 @@ def main(argv=None) -> int:
     p_render.add_argument("--template", default=str(DEFAULT_TEMPLATE))
     p_render.add_argument("--dpi", type=int, default=150)
     p_render.add_argument("--basename", default="page")
-    p_render.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳用）")
+    p_render.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳與鏡像奇偶依此）")
     p_render.add_argument("--no-footer", action="store_true", help="不畫頁腳三件組")
     p_render.set_defaults(func=cmd_render)
 
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
     p_pdf.add_argument("-o", "--output", required=True)
     p_pdf.add_argument("--template", default=str(DEFAULT_TEMPLATE))
     p_pdf.add_argument("--page", type=int, default=None, help="只匯出此版面頁（1 起算；預設全頁）")
-    p_pdf.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳用）")
+    p_pdf.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳與鏡像奇偶依此）")
     p_pdf.add_argument("--no-footer", action="store_true", help="不排頁腳三件組")
     p_pdf.add_argument("--output-condition-identifier", default="JC200103",
                        help="OutputIntent 印刷條件識別（ICC registry 名；預設 Japan Color 2001 Coated）")

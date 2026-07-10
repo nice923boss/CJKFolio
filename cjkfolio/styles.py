@@ -71,7 +71,7 @@ class MasterPage:
     name: str
     margins: Margins
     grid: Grid
-    mirror: bool = True  # 對開鏡像（奇數頁書口在右）
+    mirror: bool = True  # 對開鏡像（奇數書頁書口在右；奇偶依書頁號）
     footer: dict = field(default_factory=dict)  # name → FooterItem
     evidence: Optional[str] = None
     note: Optional[str] = None

@@ -212,20 +212,21 @@ def _footer_band(img, scale):
 @needs_fonts
 def test_footer_page_number_and_running_title(template, tmp_path):
     doc = make_doc([{"text": BODY_500, "style": "內文-明體直排"}])
+    # first_page=30：頁 1＝書頁 30（偶數＝左頁）、頁 2＝書頁 31（奇數＝右頁），鏡像依書頁號（GAPS #16）
     result = render_document(doc, template, tmp_path, dpi=150, first_page=30)
     scale = 150 / 72.0
     page_w_px = mm_to_pt(148) * scale
-    # 頁 1（奇數＝右頁）：頁碼靠右緣、書眉（書名）齊版心外緣
+    # 頁 1＝書頁 30（偶數＝左頁）：頁碼鏡像靠書口（左）緣、無書眉（書眉限奇數頁）
     ink1 = _footer_band(Image.open(result.paths[0]), scale)
-    assert ink1 is not None, "奇數頁頁腳帶無著墨"
-    assert ink1[2] > page_w_px * 0.8, "奇數頁頁腳應靠書口（右）側"
-    # 頁 2（偶數＝左頁）：鏡像靠左緣
+    assert ink1 is not None, "偶數書頁頁腳帶無著墨"
+    assert ink1[0] < page_w_px * 0.2, "偶數書頁頁腳應靠書口（左）側"
+    # 頁 2＝書頁 31（奇數＝右頁）：頁碼靠右緣、書眉（書名）齊版心外緣
     ink2 = _footer_band(Image.open(result.paths[1]), scale)
-    assert ink2 is not None, "偶數頁頁腳帶無著墨"
-    assert ink2[0] < page_w_px * 0.2, "偶數頁頁腳應靠書口（左）側"
+    assert ink2 is not None, "奇數書頁頁腳帶無著墨"
+    assert ink2[2] > page_w_px * 0.8, "奇數書頁頁腳應靠書口（右）側"
     used = {Path(f).name for f in result.fonts_used}
-    assert "jf-openhuninn-2.1.ttf" in used       # 頁碼
-    assert "ChenYuluoyan-2.0-Thin.ttf" in used   # 書眉
+    assert "jf-openhuninn-2.1.ttf" in used       # 頁碼（全頁）
+    assert "ChenYuluoyan-2.0-Thin.ttf" in used   # 書眉（書頁 31 奇數頁）
 
 
 @needs_fonts
@@ -233,3 +234,31 @@ def test_footer_disabled_leaves_band_empty(template, tmp_path):
     doc = make_doc([{"text": "短段。", "style": "內文-明體直排"}])
     result = render_document(doc, template, tmp_path, dpi=150, footer=False)
     assert _footer_band(Image.open(result.paths[0]), 150 / 72.0) is None
+
+
+# ---------- 鏡像依書頁號（GAPS #16） ----------
+
+def _ink_cx(path):
+    ink = ImageOps.invert(Image.open(path).convert("L")).getbbox()
+    assert ink is not None, f"{path} 整頁空白"
+    return (ink[0] + ink[2]) / 2
+
+
+@needs_fonts
+def test_body_axis_mirrors_by_book_page(template, tmp_path):
+    """鏡像依書頁號：偶數起頁的首頁＝左頁（書口左）行軸偏左，奇數起頁偏右（GAPS #16）。"""
+    doc = make_doc([{"text": "永", "style": "內文-明體直排"}])
+    even = render_document(doc, template, tmp_path / "even", dpi=150, footer=False, first_page=20)
+    odd = render_document(doc, template, tmp_path / "odd", dpi=150, footer=False, first_page=21)
+    # 版面頁號同為 1；書頁號 20（偶＝左頁，訂口在右→行軸偏左）vs 21（奇＝右頁，書口在右→行軸偏右）
+    assert _ink_cx(odd.paths[0]) > _ink_cx(even.paths[0])
+
+
+# ---------- PNG 缺字警告（GAPS #17） ----------
+
+@needs_fonts
+def test_render_missing_glyph_warns(template, tmp_path):
+    # 私用區字元 U+E000 思源無字形 → 以 .notdef 輸出並警告（不沉默，與 PDF 後端一致）
+    doc = make_doc([{"text": "字。", "style": "內文-明體直排"}])
+    result = render_document(doc, template, tmp_path, dpi=150, footer=False)
+    assert any("無字形" in w for w in result.font_warnings), result.font_warnings

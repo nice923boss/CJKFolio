@@ -394,10 +394,10 @@ class _PdfPageWriter:
             y = self.page_h_pt + self.bleed_pt - pl.y_pt  # top-down → y-up
             content.show(font.res_name, code, x, y, pl.size_pt, pl.rotated)
 
-    def _footer(self, content: _Content, page, footer_texts: dict) -> None:
+    def _footer(self, content: _Content, book_number: int, footer_texts: dict) -> None:
         master, template = self.master, self.template
         page_w = mm_to_pt(template.page_width_mm)
-        odd = (page.number % 2 == 1) or not master.mirror
+        odd = (book_number % 2 == 1) or not master.mirror
         for item in master.footer.values():
             if item.pages == "odd" and not odd:
                 continue
@@ -416,8 +416,10 @@ class _PdfPageWriter:
             self._emit(content, key, horizontal_placements(
                 shaper, text, pen_x, item.baseline_from_top_pt, style.size_pt))
 
-    def build_page(self, page, footer_texts=None) -> bytes:
+    def build_page(self, page, footer_texts=None, book_number=None) -> bytes:
         master, template = self.master, self.template
+        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
+            book_number = page.number
         content = _Content()
         top_pt = mm_to_pt(master.margins.top_mm)
         for placed in page.placed:
@@ -430,7 +432,7 @@ class _PdfPageWriter:
             key, shaper = self._shaper_for(style)
             advance = style_advance_pt(style, master.grid)
             axis = line_axis_x_pt(
-                template, master, placed.slot, page.number,
+                template, master, placed.slot, book_number,
                 line_slots=style_line_slots(style, master.grid),
             )
             # 齊行：非段末行行首行尾雙錨定（縮排偏移用網格字距，內容用實效字距）
@@ -456,7 +458,7 @@ class _PdfPageWriter:
                 self._emit(content, use_key, pls)
                 content_i += cell.width
         if footer_texts:
-            self._footer(content, page, footer_texts)
+            self._footer(content, book_number, footer_texts)
         return content.finish()
 
 
@@ -507,10 +509,11 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         selected = [p for p in selected if p.number in wanted]
     contents = []
     for page in selected:
+        book_number = page.number + first_page - 1  # 書頁號（鏡像與頁腳奇偶依此）
         texts = None
         if footer and writer.master.footer:
-            texts = {"number": str(page.number + first_page - 1), "title": doc.title}
-        contents.append(writer.build_page(page, footer_texts=texts))
+            texts = {"number": str(book_number), "title": doc.title}
+        contents.append(writer.build_page(page, footer_texts=texts, book_number=book_number))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []

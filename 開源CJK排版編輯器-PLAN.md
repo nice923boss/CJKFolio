@@ -12,6 +12,7 @@
 > 修訂：2026-07-11 Sprint 9：字元樣式 run 模型（document@2）＋md 行內強調＋抽取工具 W9 強調標記，真書強調句雙後端實排（詳 devlog/2026-07-11-sprint9-run-model.md）。
 > 修訂：2026-07-11 Sprint 10：PDF/X-1a:2001 識別（OutputIntent／XMP／GTS 鍵／Trapped／header 1.3）＋自寫機械 preflight（veraPDF 不支援 PDF/X，實查）；實測參考書交印檔非 PDF/X，§0 與 §1 描述修正（詳 devlog/2026-07-11-sprint10-pdfx1a.md）。
 > 修訂：2026-07-11 Sprint 11：齊行與禁則擠入（行首禁則擠入優先＋非段末行雙錨定齊行，±0.4pt 級字距縮放），關 GAPS #9，第一章 23→22 頁（詳 devlog/2026-07-11-sprint11-justification.md）。
+> 修訂：2026-07-11 Sprint 12：鏡像與頁腳奇偶改依書頁號（非版面頁號），兩後端同步，關 GAPS #16；PNG 後端補缺字 notdef 警告，關 GAPS #17（詳 devlog/2026-07-11-sprint12-mirror-book-page.md）。
 
 ---
 
@@ -286,6 +287,7 @@ CJKFolio/
 - **進度（2026-07-11 Sprint 9）**：字元樣式 run 模型 [實作]：document@2（Run＋Paragraph 正規化不變式，@1 相容照載、@1 帶 runs 明確拒絕）、Cell 帶字元樣式、雙後端 per-cell 覆寫（字型＋級數；字槽網格仍依段落樣式）、layout 未知字元樣式快速失敗。md 行內強調 [實作]：**strong**／*em* → 模版 md_inline_mapping（v1 皆映內文強調-明體W9；不嵌套、未閉合保留字面）。抽取工具 [實作]：body 欄 DFMingStd-W9 span 標 **…**、控制字元（Cc）源頭剔除列報。測試 83→96。真實素材驗收：重抽第一章（強調 8 對：整句強調 1＋對談發言標籤 7，PDF 實測皆明體 W9）→ 雙後端 23 頁重排 0 違規，強調頁（書頁 25）PNG 與 PDF 渲染目檢一致、Heavy 子集 11→26 字形。**未完**：發言人標籤自動指派（訪談章黑體標籤，Phase 3 AI 指派範圍）、md 嵌套標記（v1 設計外）。
 - **進度（2026-07-11 Sprint 10）**：PDF/X-1a:2001 識別 [實作]：header 1.3、Info GTS 兩鍵＋Trapped＋ModDate（Title 必填快速失敗）、OutputIntent（預設 JC200103 registry 識別免嵌 ICC；自訂識別強制嵌 CMYK prtr ICC 並驗 /N 4）、XMP metadata（不壓縮、pdfx＋pdfxid 雙命名空間）。機械 preflight [實作]（cjkfolio/preflight＋CLI preflight）：12 規則 PyMuPDF 獨立解析、未涵蓋項誠實列印、exit 0/1；veraPDF 不支援 PDF/X（實查）故本機 preflight＝自寫檢查器＋pdffonts。CLI export-pdf 加 --output-condition-identifier／--output-condition／--icc。測試 96→107。真實素材驗收：第一章 23 頁全章＋單頁完稿 preflight 12/12 全綠、pdffonts 六款全綠、渲染目檢與 Sprint 9 一致；參考書對照 6/12 未過（實測非 X-1a，§1 修正）。GAPS #15 關閉、新 #18（認證級 preflight）。**未完**：齊行（#9）、鏡像書頁號（#16）、PNG 缺字警告（#17）；Phase 1 DoD 的「印刷廠 preflight 全綠」目前以自寫機械檢查認定，認證級屬 #18。
 - **進度（2026-07-11 Sprint 11）**：齊行與禁則擠入 [實作]（GAPS #9 關閉）：行首禁則擠入優先（整串句逗一次決策、溢出 ≤2 槽，超過追出錨字連句逗下移）；非段末行行首行尾雙錨定、內容字距均勻縮放（±1 槽 ≈ ±0.4pt，同 §1 實測；縮排偏移維持網格字距）；偏差超容忍（2 槽）維持網格並入統計不沉默；雙後端同源（layout 層 line_justified_advance），CLI 回報齊行統計。測試 107→112。真實素材驗收：第一章 23→22 頁（擠入縮減行數）、禁則 0 違規、擠入 10 行撐開 1 行超容忍 0；頁 1 擠入行目檢行底貼齊、preflight 12/12 與 pdffonts 全綠不退步。**未完**：鏡像書頁號（#16）、PNG 缺字警告（#17）、橫排（#13）、斷行逐行一致率比對（Owner 抽檢）。
+- **進度（2026-07-11 Sprint 12）**：鏡像依書頁號 [實作]（GAPS #16 關閉）：頁面鏡像（行軸書口側）與頁腳奇偶改依書頁號（＝版面頁號＋first_page−1），render 與 pdf_writer 兩後端同源（book_number 同時餵 line_axis_x_pt 與頁腳）；first_page=1 預設不變（向後相容）。PNG 缺字警告 [實作]（GAPS #17 關閉）：PNG 後端四路徑（cjk／縱中橫／旋轉拉丁／頁腳）偵測 gid 0 回報缺字來源字元，PageRenderer.notdef_warnings 訊息格式與 pdf_writer 一致，經 font_warnings 由 CLI 列印。測試 112→115（新增書頁鏡像 PNG／PDF 兩後端＋PNG 缺字警告；翻轉 footer 與 page-selection 既有奇偶頁測試）。真實素材驗收：第一章 --first-page 20 重排，PNG page-001（書頁 20 偶＝左頁）頁碼書口左無書眉、page-002（書頁 21 奇＝右頁）頁碼書口右＋書眉「內在整理」，Read 兩頁親驗與真書右翻一致；22 頁、禁則 0、齊行擠入 10／撐開 1／超容忍 0 不變，preflight 12/12、pdffonts 六款全綠不退步。**未完**：橫排（#13，版權頁-CIP）、斷行逐行一致率比對（Owner 抽檢）。
 
 ### Phase 2：WYSIWYG 編輯器（12〜16 週）[實作]
 
@@ -400,6 +402,8 @@ CJKFolio/
 | 2026-07-11（Sprint 10） | 參考書交印檔實測非 PDF/X（無 GTS 識別、無 OutputIntent、含 SMask 透明、TrimBox 與 ArtBox 並存），§0 與 §1 描述據實修正；品質標竿與 §9 硬條件不變 | 探針一手實測（A 級） |
 | 2026-07-11（Sprint 11） | 齊行形態定案：行首禁則擠入優先（整串句逗一次決策，溢出 ≤2 槽；超過改追出錨字連句逗下移）、行尾禁則維持退行；非段末行行首行尾雙錨定、內容字距均勻縮放，縮排偏移維持網格字距；偏差 >2 槽維持等距網格並入統計（不沉默）；段末行與滿行不調整 | §1 實測 ±0.4pt＝±1 槽（33 字 −0.37pt／31 字 +0.40pt，A 級推導） |
 | 2026-07-11（Sprint 11） | 半形「約物寬度壓縮」（JLREQ 式）不實作：§1 實測本書句逗置中、無半形擠壓，齊行以字距縮放達成 | 跨頁逐字實測（A 級） |
+| 2026-07-11（Sprint 12） | 鏡像與頁腳奇偶依「書頁號」（＝版面頁號＋first_page−1）判定，非版面頁號；render 與 pdf_writer 共用同一 book_number 餵行軸（line_axis_x_pt）與頁腳，first_page=1 預設向後相容；版面頁號續作檔名與 --page 選頁鍵 | 真書右翻書偶數頁＝左頁、奇數頁＝右頁＋書眉（第一章 --first-page 20 樣張 Read 親驗，A 級） |
+| 2026-07-11（Sprint 12） | PNG 缺字不沉默：render 四路徑（cjk／縱中橫／旋轉拉丁／頁腳）偵測 gid 0，回報缺字來源字元，訊息格式與 pdf_writer 一致（Shaper 存 path 供命名）；未統一 placement 層（外科手術範圍，後端統一時再併） | 缺字警告雙後端一致（PUA U+E000 單元測試釘住） |
 
 ## 11. 證據附錄（關鍵引用）
 

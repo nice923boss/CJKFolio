@@ -2,7 +2,8 @@
 
 自 Spike 1 render_spread.py 產品化：跨頁改為單頁 A5（PLAN §9 單頁完稿），
 幾何由主版（Margins＋Grid）推導，字型由樣式經 FontRegistry 解析。
-奇數頁＝右頁（右翻書），書口（outer）在右；偶數頁鏡像，行軸自訂口推。
+奇數書頁＝右頁（右翻書），書口（outer）在右；偶數書頁鏡像，行軸自訂口推。
+鏡像依書頁號（first_page 位移後），非版面頁號（GAPS #16）。
 PNG 為 Phase 1 視覺驗收後端；PDF/X 寫出層於後續 Sprint 進場。
 """
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ def line_axis_x_pt(
     page_number: int,
     line_slots: int = 1,
 ) -> float:
-    """第 slot 行槽的行軸（欄中心）x 座標，pt。奇數頁書口在右。"""
+    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，奇數＝右頁書口在右。"""
     page_w = mm_to_pt(template.page_width_mm)
     outer_side = (page_number % 2 == 1) or not master.mirror
     margin_mm = master.margins.outer_mm if outer_side else master.margins.inner_mm
@@ -47,6 +48,7 @@ class Shaper:
     """單一字型檔的 HarfBuzz 塑形 ＋ FreeType 柵格。"""
 
     def __init__(self, path, index: int = 0, dpi: int = 150):
+        self.path = str(path)
         blob = hb.Blob.from_file_path(str(path))
         self.hb_font = hb.Font(hb.Face(blob, index))
         self.upem = self.hb_font.face.upem
@@ -79,8 +81,13 @@ class Shaper:
         return Image.frombytes("L", (bmp.width, bmp.rows), b"".join(rows)), g
 
 
+def _missing_chars(text: str, infos) -> list:
+    """回傳塑形結果中缺字（gid 0）對應的來源字元（供 PNG 端不沉默警告）。"""
+    return [text[i.cluster] for i in infos if i.codepoint == 0 and i.cluster < len(text)]
+
+
 def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale):
-    """單一 CJK 字以 TTB 塑形置於字槽（行軸置中、槽頂對齊）。"""
+    """單一 CJK 字以 TTB 塑形置於字槽（行軸置中、槽頂對齊）。回傳缺字來源字元。"""
     sf = shaper.set_size(size_pt)
     infos, poss = shaper.shape(ch, "ttb")
     pen_x, pen_y = axis_x_pt * scale, cell_top_pt * scale
@@ -92,10 +99,11 @@ def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale):
             img.paste(0, (gx, gy), tile)
         pen_x += pos.x_advance * sf
         pen_y += -pos.y_advance * sf
+    return _missing_chars(ch, infos)
 
 
 def _render_horizontal_strip(shaper, text, size_pt, scale):
-    """LTR 塑形渲染成灰階條（供縱中橫與旋轉拉丁用）。"""
+    """LTR 塑形渲染成灰階條（供縱中橫與旋轉拉丁用）。回傳（strip, 缺字來源字元）。"""
     sf = shaper.set_size(size_pt)
     infos, poss = shaper.shape(text, "ltr")
     asc = size_pt * scale * 0.88
@@ -111,27 +119,29 @@ def _render_horizontal_strip(shaper, text, size_pt, scale):
             gy = round(base_y - pos.y_offset * sf) - g.bitmap_top
             strip.paste(255, (gx, gy), tile)
         pen_x += pos.x_advance * sf
-    return strip
+    return strip, _missing_chars(text, infos)
 
 
 def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, scale):
-    """縱中橫：短數字串橫排塞進一個字槽，行軸置中。"""
-    strip = _render_horizontal_strip(shaper, text, size_pt * 0.92, scale)
+    """縱中橫：短數字串橫排塞進一個字槽，行軸置中。回傳缺字來源字元。"""
+    strip, missing = _render_horizontal_strip(shaper, text, size_pt * 0.92, scale)
     em_px = round(size_pt * scale)
     if strip.width > em_px:  # 塞不下就等比縮
         strip = strip.resize((em_px, round(strip.height * em_px / strip.width)))
     x = round(axis_x_pt * scale - strip.width / 2)
     y = round(cell_top_pt * scale + (advance_pt * scale - strip.height) / 2)
     img.paste(0, (x, y), strip)
+    return missing
 
 
 def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scale):
-    """長串拉丁／數字：橫排塑形後順時針轉 90 度，沿行軸向下。"""
-    strip = _render_horizontal_strip(shaper, text, size_pt, scale)
+    """長串拉丁／數字：橫排塑形後順時針轉 90 度，沿行軸向下。回傳缺字來源字元。"""
+    strip, missing = _render_horizontal_strip(shaper, text, size_pt, scale)
     rot = strip.transpose(Image.Transpose.ROTATE_270)
     x = round(axis_x_pt * scale - rot.width / 2)
     y = round(cell_top_pt * scale)
     img.paste(0, (x, y), rot)
+    return missing
 
 
 class PageRenderer:
@@ -143,6 +153,15 @@ class PageRenderer:
         self.registry = FontRegistry(font_dir or DEFAULT_FONT_DIR)
         self._shapers: dict = {}
         self.fonts_used: set = set()
+        self.notdef_warnings: list = []
+
+    def _note_missing(self, shaper: Shaper, chars) -> None:
+        """缺字不沉默：以 .notdef 輸出並警告（訊息格式與 pdf_writer 一致）。"""
+        for ch in chars:
+            label = f"字元 {ch!r}（U+{ord(ch):04X}）" if ch else "未知字元"
+            msg = f"{label} 在 {Path(shaper.path).name} 無字形，以 .notdef 輸出"
+            if msg not in self.notdef_warnings:
+                self.notdef_warnings.append(msg)
 
     def _shaper_for(self, style) -> Shaper:
         resolved = self.registry.resolve(style.font_family, style.font_weight)
@@ -152,11 +171,11 @@ class PageRenderer:
         self.fonts_used.add(str(resolved.path))
         return self._shapers[key]
 
-    def _draw_footer(self, img, page, footer_texts: dict) -> None:
-        """頁腳三件組（頁碼＋書眉）：水平文字，錨定書口側，奇偶頁鏡像。"""
+    def _draw_footer(self, img, book_number: int, footer_texts: dict) -> None:
+        """頁腳三件組（頁碼＋書眉）：水平文字，錨定書口側，依書頁號奇偶鏡像。"""
         master, template = self.master, self.template
         page_w_pt = mm_to_pt(template.page_width_mm)
-        odd = (page.number % 2 == 1) or not master.mirror
+        odd = (book_number % 2 == 1) or not master.mirror
         for item in master.footer.values():
             if item.pages == "odd" and not odd:
                 continue
@@ -167,7 +186,8 @@ class PageRenderer:
                 continue
             style = template.character_styles[item.style]
             shaper = self._shaper_for(style)
-            strip = _render_horizontal_strip(shaper, text, style.size_pt, self.scale)
+            strip, missing = _render_horizontal_strip(shaper, text, style.size_pt, self.scale)
+            self._note_missing(shaper, missing)
             ascent_px = style.size_pt * self.scale * 0.88
             y = round(item.baseline_from_top_pt * self.scale - ascent_px)
             if odd:  # 書口在右：文字右緣對齊 outer_offset
@@ -176,8 +196,10 @@ class PageRenderer:
                 x = round(item.outer_offset_pt * self.scale)
             img.paste(0, (x, y), strip)
 
-    def render_page(self, page, footer_texts=None) -> Image.Image:
+    def render_page(self, page, footer_texts=None, book_number=None) -> Image.Image:
         master, template = self.master, self.template
+        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
+            book_number = page.number
         size_px = (
             round(mm_to_pt(template.page_width_mm) * self.scale),
             round(mm_to_pt(template.page_height_mm) * self.scale),
@@ -194,7 +216,7 @@ class PageRenderer:
             shaper = self._shaper_for(style)
             advance = style_advance_pt(style, master.grid)
             axis = line_axis_x_pt(
-                template, master, placed.slot, page.number,
+                template, master, placed.slot, book_number,
                 line_slots=style_line_slots(style, master.grid),
             )
             # 齊行：非段末行行首行尾雙錨定（縮排偏移用網格字距，內容用實效字距）
@@ -209,14 +231,17 @@ class PageRenderer:
                 else:
                     use_shaper, use_size = shaper, style.size_pt
                 if cell.kind == "cjk":
-                    _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
+                    missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
                 elif cell.kind == "tcy":
-                    _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, adv, self.scale)
+                    missing = _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, adv, self.scale)
                 elif cell.kind == "latin":
-                    _draw_rotated_latin(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
+                    missing = _draw_rotated_latin(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
+                else:
+                    missing = []
+                self._note_missing(use_shaper, missing)
                 content_i += cell.width  # space 留白即可
         if footer_texts:
-            self._draw_footer(img, page, footer_texts)
+            self._draw_footer(img, book_number, footer_texts)
         return img
 
 
@@ -238,13 +263,14 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
     out.mkdir(parents=True, exist_ok=True)
     paths = []
     for page in layout.pages:
+        book_number = page.number + first_page - 1  # 書頁號（鏡像與頁腳奇偶依此）
         texts = None
         if footer and renderer.master.footer:
             texts = {
-                "number": str(page.number + first_page - 1),
+                "number": str(book_number),
                 "title": doc.title,
             }
-        img = renderer.render_page(page, footer_texts=texts)
+        img = renderer.render_page(page, footer_texts=texts, book_number=book_number)
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)
@@ -252,6 +278,6 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
         paths=paths,
         violations=list(layout.violations),
         fonts_used=sorted(renderer.fonts_used),
-        font_warnings=list(renderer.registry.warnings),
+        font_warnings=list(renderer.registry.warnings) + list(renderer.notdef_warnings),
         justify_stats=dict(layout.justify_stats),
     )
