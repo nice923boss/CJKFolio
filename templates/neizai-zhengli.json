@@ -120,9 +120,9 @@
    "font_weight": "bold",
    "size_pt": 14.9,
    "indent_chars": 0,
-   "para_gap_slots": 1,
+   "para_gap_slots": 0,
    "source_font": "DFMingStd-W7",
-   "note": "部扉「第X篇」標籤"
+   "note": "部扉「第X篇」標籤；段後不空槽（Sprint 20 量測：與大標間距已含於 B 行距 34.37pt）"
   },
   "目錄-部名": {
    "font_family": "思源宋體 TC",
@@ -252,10 +252,10 @@
    "note": "頁腳 v1 為頁碼（全頁）＋書名書眉（奇數頁）；原書左頁書眉為章節副標、個案頁另有 Case 編號，待章節結構與個案主版進場"
   },
   "B-部扉": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
-   "mirror": true,
-   "evidence": "版心承 A；部扉佈局（雙線菱形裝飾框、部名置中）未逐頁量測",
+   "margins_mm": {"top": 62.38, "bottom": 41.13, "outer": 63.53, "inner": 25.58},
+   "grid": {"chars_per_line": 10, "lines_per_page": 8, "char_advance_pt": 23.1, "line_pitch_pt": 34.37, "base_size_pt": 21.9},
+   "mirror": false,
+   "evidence": "三部扉一手量測（Sprint 20，PDF 索引 18/68/114 三頁互證同值）：部序號行軸 228.49pt（slot 0＝419.53−outer 180.09−21.9/2）、大標行軸 194.12pt（slot 1，行距 34.37）、天頭＝部序號首字頂 176.84pt=62.38mm、大標字距 23.1pt（§10 換算規則 21.9×12.08/11.5）；部扉無頁腳。已知差異（GAPS #13）：真書大標首字頂 182.86 比部序號低 6.02pt（0.26 字槽），v1 整數槽模型兩段同天頭起排；雙線菱形裝飾框為手繪美術資產不規則化（Sprint 15 決議）",
    "note": "掃描定位 p18/68/114"
   },
   "C-個案扉頁": {

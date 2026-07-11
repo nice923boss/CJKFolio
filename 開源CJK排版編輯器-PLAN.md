@@ -19,7 +19,8 @@
 > 修訂：2026-07-11 Sprint 16：目錄條目頁碼＋引導線（document@2 相容擴充 page_no、layout TocEntryMark 幾何、兩後端同源：引導線 K92 實線＋頁碼 tcy 逐位直立底錨 490pt 對齊），目錄頁型設計語言貫通（標題／引導線／頁碼底對齊），關 GAPS #13 目錄頁碼部分（詳 devlog/2026-07-11-sprint16-toc-entry.md）。
 > 修訂：2026-07-11 Sprint 17：Owner 指示風險前置（先挑最複雜架構），Phase 2 最高風險架構件（WYSIWYG 畫布 ↔ 排版核心同步，§7 中高風險）先行 Spike 10：PySide6 offscreen 雙層畫布（底圖＝PNG 後端輸出＋互動層＝layout 幾何同源字格 item），編輯回路 37ms、hit-test 214/214、22 頁 5,361 格 52ms，五項標準全過；畫布 ↔ 文件 provenance 介面缺口顯式化為 Phase 2 首項工程（詳 devlog/2026-07-11-sprint17-canvas-spike.md）。
 > 修訂：2026-07-11 Sprint 18：文件 provenance 載體（Phase 2 首項工程）：Cell.span（文件段 text 半開區間，normalize_with_offsets 索引映射處理 Cc 剝除位移）＋PlacedLine.para_idx（layout 建 spec 掛段索引），畫布點選 → 文件游標資料鏈補齊；第一章 5,361 cells round-trip 錯 0（詳 devlog/2026-07-11-sprint18-provenance.md）。
-> 修訂：2026-07-11 Sprint 19：F-版權頁真實版心 p178 一手量測（tools/measure_cip_page.py）：CIP 5.63pt／字距 5.66／行距 7.74／框線 0.14pt 暖黑 K92／pad 5.05×4.94 不對稱（FrameSpec 加 pad_v_pt），模版自擬幾何全面替換為量測值，樣張框左上角與首行 baseline 與 p178 精確重合；行距分區與框上標題行為 v1 已知差異入 GAPS，關 GAPS #13 (a)（詳 devlog/2026-07-11-sprint19-cip-metrics.md）。
+> 修訂：2026-07-11 Sprint 19：F-版權頁真實版心 p178 一手量測（tools/measure_cip_page.py)：CIP 5.63pt／字距 5.66／行距 7.74／框線 0.14pt 暖黑 K92／pad 5.05×4.94 不對稱（FrameSpec 加 pad_v_pt），模版自擬幾何全面替換為量測值，樣張框左上角與首行 baseline 與 p178 精確重合；行距分區與框上標題行為 v1 已知差異入 GAPS，關 GAPS #13 (a)（詳 devlog/2026-07-11-sprint19-cip-metrics.md）。
+> 修訂：2026-07-11 Sprint 20：B 部扉頁型大標置位（三部扉 PDF 索引 18/68/114 一手量測三頁互證）：B 主版天頭 62.38mm、行距 34.37pt、部序號／大標行軸 228.49／194.12pt、字距合 §10 換算規則；標籤-篇序小標段後 gap 1→0；自擬樣張（samples/part-divider.doc.json）行軸抽驗與量測精確重合、preflight 12/12；大標首字頂 6.02pt 差（0.26 字槽）入 GAPS（詳 devlog/2026-07-11-sprint20-part-divider.md）。
 
 ---
 
@@ -431,6 +432,7 @@ CJKFolio/
 | 2026-07-11（Sprint 17） | Phase 2 首項工程定：engine 流排時在 PlacedLine／Cell 掛文件 provenance（para_idx／char offset，與 page_no 同純載體模式），供畫布點選 → 文件游標映射；spike 現以 (page, placed_idx, cell_idx) 為 hit-test 身分屬幾何鍵，非文件鍵 | Spike 10 顯式暴露的介面缺口 |
 | 2026-07-11（Sprint 18） | provenance 座標系定案：Cell.span＝文件段 text（normalize 前原字串）半開區間；normalize 分解為 normalize_with_offsets（正規化＋原索引表）單一事實來源；ascii run（latin／tcy）span 覆蓋整串、內含被剝除 Cc 時區間自然涵蓋（選取涵蓋不可見字元）；直呼 tokenize 無 offsets 時 span 為輸入座標 identity（舊 API 相容） | 第一章 5,361 cells＋自擬含 Cc／表現形段 round-trip 全 0 錯（A 級） |
 | 2026-07-11（Sprint 19） | F-版權頁版心量測定案：top 以「首行 baseline 錨定」換算（top＝baseline−級數×ASCENT_RATIO＝128.2−5.63×0.88＝123.25pt＝43.48mm，文字位置優先於 bbox 口徑）；框色暖黑同內文 → 產品單 K92；FrameSpec 加 pad_v_pt（選配，None＝同 pad_pt）表達 p178 實測不對稱 pad（水平 5.05／垂直 4.94）；lines_per_page 45 為幾何推導非量測；後段行距分區（12.73／11.73）與框上標題行不擴 v1 模型，入 GAPS #13 誠實記錄 | p178 一手量測（A 級）＋樣張獨立抽驗框 y0=118.31／baseline 128.2 與實測精確重合 |
+| 2026-07-11（Sprint 20） | B 部扉頁型定案：文件兩段（段 1 標籤-篇序小標 slot 0 右、段 2 部扉大標 slot 1），行間距全含於 B 行距 34.37pt（標籤樣式 para_gap_slots 1→0）；B 主版 mirror=false、天頭＝部序號首字頂 62.38mm、outer 63.53mm（slot 0 行軸 228.49 反推）；真書大標首字頂比部序號低 6.02pt（0.26 字槽）為 v1 整數槽模型已知差異入 GAPS，不擴段前 pt 偏移模型（Phase 2〜3 樣式系統再議）；y 向 bbox 口徑差（思源 ascender 鬆於華康）屬字型度量差異非位置錯誤（§3.3 不比字形輪廓） | 三部扉一手量測（A 級三頁互證同值）＋樣張行軸抽驗 228.49／194.12 精確重合 |
 
 ## 11. 證據附錄（關鍵引用）
 

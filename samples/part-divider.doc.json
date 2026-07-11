@@ -1,0 +1,12 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "部扉樣張（自擬）",
+  "template": "neizai-zhengli",
+  "master": "B-部扉"
+ },
+ "paragraphs": [
+  {"text": "第一部", "style": "標籤-篇序小標"},
+  {"text": "把留下的東西安放好", "style": "部扉大標-明體W9"}
+ ]
+}

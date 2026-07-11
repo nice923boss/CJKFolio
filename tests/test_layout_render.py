@@ -65,6 +65,18 @@ BODY_500 = (
 ) * 8  # 65 字 × 8 = 520 字，自擬
 
 
+def make_part_doc():
+    """自擬部扉文件（master B、兩段：篇序標籤＋部名）。"""
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "部扉樣張", "template": "neizai-zhengli", "master": "B-部扉"},
+        "paragraphs": [
+            {"text": "第一部", "style": "標籤-篇序小標"},
+            {"text": "自擬的部名七個字", "style": "部扉大標-明體W9"},
+        ],
+    })
+
+
 # ---------- layout ----------
 
 def test_style_geometry_derivation(template):
@@ -366,6 +378,27 @@ def test_render_missing_glyph_warns(template, tmp_path):
     doc = make_doc([{"text": "字。", "style": "內文-明體直排"}])
     result = render_document(doc, template, tmp_path, dpi=150, footer=False)
     assert any("無字形" in w for w in result.font_warnings), result.font_warnings
+
+
+# ---------- B 部扉頁型（Sprint 20：三部扉一手量測釘死） ----------
+
+def test_part_divider_layout_geometry(template):
+    """部序號 slot 0（右）、大標 slot 1；行軸與天頭＝三部扉量測值（A 級）。"""
+    layout = layout_document(make_part_doc(), template)
+    assert layout.vertical and len(layout.pages) == 1
+    label, headline = layout.pages[0].placed
+    assert (label.slot, label.style) == (0, "標籤-篇序小標")
+    assert (headline.slot, headline.style) == (1, "部扉大標-明體W9")
+    master = template.masters["B-部扉"]
+    # 行軸（p018/068/114 三頁互證）：部序號 228.49、大標 194.12
+    assert line_axis_x_pt(template, master, 0, 1) == pytest.approx(228.49, abs=0.05)
+    assert line_axis_x_pt(template, master, 1, 1) == pytest.approx(194.12, abs=0.05)
+    # 天頭＝部序號首字頂 176.84pt；大標字距 23.1（§10 換算規則）
+    assert master.margins.top_mm * mm_to_pt(1.0) == pytest.approx(176.84, abs=0.05)
+    adv = style_advance_pt(template.paragraph_styles["部扉大標-明體W9"], master.grid)
+    assert adv == pytest.approx(23.1, abs=0.05)
+    # 篇序標籤段後不空槽（間距已含於行距 34.37）
+    assert template.paragraph_styles["標籤-篇序小標"].para_gap_slots == 0
 
 
 # ---------- CIP 細框向量原件（Sprint 14） ----------
