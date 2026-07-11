@@ -123,3 +123,36 @@ def test_preflight_flags_lzw_and_rgb_tokens(tmp_path):
     bad = _failed_rules(report)
     assert "color-cmyk-only" in bad
     assert "no-lzw" in bad
+
+
+def test_preflight_accepts_literal_string_id(tmp_path):
+    """回歸（Sprint 28 baseline 假陰性）：/ID 解碼後 16 bytes 全可列印時，
+    PyMuPDF xref_object 會把兩組字串重序列化為 (literal) 而非 <hex>；
+    /ID 仍為合規的兩組非空字串，trailer-id 須通過（檢查器同認兩式）。"""
+    fid = "30313233343536373839414243444546"  # 解碼＝可列印 ASCII → fitz 讀回 (literal)
+    out = bytearray(b"%PDF-1.3\n")
+    objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>",
+    ]
+    offsets = []
+    for i, obj in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{obj}\nendobj\n".encode("latin-1")
+    xref = len(out)
+    n = len(objs) + 1
+    out += f"xref\n0 {n}\n0000000000 65535 f \n".encode("latin-1")
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode("latin-1")
+    out += (
+        f"trailer\n<< /Size {n} /Root 1 0 R /ID [<{fid}> <{fid}>] >>\n"
+        f"startxref\n{xref}\n%%EOF"
+    ).encode("latin-1")
+    path = tmp_path / "literal-id.pdf"
+    path.write_bytes(bytes(out))
+
+    report = check_pdfx1a(path)
+    assert "trailer-id" not in _failed_rules(report), (
+        "可列印 /ID 序列化為 (literal) 時 trailer-id 仍須通過"
+    )

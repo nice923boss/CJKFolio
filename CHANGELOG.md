@@ -2,6 +2,22 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.23.0（2026-07-12，Sprint 28）preflight trailer-id 假陰性勘正（基線綠回復）
+
+### 修正（baseline 假陰性：接手動工前跑基線發現）
+
+- `pytest spikes tests` 全套順序下 `test_export_toc_rule_preflight_green` 假性失敗（`trailer-id`）。根因：`preflight.check_pdfx1a` 的 trailer-id 規則 regex 只認角括號 hex `<...>`；PyMuPDF `xref_object` 對「解碼後 16 bytes 全可列印」的 /ID 兩組字串重序列化為 literal `(...)`，regex 落空判失敗。全套累積使該 TOC PDF 的 /ID（＝`md5(bodies)`）位元組落入可列印區間才觸發（單獨執行不觸發）；**檔案 /ID 始終為合規的兩組非空字串，PDF 無缺陷，渲染／寫出層不動**。
+- 修檢查器 regex：trailer-id 每組字串同認 `<hex>` 與 `(literal)` 兩式（空 `<>`／`()` 仍判失敗，方向安全，不假性放行真正缺 /ID 者）。
+
+### 新增
+
+- [實作] tests/test_preflight.py::test_preflight_accepts_literal_string_id：可列印 /ID 的手工 PDF 回歸測試（TDD：修前 RED、修後 GREEN，確定性重現不依賴全套累積）。測試 205 → 206。
+
+### 驗證（Gate 4 獨立）
+
+- scratchpad probe：手工組不同 /ID PDF＋fitz 讀回實測 PyMuPDF 序列化行為（可列印→`(literal)`＋regex 落空、非可列印→`<hex>`＋命中），與被修檢查器不同路徑確證機制。
+- 完整基線 `pytest spikes tests` 206 passed / 0 failed，順序相依失敗消除；typecheck EXIT=0。
+
 ## v0.22.0（2026-07-12，Sprint 27）G-圖文版主版：頁型骨架（§4.2 主版 7 種完備）
 
 ### 新增

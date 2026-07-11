@@ -143,8 +143,11 @@ def check_pdfx1a(path) -> PreflightReport:
         trailer = _obj(doc, -1)
         catalog = _obj(doc, doc.pdf_catalog())
 
+        # /ID 兩組非空字串；PyMuPDF 讀回時，解碼後全可列印的字串會被重序列化為
+        # (literal) 而非 <hex>，故兩式皆須接受（空 <> 或 () 仍判失敗）。
+        _idstr = r"(?:<[0-9A-Fa-f]+>|\((?:[^()\\]|\\.)+\))"
         add("trailer-id",
-            re.search(r"/ID\s*\[\s*<[0-9A-Fa-f]+>\s*<[0-9A-Fa-f]+>\s*\]", trailer),
+            re.search(rf"/ID\s*\[\s*{_idstr}\s*{_idstr}\s*\]", trailer),
             "trailer /ID 兩組字串" if "/ID" in trailer else "trailer 無 /ID")
 
         add("no-encrypt", not doc.is_encrypted and "/Encrypt" not in trailer,
