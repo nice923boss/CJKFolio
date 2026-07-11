@@ -47,6 +47,8 @@ class Cell:
     kind: str  # "cjk" | "tcy" | "latin" | "space"
     width: int = 1  # 佔用的直排字槽數
     char_style: Optional[str] = None  # 字元樣式名（run 模型；None＝依段落樣式）
+    span: Optional[tuple] = None  # 文件 provenance：來源 text 半開區間 (start, end)。
+    # 座標系＝tokenize 輸入 text；經 offsets 映射後＝文件段 text（normalize 前）座標。
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,7 @@ class ParagraphSpec:
     line_slots: int = 1  # 每行佔的行槽數（特大級數標題 > 1）
     runs: Optional[tuple] = None  # ((text, char_style|None), ...)；None → 全段無字元樣式
     page_no: Optional[str] = None  # 目錄條目頁碼（純載體，掛到段末行，不影響斷行禁則）
+    para_idx: Optional[int] = None  # 文件段索引（純載體，供畫布反查文件游標）
 
 
 @dataclass(frozen=True)
@@ -76,25 +79,38 @@ class PlacedLine:
     line: Line
     style: str
     page_no: Optional[str] = None  # 目錄條目頁碼（僅段末行帶值）
+    para_idx: Optional[int] = None  # 文件段索引（provenance 載體）
+
+
+def normalize_with_offsets(text: str):
+    """正規化＋原索引映射：回傳 (normalized, offsets)，offsets[i]＝normalized[i] 的原索引。
+
+    控制字元（Cc）剝除會位移索引，畫布游標映射需要此表；表現形替換為 1:1 不動索引。
+    """
+    chars: list = []
+    offsets: list = []
+    for i, ch in enumerate(text):
+        # 控制字元（Cc）非排版內容：PDF 抽取素材常殘留（如發言標籤後的 U+0007）
+        if unicodedata.category(ch) == "Cc":
+            continue
+        chars.append(_PRESENTATION_FORMS.get(ch, ch))
+        offsets.append(i)
+    return "".join(chars), tuple(offsets)
 
 
 def normalize(text: str) -> str:
-    # 控制字元（Cc）非排版內容：PDF 抽取素材常殘留（如發言標籤後的 U+0007）
-    return "".join(
-        _PRESENTATION_FORMS.get(ch, ch)
-        for ch in text
-        if unicodedata.category(ch) != "Cc"
-    )
+    return normalize_with_offsets(text)[0]
 
 
-def _flush_ascii(run: str, out: list, char_style=None, vertical: bool = True) -> None:
+def _flush_ascii(run: str, out: list, char_style=None, vertical: bool = True,
+                 span=None) -> None:
     if not run:
         return
     # 直排：1〜2 位數字走縱中橫（tcy）；橫排數字/拉丁一律正常 LTR，不轉。
     if vertical and run.isdigit() and len(run) <= 2:
-        out.append(Cell(run, "tcy", 1, char_style))
+        out.append(Cell(run, "tcy", 1, char_style, span))
     else:
-        out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5)), char_style))
+        out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5)), char_style, span))
 
 
 def _is_run_char(ch: str, vertical: bool) -> bool:
@@ -105,28 +121,50 @@ def _is_run_char(ch: str, vertical: bool) -> bool:
     return ch.isascii()
 
 
-def tokenize(text: str, char_style=None, vertical: bool = True) -> list:
+def _span(offsets, i0: int, i1: int):
+    """輸入座標 [i0, i1) → 來源座標半開區間（offsets＝原索引表）。"""
+    if i1 <= i0:
+        return None
+    return (offsets[i0], offsets[i1 - 1] + 1)
+
+
+def tokenize(text: str, char_style=None, vertical: bool = True, offsets=None) -> list:
+    """text → cells，各 cell 帶 span。offsets＝normalize_with_offsets 的原索引表；
+    None 時 span 為輸入 text 自身座標（identity）。"""
+    if offsets is None:
+        offsets = range(len(text))
     cells: list = []
     run = ""
-    for ch in text:
+    run_start = 0
+    for i, ch in enumerate(text):
         if _is_run_char(ch, vertical):
+            if not run:
+                run_start = i
             run += ch
             continue
-        _flush_ascii(run, cells, char_style, vertical)
+        _flush_ascii(run, cells, char_style, vertical, _span(offsets, run_start, i))
         run = ""
         if ch in (" ", "　"):
-            cells.append(Cell(ch, "space", 1, char_style))
+            cells.append(Cell(ch, "space", 1, char_style, _span(offsets, i, i + 1)))
         else:
-            cells.append(Cell(ch, "cjk", 1, char_style))
-    _flush_ascii(run, cells, char_style, vertical)
+            cells.append(Cell(ch, "cjk", 1, char_style, _span(offsets, i, i + 1)))
+    _flush_ascii(run, cells, char_style, vertical, _span(offsets, run_start, len(text)))
     return cells
 
 
 def cells_from_runs(runs, vertical: bool = True) -> list:
-    """run 序列 → cells（各 run 內部正規化＋標注字元樣式；拉丁串不跨 run 合併）。"""
+    """run 序列 → cells（各 run 內部正規化＋標注字元樣式；拉丁串不跨 run 合併）。
+
+    span 為文件段 text 座標：run k 的基底＝前 k−1 個 run 的 text 長度和
+    （document@2 不變式：段 text＝runs 串接）。
+    """
     cells: list = []
+    base = 0
     for text, char_style in runs:
-        cells.extend(tokenize(normalize(text), char_style, vertical))
+        norm, offs = normalize_with_offsets(text)
+        cells.extend(tokenize(norm, char_style, vertical,
+                              offsets=tuple(base + o for o in offs)))
+        base += len(text)
     return cells
 
 
@@ -218,23 +256,27 @@ def flow_pages(
     cur: list = []
     slot = 0
 
-    def emit(line: Line, style: str, line_slots: int, page_no=None) -> None:
+    def emit(line: Line, style: str, line_slots: int, page_no=None, para_idx=None) -> None:
         nonlocal slot, cur
         if slot + line_slots > slots_per_page:
             pages.append(cur)
             cur = []
             slot = 0
-        cur.append(PlacedLine(slot, line, style, page_no=page_no))
+        cur.append(PlacedLine(slot, line, style, page_no=page_no, para_idx=para_idx))
         slot += line_slots
 
     for pi, spec in enumerate(specs):
         indent = 0 if (pi == 0 and first_para_continues) else spec.indent
         cap = spec.chars_per_line if spec.chars_per_line else chars_per_line
-        cells = (cells_from_runs(spec.runs, vertical) if spec.runs
-                 else tokenize(normalize(spec.text), vertical=vertical))
+        if spec.runs:
+            cells = cells_from_runs(spec.runs, vertical)
+        else:
+            norm, offs = normalize_with_offsets(spec.text)
+            cells = tokenize(norm, vertical=vertical, offsets=offs)
         for line in _break_cells(cells, cap, indent=indent):
             emit(line, spec.style, spec.line_slots,
-                 page_no=spec.page_no if line.para_end else None)
+                 page_no=spec.page_no if line.para_end else None,
+                 para_idx=spec.para_idx)
         if pi < len(specs) - 1:
             slot += spec.gap_after
             if slot >= slots_per_page:

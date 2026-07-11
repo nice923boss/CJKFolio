@@ -161,7 +161,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
     grid = master.grid
     vertical = page_is_vertical(doc, template)
     specs = []
-    for p in doc.paragraphs:
+    for i, p in enumerate(doc.paragraphs):
         if p.style not in template.paragraph_styles:
             raise KeyError(f"文件引用未知段落樣式：{p.style}")
         for r in p.runs:
@@ -178,6 +178,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 line_slots=style_line_slots(st, grid),
                 runs=tuple((r.text, r.char_style) for r in p.runs),
                 page_no=p.page_no,
+                para_idx=i,
             )
         )
     raw_pages = flow_pages(
