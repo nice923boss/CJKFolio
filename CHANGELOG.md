@@ -2,6 +2,26 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.19.0（2026-07-11，Sprint 24）目錄章名條目黑 W5（一手量測勘誤）
+
+### 新增
+
+- [實作] tools/measure_toc_page.py：加 entry_columns 直排列分析（按字中心 x 聚列，標主 CJK 字型／級數／頁碼），供目錄多層條目字型辨識。
+- [實作] tests：目錄章名條目勘誤斷言（font 思源黑體 TC／weight medium／11.5pt／head_offset 2／source DFHeiStd-W5、章名首字框頂 132.12）。測試 188 → 189。
+
+### 變更（模版：p002/p003 一手量測，A 級）
+
+- 「目錄-篇章條目」樣式勘誤：全字庫正楷體 TW-Kai 9.5pt → **思源黑體 TC Medium 11.5pt**（source DFHeiStd-W5），head_offset 3 → 2 槽：真書帶頁碼章名實為黑 W5 11.5pt（entry_columns 量測：章名全帶頁碼 top_y 135.15；楷 W3 9.5 為不帶頁碼摘要層字型，掃描誤設為章名層，同 Sprint 23 勘誤）。
+- 勘誤同時解 GAPS #12 fallback：章名改用已入庫思源黑體 Medium，render 不再 fallback TW-Kai（題詞-楷書仍用 TW-Kai，fallback 測試對象不變）。
+
+### 已知限制（詳 GAPS.md #13）
+
+- v1 不建模：條目摘要層（楷 W3 9.5 不帶頁碼、真書 top_y 166）、【結語】黑 W5 10pt 變體、章名與摘要縱向錯落及多層列距；章名首字墨頂 137.42 vs 真書 135.15（差 +2.27pt＝整數槽＋思源華康字框度量差）。
+
+### 待 Owner 真實素材驗收
+
+- out/toc24/（本機，重生成）：page-001.png（--first-page 3）4 條章名黑 W5＋引導線＋直立頁碼 17／63／109／155 底對齊已 Read 親驗（黑體章名與明體部名字族區隔）；toc.pdf preflight 12/12、PyMuPDF 抽驗 4 列 SourceHanSansTC-Medium 列距 23pt；待 Owner 與真書 p002/p003 並排目視比對。
+
 ## v0.18.0（2026-07-11，Sprint 23）E 序文版頁型（三頁互證量測）
 
 ### 新增

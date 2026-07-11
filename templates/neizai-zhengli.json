@@ -134,14 +134,14 @@
    "note": "目次部名詩句（p1-2）"
   },
   "目錄-篇章條目": {
-   "font_family": "全字庫正楷體 TW-Kai",
-   "font_weight": "regular",
-   "size_pt": 9.5,
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "size_pt": 11.5,
    "indent_chars": 0,
    "para_gap_slots": 0,
-   "head_offset_chars": 3,
-   "source_font": "DFKaiShuStd-W3",
-   "note": "目次條目 608 字；章名另有黑體 W5 條目層（掃描）；head_offset 3 字格＝縮退 29.93pt vs 真書 27.04pt（條目錨 135−篇名天頭 107.96），整數槽差 +2.89pt 入 GAPS"
+   "head_offset_chars": 2,
+   "source_font": "DFHeiStd-W5",
+   "note": "目錄帶頁碼章名條目（p002/p003 一手量測，Sprint 24）：DFHeiStd-W5 11.5pt（黑 W5，對映思源黑體 Medium OFL，已入庫不 fallback）；勘誤（原記楷 W3 9.5pt＝掃描把不帶頁碼摘要層字型誤設為章名層，同 Sprint 23 署名長橫勘誤）；head_offset 2 字格＝黑字距 12.08×2＝24.16pt，章名首字頂 132.12 vs 真書 135.15（整數槽差 −3.03pt 入 GAPS）；v1 不建模：條目摘要層（楷 W3 9.5 不帶頁碼、真書 top_y 166）、【結語】黑 W5 10pt 變體、章名與摘要縱向錯落及多層列距（GAPS #13）"
   },
   "版權頁-CIP橫排": {
    "font_family": "思源宋體 TC",

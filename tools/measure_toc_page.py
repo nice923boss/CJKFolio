@@ -8,7 +8,7 @@
 """
 import json
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import fitz
@@ -36,6 +36,36 @@ def _dash_lines(page):
 
 def _half(v, left):
     return v if left else v - HALF_W
+
+
+def _entry_columns(spans: list, left: bool) -> list:
+    """把半頁 spans 按直排列（字中心 x 相近）聚成條目列。
+
+    直排書目錄每條目為一直列（字由上而下），列由右至左為閱讀序。
+    每列標主 CJK 字型／級數（排除拉丁頁碼字型後取眾數）與是否帶頁碼數字。
+    """
+    buckets: list = []
+    for sp in sorted(spans, key=lambda s: (-(s["bbox"][0] + s["bbox"][2]) / 2, s["bbox"][1])):
+        cx = (sp["bbox"][0] + sp["bbox"][2]) / 2
+        if buckets and abs(buckets[-1][0] - cx) < 8:
+            buckets[-1][1].append(sp)
+        else:
+            buckets.append((cx, [sp]))
+    cols = []
+    for cx, sps in buckets:
+        sps = sorted(sps, key=lambda s: s["bbox"][1])
+        cjk = [s for s in sps if not s["font"].startswith(("Times", "Pepita"))]
+        counts = Counter((s["font"], round(s["size"], 2)) for s in cjk)
+        head = counts.most_common(1)[0][0] if counts else (sps[0]["font"], round(sps[0]["size"], 2))
+        cols.append({
+            "text": "".join(s["text"] for s in sps),
+            "font": head[0], "size": head[1],
+            "cx": round(_half(cx, left), 2),
+            "top_y": round(min(s["bbox"][1] for s in sps), 2),
+            "bottom_y": round(max(s["bbox"][3] for s in sps), 2),
+            "has_page_no": any(s["font"].startswith("Times") for s in sps),
+        })
+    return cols
 
 
 def measure_half(page, idx, left):
@@ -82,6 +112,7 @@ def measure_half(page, idx, left):
         "crossing_lines": cross_lines,
         "content_below_top_y": min((sp["bbox"][1] for sp in below), default=None),
         "fonts": {f"{f} {s}pt": n for (f, s), n in fonts.most_common()},
+        "entry_columns": _entry_columns(spans, left),
     }
 
 
@@ -111,6 +142,14 @@ def main() -> int:
             print(f"  穿線行「{ln['text']}」{ln['font']} {ln['size']}pt："
                   f"x {ln['x0']:.2f}〜{ln['x1']:.2f}、字頂 y {ln['top_y']:.2f}")
         print(f"  線下內容最高起點 y={r['content_below_top_y']}")
+        groups: dict = defaultdict(list)
+        for c in r["entry_columns"]:
+            groups[(c["font"], c["size"])].append(c)
+        for (f, s), cs in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+            withpg = sum(c["has_page_no"] for c in cs)
+            sample = next((c["text"] for c in cs if len(c["text"]) > 2), cs[0]["text"])[:16]
+            print(f"  列層 {f} {s}pt：{len(cs)} 列、{withpg} 帶頁碼、"
+                  f"cx {min(c['cx'] for c in cs):.1f}〜{max(c['cx'] for c in cs):.1f}｜例「{sample}」")
     print(f"量測 JSON → {out}（本機，不入 repo）")
     return 0
 

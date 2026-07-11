@@ -321,6 +321,26 @@ def test_preface_layout_title_slot0_body_slot5(template):
     assert placed[1].line.start_slot == 2  # 段首縮排 2 字
 
 
+# ---------- 目錄章名條目黑 W5 勘誤（Sprint 24） ----------
+
+def test_toc_entry_black_w5_corrected(template):
+    """目錄帶頁碼章名條目勘誤（p002/p003 一手量測，Sprint 24）：真書章名
+    ＝黑體 W5 11.5pt（對映思源黑體 Medium），非楷 W3 9.5pt（後者為不帶頁碼
+    摘要層，v1 不建模）；黑字距 12.08 下 head_offset 2 槽＝章名首字頂 132.12
+    貼真書 135.15（整數槽差 −3.03pt 入 GAPS）。"""
+    entry = template.paragraph_styles["目錄-篇章條目"]
+    assert entry.font_family == "思源黑體 TC"
+    assert entry.font_weight == "medium"
+    assert entry.size_pt == pytest.approx(11.5)
+    assert entry.source_font == "DFHeiStd-W5"
+    assert entry.head_offset_chars == 2
+    master = template.masters["D-目錄"]
+    adv = style_advance_pt(entry, master.grid)
+    entry_top = master.margins.top_mm * PT + entry.head_offset_chars * adv
+    assert entry_top == pytest.approx(132.12, abs=0.1)  # 真書章名 top_y 135.15
+    assert entry_top > master.rule.y_from_top_pt  # 章名在虛線 122.46 下（不穿線）
+
+
 # ---------- 橫排版面軸（Sprint 13：版權頁-CIP，GAPS #13） ----------
 
 def test_page_is_vertical_detects_direction(template):
@@ -656,7 +676,7 @@ def test_layout_rule_breaks_crossing_line_only(template):
     grid = master.grid
     top_pt = master.margins.top_mm * PT
     # 幾何前提（p002/p003 一手量測）：部名天頭 107.96pt 在虛線 122.46 之上；
-    # 條目縮退 3 槽後起點在虛線之下
+    # 條目縮退 2 槽後起點在虛線之下（黑字距 12.08×2＝24.16pt，Sprint 24 勘誤）
     part_style = template.paragraph_styles["目錄-部名"]
     entry_style = template.paragraph_styles["目錄-篇章條目"]
     assert top_pt < master.rule.y_from_top_pt
