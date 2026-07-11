@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.20.0（2026-07-11，Sprint 25）C 個案扉頁大標置位＋直排墨偏移發現（GAPS #21）
+
+### 新增
+
+- [實作] tools/measure_case_page.py：掃描定位個案扉頁（右半頁），逐列量大標行軸／字距／版心／Case 編號（數十頁互證）。
+- [實作] samples/case-divider.doc.json：自擬個案扉頁樣張（副標＋大標，紅線不取真書文字）。
+- [實作] tests：C 承 A（內文天頭 92.09pt、首行縮排 2 字）＋大標 slot 1 右頁 line_axis 331.25。測試 189 → 190。
+
+### 變更（模版：C 個案扉頁數十頁一手互證，A 級）
+
+- C-個案扉頁主版：evidence 由「未量測（承 A 推定）」升級為一手量測：個案大標 NotoSans Medium 17.9pt 置 slot 1（右頁 line_axis 331.25 貼真書墨欄中心 331.28，差 0.03）、資訊列（Case 編號 DFHeiStd-W5 13pt＋副標 11.4pt）slot 0、內文承 A 自 slot 2（首字 top 145.75）。
+- 「個案中標」para_gap_slots 1 → 0 勘誤：實測資訊列 slot 0 與大標 slot 1 相鄰（同 Sprint 20 部扉標籤先例）。
+
+### 發現（正確性問題，GAPS #21，Gate 4 閉環抽驗）
+
+- PyMuPDF get_texttrace 抽 case.pdf：大標 layout slot 1 行軸正確（331.25＝真書 331.28），但 **PDF 字墨 cx 339.75，偏 line_axis 欄中心 +8.5pt**；資訊列 11.4pt 與大標 17.9pt 墨 cx 皆偏 +8.50（與字級無關），真書華康大標墨 cx＝欄中心。
+- 判定為**全直排既有正確性問題**（placement ttb 逐字水平 origin＝line_axis 欄中心，未補償字形水平度量）：非 Sprint 25 引入、非單一頁型；兩後端同源（PNG/PDF 一致）故 parity 未攔截，過往只驗 layout axis 或 Read PNG（8.5pt≈3mm 不明顯）故未暴露。
+- 本 Sprint **不硬修**（context 保護、避免 Sprint 22 式同源同錯降級）：列 GAPS #21，Sprint 26 專項調查（左右頁對稱性＋根因＋全直排座標回歸）。
+
+### 已知限制（詳 GAPS.md #13、#21）
+
+- C v1 不建模：資訊列雙元素（Case 編號 13pt 獨立列）、內文精確段間 gap、個案雙線框；GAPS #21 直排墨偏移待 Sprint 26 修。
+
+### 待 Owner 真實素材驗收
+
+- out/case25/（本機，重生成）：page-001.png（--first-page 2 右頁）資訊列 slot 0＋大標 slot 1（黑體級數區隔）＋頁碼書口右已 Read 親驗；case.pdf preflight 12/12、字型 SourceHanSansTC-Medium 無 fallback；**待 Owner 與真書並排目視比對，並注意直排墨偏移 GAPS #21（≈3mm 偏書口）**。
+
 ## v0.19.0（2026-07-11，Sprint 24）目錄章名條目黑 W5（一手量測勘誤）
 
 ### 新增

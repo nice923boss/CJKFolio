@@ -1,0 +1,13 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "個案扉頁測試範例",
+  "template": "neizai-zhengli",
+  "master": "C-個案扉頁",
+  "language": "zh-TW"
+ },
+ "paragraphs": [
+  {"text": "每個家都有自己的故事", "style": "個案中標-NotoSans"},
+  {"text": "重新安放生活的重量", "style": "個案大標-NotoSans"}
+ ]
+}

@@ -93,9 +93,9 @@
    "font_weight": "medium",
    "size_pt": 11.4,
    "indent_chars": 0,
-   "para_gap_slots": 1,
+   "para_gap_slots": 0,
    "source_font": "NotoSansCJKtc-Medium",
-   "note": "個案扉資訊列（22 頁）；另有 12.9pt 變體見掃描"
+   "note": "個案扉頁資訊列（slot 0，p20/36/54 一手量測，Sprint 25）；para_gap 0＝資訊列 slot 0 與大標 slot 1 相鄰（實測 cx 354.24 vs 331.28 差 1 槽，同 Sprint 20 標籤勘誤）；slot 0 另含 Case 編號黑 W5 13pt「01」雙元素（v1 只建副標，GAPS #13）；另有 12.9pt 變體見掃描"
   },
   "部扉大標-明體W9": {
    "font_family": "思源宋體 TC",
@@ -296,7 +296,7 @@
     "base_size_pt": 11.5
    },
    "mirror": true,
-   "evidence": "版心承 A；個案扉佈局（大標＋資訊列＋Case 編號）未逐頁量測"
+   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0 資訊列＝個案中標 11.4pt 副標＋Case 編號黑 W5 13pt「01」（雙元素，v1 只建副標）；Case 編號 PepitaMT 9pt 於頁腳左下三件組。已知差異（GAPS #13）：slot 0 Case 編號 13pt 元素、扉頁大標與內文精確 gap（大標 para_gap 1 使樣張內文落 slot 3 vs 真書 slot 2）、內頁大標 usage、雙線菱形框（美術資產不生成，Sprint 15 決議）"
   },
   "D-目錄": {
    "margins_mm": {
