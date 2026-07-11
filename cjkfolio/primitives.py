@@ -58,21 +58,23 @@ def toc_rule_line(page_width_pt: float, rule) -> StrokeLine:
 
 
 def cip_frame_rect(master, left_x_pt: float, n_lines: int, frame) -> StrokeRect:
-    """CIP 細框（top-down pt）：圍住橫排 CIP 內容網格盒，四周留 frame.pad_pt。
+    """CIP 細框（top-down pt）：圍住橫排 CIP 內容網格盒，外留 pad。
 
     網格盒＝[left, top]～[left＋滿行寬, top＋n_lines×行距]，其中滿行寬＝
-    grid.chars_per_line×char_advance_pt；框在網格盒外擴 pad（四周等距）。
+    grid.chars_per_line×char_advance_pt；框在網格盒外擴 pad（水平 pad_pt、垂直
+    pad_v_pt，None 時沿用 pad_pt；p178 實測水平 5.05／垂直 4.94 不對稱）。
     left_x_pt 由呼叫端經 render.horizontal_left_x_pt 傳入（鏡像已判，兩後端同源）。
     """
     grid = master.grid
     top = master.margins.top_mm * PT_PER_MM
     content_w = grid.chars_per_line * grid.char_advance_pt
-    pad = frame.pad_pt
+    pad_h = frame.pad_pt
+    pad_v = frame.pad_v_pt if frame.pad_v_pt is not None else frame.pad_pt
     return StrokeRect(
-        x0=left_x_pt - pad,
-        y0=top - pad,
-        x1=left_x_pt + content_w + pad,
-        y1=top + n_lines * grid.line_pitch_pt + pad,
+        x0=left_x_pt - pad_h,
+        y0=top - pad_v,
+        x1=left_x_pt + content_w + pad_h,
+        y1=top + n_lines * grid.line_pitch_pt + pad_v,
         cmyk=frame.cmyk,
         line_width_pt=frame.line_width_pt,
     )

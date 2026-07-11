@@ -232,9 +232,10 @@ def test_export_horizontal_two_backend_position_parity(template, tmp_path):
     assert [c for c, _ in lines] == ["自", "臺"]  # 兩行首字（由上而下）
 
     master = template.masters["F-版權頁"]
+    cip_size = template.paragraph_styles["版權頁-CIP橫排"].size_pt  # 隨模版真值（p178 量測）
     expect_x = BLEED_PT + horizontal_left_x_pt(master, book_number=1)
     for i, (_, (ox, oy)) in enumerate(lines):
-        expect_y = BLEED_PT + horizontal_baseline_y_pt(master, slot=i, size_pt=8.0)
+        expect_y = BLEED_PT + horizontal_baseline_y_pt(master, slot=i, size_pt=cip_size)
         assert ox == pytest.approx(expect_x, abs=0.3), f"行 {i} 左緣 {ox} vs {expect_x}"
         assert oy == pytest.approx(expect_y, abs=0.3), f"行 {i} 基線 {oy} vs {expect_y}"
 
@@ -444,7 +445,7 @@ def test_export_cip_frame_cmyk_stroke_before_text(template, tmp_path):
     content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
     assert _frame_re(content) is not None, "缺矩形路徑 re"
     assert "\nS\n" in content, "缺描邊算符 S"
-    assert "0 0 0 1 K" in content, "框描邊非 DeviceCMYK 純黑 K"
+    assert "0 0 0 0.92 K" in content, "框描邊非 DeviceCMYK 暖黑 K92（p178 量測：框色同內文）"
     assert content.index(" re") < content.index("BT"), "path 須在文字物件 BT 之前"
     assert " rg" not in content and " RG" not in content, "框殘留 RGB 描邊"
 

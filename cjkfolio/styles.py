@@ -81,6 +81,7 @@ class FrameSpec:
     cmyk: tuple = (0.0, 0.0, 0.0, 1.0)
     line_width_pt: float = 0.5
     pad_pt: float = 6.0
+    pad_v_pt: Optional[float] = None  # 垂直 pad（p178 實測不對稱）；None＝同 pad_pt
 
 
 @dataclass(frozen=True)
@@ -195,11 +196,13 @@ def _frame_spec(d: dict, ctx: str) -> FrameSpec:
     cmyk = d.get("cmyk", [0.0, 0.0, 0.0, 1.0])
     if not (isinstance(cmyk, (list, tuple)) and len(cmyk) == 4):
         raise TemplateError(f"{ctx}.cmyk 須為 4 元素 [c,m,y,k]，得到 {cmyk!r}")
+    pad_v = d.get("pad_v_pt")
     return FrameSpec(
         kind=kind,
         cmyk=tuple(float(v) for v in cmyk),
         line_width_pt=float(d.get("line_width_pt", 0.5)),
         pad_pt=float(d.get("pad_pt", 6.0)),
+        pad_v_pt=None if pad_v is None else float(pad_v),
     )
 
 

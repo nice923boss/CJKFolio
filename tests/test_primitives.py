@@ -51,6 +51,20 @@ def test_cip_frame_pad_widens_box(fmaster):
     assert padded.y1 == pytest.approx(tight.y1 + 10.0)
 
 
+def test_cip_frame_asymmetric_vertical_pad(fmaster):
+    # p178 實測 pad 不對稱（水平 5.05、垂直 4.94）：pad_v_pt 選配，None＝同 pad_pt
+    frame = FrameSpec(kind="cip-box", pad_pt=5.05, pad_v_pt=4.94)
+    base = cip_frame_rect(fmaster, 72.0, 3, FrameSpec(kind="cip-box", pad_pt=0.0))
+    rect = cip_frame_rect(fmaster, 72.0, 3, frame)
+    assert rect.x0 == pytest.approx(base.x0 - 5.05)
+    assert rect.x1 == pytest.approx(base.x1 + 5.05)
+    assert rect.y0 == pytest.approx(base.y0 - 4.94)
+    assert rect.y1 == pytest.approx(base.y1 + 4.94)
+    # 未給 pad_v_pt 時垂直沿用 pad_pt（既有行為不變）
+    sym = cip_frame_rect(fmaster, 72.0, 3, FrameSpec(kind="cip-box", pad_pt=5.05))
+    assert sym.y0 == pytest.approx(base.y0 - 5.05)
+
+
 # ---------- 目錄水平虛線（Sprint 15） ----------
 
 def test_toc_rule_line_geometry():

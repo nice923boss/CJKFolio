@@ -145,12 +145,12 @@
   "版權頁-CIP橫排": {
    "font_family": "思源宋體 TC",
    "font_weight": "regular",
-   "size_pt": 8.0,
+   "size_pt": 5.63,
    "indent_chars": 0,
    "para_gap_slots": 0,
    "writing_mode": "horizontal-tb",
    "source_font": "DFMingStd-W3",
-   "note": "全書唯一橫排（p178 CIP 細框）；Sprint 13 渲染器已支援橫排（horizontal-tb），版心自擬待 GAPS #13 量測"
+   "note": "全書唯一橫排（p178 CIP 細框）；級數 5.63pt 為 p178 一手量測（Sprint 19，全 31 span 單一字級），量測參數入模版、內容不入 repo"
   },
   "旁注-手札圖注": {
    "font_family": "辰宇落雁體",
@@ -279,11 +279,11 @@
    "evidence": "版心承 A；序文頁未逐頁量測（掃描 p3-17）"
   },
   "F-版權頁": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 34, "lines_per_page": 27, "char_advance_pt": 8.4, "line_pitch_pt": 14.0, "base_size_pt": 8.0},
+   "margins_mm": {"top": 43.48, "bottom": 41.13, "outer": 21.0, "inner": 25.81},
+   "grid": {"chars_per_line": 23, "lines_per_page": 45, "char_advance_pt": 5.66, "line_pitch_pt": 7.74, "base_size_pt": 5.63},
    "mirror": false,
-   "frame": {"kind": "cip-box", "cmyk": [0, 0, 0, 1], "line_width_pt": 0.5, "pad_pt": 6.0},
-   "evidence": "全書唯一橫排（p178 CIP 細框）；Sprint 13 渲染器已支援橫排（horizontal-tb），Sprint 14 加 CIP 細框向量原件（cip-box，純黑 CMYK 0.5pt 描邊）。橫排版心與框幾何為自擬合理幾何（8pt CIP、字距 8.4pt＝×1.05、行距 14pt、框四周 pad 6pt），p178 真實版心未量測留 GAPS #13"
+   "frame": {"kind": "cip-box", "cmyk": [0, 0, 0, 0.92], "line_width_pt": 0.14, "pad_pt": 5.05, "pad_v_pt": 4.94},
+   "evidence": "p178 一手量測（Sprint 19，tools/measure_cip_page.py）：CIP 5.63pt、字距 5.66pt（樣本 7 行均值）、主體行距 7.74pt、內容左 73.15pt=25.81mm、首行 baseline 128.2pt→top=128.2−5.63×0.88=123.25pt=43.48mm（baseline 錨定）、框線 0.141pt 暖黑（同內文→單 K92）、框 pad 水平 5.05／垂直 4.94pt、滿行 23 字（內容寬 131.48pt÷5.66）。lines_per_page 45 為幾何推導（(595.28−123.25−116.64)÷7.74）非量測。已知差異（GAPS #13）：後段 3 行行距 12.73／11.73pt 分區（v1 單一 pitch）、框上方標題行（v1 不區分框內外行）"
   },
   "G-圖文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},

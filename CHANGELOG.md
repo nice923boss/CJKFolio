@@ -2,6 +2,28 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.14.0（2026-07-11，Sprint 19）F-版權頁真實版心量測（關 GAPS #13 (a)）
+
+### 新增
+
+- [實作] tools/measure_cip_page.py：p178（PDF 頁索引 177）CIP 量測工具（框折線重建 bbox、框內 spans 行距／字距／pad 統計、半邊判定；輸出 assets/reference/cip_measurements.json 本機不入 repo）。
+- [實作] styles：FrameSpec.pad_v_pt（選配垂直 pad，None＝同 pad_pt）；primitives cip_frame_rect 支援不對稱 pad。
+- 測試 173 → 175（+2：pad_v 解析＋不對稱框幾何；另 3 處寫死斷言同步為量測真值）。
+
+### 變更（模版 F-版權頁：自擬 → p178 一手量測，A 級）
+
+- CIP 級數 8 → **5.63pt**、字距 8.4 → **5.66pt**、行距 14 → **7.74pt**、滿行 34 → **23 字**；top 32.49 → **43.48mm**（首行 baseline 128.2pt 錨定）、inner 25.58 → **25.81mm**。
+- 框：線寬 0.5 → **0.14pt**、純黑 → **暖黑 K92**（同內文色）、pad 6.0 → **5.05（水平）×4.94（垂直）**。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 後段 3 行行距分區（12.73／11.73pt）：v1 單一 line_pitch 表達不了，樣張以主體 7.74 等距。
+- 框上方 CIP 標題行：v1 不區分框內外行。框寬（網格滿行推導）與真書最長行差 1.3pt。
+
+### 待 Owner 真實素材驗收
+
+- out/cip19/（本機，重生成）：page-001.png 密排 CIP＋細框已 Read 親驗；cip.pdf preflight 12/12、PyMuPDF 獨立抽驗框左上角 (68.11, 118.31)／首行 baseline 128.2／字級 5.63／線寬 0.14 與 p178 量測精確重合（0.01pt 內）；待 Owner 與真書 p178 並排目視比對。
+
 ## v0.13.0（2026-07-11，Sprint 18）文件 provenance 載體（Phase 2 首項工程）
 
 ### 新增

@@ -92,12 +92,14 @@ def test_template_missing_masters_rejected():
 # ---------- 向量裝飾框（Sprint 14：CIP 細框） ----------
 
 def test_master_frame_parsing(template):
+    # 值為 p178 一手量測（Sprint 19）：框色暖黑同內文（單 K92）、線寬 0.14、pad 不對稱
     f = template.masters["F-版權頁"].frame
     assert isinstance(f, FrameSpec)
     assert f.kind == "cip-box"
-    assert f.cmyk == (0.0, 0.0, 0.0, 1.0)
-    assert f.line_width_pt == 0.5
-    assert f.pad_pt == 6.0
+    assert f.cmyk == (0.0, 0.0, 0.0, 0.92)
+    assert f.line_width_pt == 0.14
+    assert f.pad_pt == 5.05
+    assert f.pad_v_pt == 4.94
     # 非版權頁主版無框（None）
     assert template.masters["A-內文版"].frame is None
     assert template.masters["B-部扉"].frame is None
@@ -125,6 +127,15 @@ def test_frame_defaults_when_optional_omitted():
     assert f.cmyk == (0.0, 0.0, 0.0, 1.0)  # 預設純黑
     assert f.line_width_pt == 0.5
     assert f.pad_pt == 6.0
+    assert f.pad_v_pt is None  # 選配：未給時垂直 pad 沿用 pad_pt
+
+
+def test_frame_pad_v_parsing():
+    tpl = template_from_dict(_template_with_frame(
+        {"kind": "cip-box", "pad_pt": 5.05, "pad_v_pt": 4.94}))
+    f = tpl.masters["F-版權頁"].frame
+    assert f.pad_pt == pytest.approx(5.05)
+    assert f.pad_v_pt == pytest.approx(4.94)
 
 
 # ---------- 向量裝飾線（Sprint 15：目錄水平虛線） ----------
