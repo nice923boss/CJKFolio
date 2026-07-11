@@ -246,11 +246,11 @@
      "source": "title",
      "baseline_from_top_pt": 529.15,
      "outer_offset_pt": 59.53,
-     "pages": "odd"
+     "pages": "even"
     }
    },
-   "evidence": "跨頁實測（measurements.json、calibration.json）；inner 與 bottom 由版心網格反推（148mm − 書口 21mm − 13 行網格寬 287.5pt）；頁腳座標取 foot_elements 實測（頁碼外緣 36.8pt≈13mm、基線 530.43pt；書眉齊版心外緣 59.53pt、基線 529.15pt）",
-   "note": "頁腳 v1 為頁碼（全頁）＋書名書眉（奇數頁）；原書左頁書眉為章節副標、個案頁另有 Case 編號，待章節結構與個案主版進場"
+   "evidence": "跨頁實測（measurements.json、calibration.json）；inner 與 bottom 由版心網格反推（148mm − 書口 21mm − 13 行網格寬 287.5pt）；頁腳座標取 foot_elements 實測（頁碼外緣 36.8pt≈13mm、基線 530.43pt；書眉齊版心外緣 59.53pt、基線 529.15pt）；側別依真書三向互證（Sprint 22）：偶數頁＝右頁（頁碼書口右＋書名書眉）、奇數頁＝左頁（頁碼書口左）",
+   "note": "頁腳 v1 為頁碼（全頁）＋書名書眉（偶數頁＝右頁）；原書左頁（奇數頁）書眉為章節副標、個案頁另有 Case 編號，待章節結構與個案主版進場"
   },
   "B-部扉": {
    "margins_mm": {"top": 62.38, "bottom": 41.13, "outer": 63.53, "inner": 25.58},
@@ -280,11 +280,11 @@
    "evidence": "版心承 A；序文頁未逐頁量測（掃描 p3-17）"
   },
   "F-版權頁": {
-   "margins_mm": {"top": 43.48, "bottom": 41.13, "outer": 21.0, "inner": 25.81},
+   "margins_mm": {"top": 43.48, "bottom": 41.13, "outer": 25.81, "inner": 21.0},
    "grid": {"chars_per_line": 23, "lines_per_page": 45, "char_advance_pt": 5.66, "line_pitch_pt": 7.74, "base_size_pt": 5.63},
    "mirror": false,
    "frame": {"kind": "cip-box", "cmyk": [0, 0, 0, 0.92], "line_width_pt": 0.14, "pad_pt": 5.05, "pad_v_pt": 4.94},
-   "evidence": "p178 一手量測（Sprint 19，tools/measure_cip_page.py）：CIP 5.63pt、字距 5.66pt（樣本 7 行均值）、主體行距 7.74pt、內容左 73.15pt=25.81mm、首行 baseline 128.2pt→top=128.2−5.63×0.88=123.25pt=43.48mm（baseline 錨定）、框線 0.141pt 暖黑（同內文→單 K92）、框 pad 水平 5.05／垂直 4.94pt、滿行 23 字（內容寬 131.48pt÷5.66）。lines_per_page 45 為幾何推導（(595.28−123.25−116.64)÷7.74）非量測。已知差異（GAPS #13）：後段 3 行行距 12.73／11.73pt 分區（v1 單一 pitch）、框上方標題行（v1 不區分框內外行）"
+   "evidence": "p178 一手量測（Sprint 19，tools/measure_cip_page.py）：CIP 5.63pt、字距 5.66pt（樣本 7 行均值）、主體行距 7.74pt、內容左 73.15pt=25.81mm＝書口（p178 為左半＝奇數頁＝左頁，Sprint 22 側別修正後 25.81 改標 outer，mirror=false 恆以 outer 為起排側，幾何不變）、首行 baseline 128.2pt→top=128.2−5.63×0.88=123.25pt=43.48mm（baseline 錨定）、框線 0.141pt 暖黑（同內文→單 K92）、框 pad 水平 5.05／垂直 4.94pt、滿行 23 字（內容寬 131.48pt÷5.66）。inner 21.0 承 A 自擬（p178 訂口側未量測）。lines_per_page 45 為幾何推導（(595.28−123.25−116.64)÷7.74）非量測。已知差異（GAPS #13）：後段 3 行行距 12.73／11.73pt 分區（v1 單一 pitch）、框上方標題行（v1 不區分框內外行）"
   },
   "G-圖文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},

@@ -134,16 +134,17 @@ def test_export_glyph_geometry_on_grid(template, tmp_path):
 @needs_fonts
 def test_export_page_selection_and_footer(template, tmp_path):
     doc = make_doc([{"text": BODY_500, "style": "內文-明體直排"}])
-    # 全頁匯出：520 字 → 2 頁；first_page=30 → 頁 1＝書頁 30（偶）、頁 2＝書頁 31（奇），鏡像依書頁號（GAPS #16）
+    # 全頁匯出：520 字 → 2 頁；first_page=30 → 頁 1＝書頁 30（偶＝右頁）、
+    # 頁 2＝書頁 31（奇＝左頁），側別依真書三向互證（Sprint 22）
     out_all = tmp_path / "all.pdf"
     r_all = export_pdf(doc, template, out_all, first_page=30)
     assert r_all.page_count == 2
     pdf_all = fitz.open(str(out_all))
     assert pdf_all.page_count == 2
     p1 = pdf_all[0].get_text()
-    assert "30" in p1 and "自擬樣張" not in p1  # 書頁 30 偶數（左頁）：頁碼有、書眉無
+    assert "30" in p1 and "自擬樣張" in p1  # 書頁 30 偶數（右頁）：頁碼＋書眉（書名）
     p2 = pdf_all[1].get_text()
-    assert "31" in p2 and "自擬樣張" in p2  # 書頁 31 奇數（右頁）：頁碼＋書眉
+    assert "31" in p2 and "自擬樣張" not in p2  # 書頁 31 奇數（左頁）：頁碼有、書眉無
 
     # 單頁選擇：只匯第 2 版面頁
     out_one = tmp_path / "p2.pdf"
@@ -160,7 +161,7 @@ def test_export_page_selection_and_footer(template, tmp_path):
 
 @needs_fonts
 def test_export_body_axis_mirrors_by_book_page(template, tmp_path):
-    """PDF 內容流行軸依書頁號鏡像：偶數起頁行軸偏左，奇數起頁偏右（GAPS #16）。"""
+    """PDF 內容流行軸依書頁號鏡像：偶數起頁行軸偏右，奇數起頁偏左（Sprint 22）。"""
     doc = make_doc([{"text": "永", "style": "內文-明體直排"}])
 
     def axis_x(first_page):
@@ -172,7 +173,7 @@ def test_export_body_axis_mirrors_by_book_page(template, tmp_path):
         assert m, content
         return float(m.group(1))
 
-    assert axis_x(21) > axis_x(20)  # 書頁 21（奇＝右頁）行軸較 20（偶＝左頁）右
+    assert axis_x(20) > axis_x(21)  # 書頁 20（偶＝右頁）行軸較 21（奇＝左頁）右
 
 
 @needs_fonts

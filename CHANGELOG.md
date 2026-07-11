@@ -2,6 +2,27 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.17.0（2026-07-11，Sprint 22）鏡像側別與真書對齊（正確性修正）
+
+### 修正（GAPS #20：Sprint 12 側別基準與真書相反）
+
+- [實作] 真書三向互證（A 級）：頁碼側（四 spread：偶頁頁碼書口右、奇頁書口左）＋書眉側（書名書眉皆偶頁）＋版心側（偶頁右邊距 21.00mm＝outer 精確）→ **偶數頁＝右頁、奇數頁＝左頁**；Sprint 12「奇右偶左」為西式左翻書慣例誤植。
+- [實作] render：新增 `is_right_page` 單一事實來源（偶＝右頁），`line_axis_x_pt`／`horizontal_left_x_pt`／兩後端 `_footer` 共 5 判定點收斂；footer 奇偶 gate（pages 配置語意）與書口側別拆分；mirror=false 恆以 outer 槽為起排側（直排 B＝右、橫排 F＝左）。
+- [實作] 奇偶測試矩陣第二次翻轉（line-axis／footer／page-selection／body-axis 兩後端＋styles），橫排幾何斷言改 outer 語意。測試 186 → 186（0 退步）。
+
+### 變更（模版）
+
+- A-內文版：書名書眉 `running_title.pages` **odd → even**（真書書名書眉在偶頁＝右頁）；左頁（奇數頁）章節副標書眉仍待章節結構（既有 note）。
+- F-版權頁：margins **outer↔inner 對調**（outer 25.81＝p178 左頁書口，名實相符；inner 21.0 承 A 自擬）；mirror=false 幾何不變（CIP 框 PyMuPDF 複驗 x0 差 0.01pt）。
+
+### 勘誤（記錄修正，幾何不受影響）
+
+- Sprint 12 devlog／§10「與真書右翻一致」比對記錄錯誤；Sprint 20「部扉＝偶數頁」實為奇數頁（37/137/229，B mirror=false 幾何不變）；§1 補側別事實。
+
+### 待 Owner 真實素材驗收
+
+- out/ch1-s22/（本機，重生成）：--first-page 20 的 page-001（書頁 20 偶＝右頁：頁碼書口右下＋書名書眉）與 page-002（書頁 21 奇＝左頁：頁碼左下無書眉）已 Read 親驗，與真書 spread（PDF 索引 4/12/30/40）逐項一致；待 Owner 翻閱實體書覆核側別。
+
 ## v0.16.0（2026-07-11，Sprint 21）目錄篇名嵌線斷開＋條目縮退（p002/p003 量測）
 
 ### 新增

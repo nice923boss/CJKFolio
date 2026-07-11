@@ -43,6 +43,7 @@ from .render import (
     Shaper,
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,
+    is_right_page,
     line_axis_x_pt,
     mm_to_pt,
     rule_break_ranges,
@@ -441,11 +442,12 @@ class _PdfPageWriter:
     def _footer(self, content: _Content, book_number: int, footer_texts: dict) -> None:
         master, template = self.master, self.template
         page_w = mm_to_pt(template.page_width_mm)
-        odd = (book_number % 2 == 1) or not master.mirror
+        page_odd = book_number % 2 == 1  # 奇偶 gate（pages 配置語意）
+        outer_right = is_right_page(book_number) or not master.mirror  # 書口側別
         for item in master.footer.values():
-            if item.pages == "odd" and not odd:
+            if item.pages == "odd" and not page_odd:
                 continue
-            if item.pages == "even" and odd:
+            if item.pages == "even" and page_odd:
                 continue
             text = footer_texts.get(item.source, "")
             if not text:
@@ -453,7 +455,7 @@ class _PdfPageWriter:
             style = template.character_styles[item.style]
             key, shaper = self._shaper_for(style)
             width = run_width_pt(shaper, text, style.size_pt)
-            if odd:  # 書口在右：文字右緣對齊 outer_offset
+            if outer_right:  # 書口在右：文字右緣對齊 outer_offset
                 pen_x = page_w - item.outer_offset_pt - width
             else:
                 pen_x = item.outer_offset_pt

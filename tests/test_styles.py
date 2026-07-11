@@ -74,7 +74,7 @@ def test_master_a_footer_spec(template):
     assert num.baseline_from_top_pt == 530.43
     title = footer["running_title"]
     assert title.source == "title"
-    assert title.pages == "odd"
+    assert title.pages == "even"  # 書名書眉在偶數頁＝右頁（真書三向互證，Sprint 22）
     assert template.masters["B-部扉"].footer == {}
 
 

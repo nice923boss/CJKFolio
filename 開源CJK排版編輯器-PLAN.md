@@ -22,6 +22,7 @@
 > 修訂：2026-07-11 Sprint 19：F-版權頁真實版心 p178 一手量測（tools/measure_cip_page.py)：CIP 5.63pt／字距 5.66／行距 7.74／框線 0.14pt 暖黑 K92／pad 5.05×4.94 不對稱（FrameSpec 加 pad_v_pt），模版自擬幾何全面替換為量測值，樣張框左上角與首行 baseline 與 p178 精確重合；行距分區與框上標題行為 v1 已知差異入 GAPS，關 GAPS #13 (a)（詳 devlog/2026-07-11-sprint19-cip-metrics.md）。
 > 修訂：2026-07-11 Sprint 20：B 部扉頁型大標置位（三部扉 PDF 索引 18/68/114 一手量測三頁互證）：B 主版天頭 62.38mm、行距 34.37pt、部序號／大標行軸 228.49／194.12pt、字距合 §10 換算規則；標籤-篇序小標段後 gap 1→0；自擬樣張（samples/part-divider.doc.json）行軸抽驗與量測精確重合、preflight 12/12；大標首字頂 6.02pt 差（0.26 字槽）入 GAPS（詳 devlog/2026-07-11-sprint20-part-divider.md）。
 > 修訂：2026-07-11 Sprint 21：目錄篇名嵌線斷開＋條目縮退（tools/measure_toc_page.py，p002/p003 三篇名一手互證）：D 天頭改篇名首字頂 38.09mm（107.96pt 三處同值）、條目 head_offset 3 槽縮退（engine ParagraphSpec.head_offset 揉進 start_slot，y 幾何零改動）、虛線在穿線行（幾何判定）斷開（toc_rule_segments＋rule_break_ranges 兩後端同源，邊距 28.5／3.9 量測中值）；樣張 PyMuPDF 抽驗兩段虛線端點 0.00pt 重合、preflight 12/12；帶起訖與篇序密排騎線混排不建模入 GAPS，關 GAPS #13 (b) 嵌線與縮退（詳 devlog/2026-07-11-sprint21-toc-inline-title.md）。
+> 修訂：2026-07-11 Sprint 22：鏡像側別與真書對齊（正確性修正，GAPS #20）：真書三向互證（頁碼側四 spread＋書眉側＋版心側 21mm 精確）證實**偶數頁＝右頁、奇數頁＝左頁**，Sprint 12 的「奇右偶左」為西式左翻慣例誤植；render 收斂單一事實來源 is_right_page（5 判定點）、footer 奇偶 gate 與書口側別拆分、A 書名書眉 pages odd→even、F margins outer↔inner 對調（25.81＝p178 左頁書口，CIP 框複驗 0.01pt 不變）；第一章 --first-page 20 親驗偶右奇左與真書逐項一致（詳 devlog/2026-07-11-sprint22-mirror-parity.md）。
 
 ---
 
@@ -49,7 +50,7 @@
 | PDF/X 識別 | **無**（2026-07-11 Sprint 10 實測：Info 無 GTS 鍵、無 OutputIntents、含 SMask 透明、TrimBox 與 ArtBox 並存；交印為一般 PDF 1.4。產品仍依 §9 預設輸出 X-1a:2001） |
 | 開本 | 148×210mm（A5 直式右翻書），179 頁 |
 | PDF 呈現 | 177 頁為 296×210mm 跨頁對開（148×2），僅首末 2 頁單頁 |
-| 書寫方向 | **直排（縱書 vertical-rl），右至左頁序與欄序** |
+| 書寫方向 | **直排（縱書 vertical-rl），右至左頁序與欄序**；側別（2026-07-11 Sprint 22 三向實測）：**偶數頁＝右頁（頁碼書口右＋書名書眉）、奇數頁＝左頁（頁碼書口左＋章節副標）** |
 | 內文 | 華康明體 DFMingStd-W3 11.5pt，行距＝欄距精確 23.0pt（200%），滿行 32 字（2026-07-10 逐字實測修正，原記「約 22 字」為每頁行數之誤），字距 12.08pt（字級的 1.05 倍），主力 57,536 字 |
 | 版面網格（2026-07-10 逐字實測） | 段首縮排 2 字、段間空 1 行槽、每頁 13 行槽；標點無半形擠壓，句逗置中，僅 ±0.4pt 齊行微調 |
 | 版心 | 天頭 32.49mm（實測相符）、地腳 40.5mm、書口 21.0mm（p.030-031 跨頁實測；原記切口 13mm 待多頁複測定案） |
@@ -417,7 +418,7 @@ CJKFolio/
 | 2026-07-11（Sprint 10） | 參考書交印檔實測非 PDF/X（無 GTS 識別、無 OutputIntent、含 SMask 透明、TrimBox 與 ArtBox 並存），§0 與 §1 描述據實修正；品質標竿與 §9 硬條件不變 | 探針一手實測（A 級） |
 | 2026-07-11（Sprint 11） | 齊行形態定案：行首禁則擠入優先（整串句逗一次決策，溢出 ≤2 槽；超過改追出錨字連句逗下移）、行尾禁則維持退行；非段末行行首行尾雙錨定、內容字距均勻縮放，縮排偏移維持網格字距；偏差 >2 槽維持等距網格並入統計（不沉默）；段末行與滿行不調整 | §1 實測 ±0.4pt＝±1 槽（33 字 −0.37pt／31 字 +0.40pt，A 級推導） |
 | 2026-07-11（Sprint 11） | 半形「約物寬度壓縮」（JLREQ 式）不實作：§1 實測本書句逗置中、無半形擠壓，齊行以字距縮放達成 | 跨頁逐字實測（A 級） |
-| 2026-07-11（Sprint 12） | 鏡像與頁腳奇偶依「書頁號」（＝版面頁號＋first_page−1）判定，非版面頁號；render 與 pdf_writer 共用同一 book_number 餵行軸（line_axis_x_pt）與頁腳，first_page=1 預設向後相容；版面頁號續作檔名與 --page 選頁鍵 | 真書右翻書偶數頁＝左頁、奇數頁＝右頁＋書眉（第一章 --first-page 20 樣張 Read 親驗，A 級） |
+| 2026-07-11（Sprint 12） | 鏡像與頁腳奇偶依「書頁號」（＝版面頁號＋first_page−1）判定，非版面頁號；render 與 pdf_writer 共用同一 book_number 餵行軸（line_axis_x_pt）與頁腳，first_page=1 預設向後相容；版面頁號續作檔名與 --page 選頁鍵 | 「依書頁號」機制正確；惟依據欄原記「偶數頁＝左頁、奇數頁＝右頁＋書眉」為側別誤讀，**Sprint 22 三向實測勘誤為偶右奇左**（GAPS #20） |
 | 2026-07-11（Sprint 12） | PNG 缺字不沉默：render 四路徑（cjk／縱中橫／旋轉拉丁／頁腳）偵測 gid 0，回報缺字來源字元，訊息格式與 pdf_writer 一致（Shaper 存 path 供命名）；未統一 placement 層（外科手術範圍，後端統一時再併） | 缺字警告雙後端一致（PUA U+E000 單元測試釘住） |
 | 2026-07-11（Sprint 13） | 橫排（horizontal-tb）版面軸形態定案：engine 加 `vertical` 參數復用斷行／禁則（橫排整串 ascii 成一 latin run、不縱中橫、不切碎 ISBN）；layout `page_is_vertical` 由樣式判頁面單一方向，v1 混用 vertical-rl 與 horizontal-tb（slot 幾何不相容）與未知 writing_mode 快速失敗；兩後端幾何同源集中 placement `horizontal_cell_advance_pt`（latin 自然寬、cjk 走 em 格）＋render `horizontal_left_x_pt`（訂口內推、鏡像）／`horizontal_baseline_y_pt`（行由上而下、首行含 ascent）；橫排 CIP 短行左齊不齊行（齊行為直排內文特徵） | honest-planning R2 spike（spikes/spike6-horizontal/）＋頁腳三件組已驗水平 CJK＋latin（Sprint 7〜12）；兩後端位置同源單元測試 abs≤0.3pt 釘死（A 級） |
 | 2026-07-11（Sprint 13） | F-版權頁橫排版心為自擬合理幾何（8pt CIP、字距 8.4pt＝×1.05、行距 14pt、滿行 34／每頁 27 行），p178 真實版心未量測留 GAPS #13；公開 CIP 樣張（samples/cip-copyright.doc.json）全自擬虛構書目，不取參考書 p178 內容 | 紅線：參考書內容不入 repo（PLAN §8）；橫排「機制」實作與「參考書逐點版心」分離，後者待 Owner 本機量測 |
@@ -435,6 +436,7 @@ CJKFolio/
 | 2026-07-11（Sprint 19） | F-版權頁版心量測定案：top 以「首行 baseline 錨定」換算（top＝baseline−級數×ASCENT_RATIO＝128.2−5.63×0.88＝123.25pt＝43.48mm，文字位置優先於 bbox 口徑）；框色暖黑同內文 → 產品單 K92；FrameSpec 加 pad_v_pt（選配，None＝同 pad_pt）表達 p178 實測不對稱 pad（水平 5.05／垂直 4.94）；lines_per_page 45 為幾何推導非量測；後段行距分區（12.73／11.73）與框上標題行不擴 v1 模型，入 GAPS #13 誠實記錄 | p178 一手量測（A 級）＋樣張獨立抽驗框 y0=118.31／baseline 128.2 與實測精確重合 |
 | 2026-07-11（Sprint 20） | B 部扉頁型定案：文件兩段（段 1 標籤-篇序小標 slot 0 右、段 2 部扉大標 slot 1），行間距全含於 B 行距 34.37pt（標籤樣式 para_gap_slots 1→0）；B 主版 mirror=false、天頭＝部序號首字頂 62.38mm、outer 63.53mm（slot 0 行軸 228.49 反推）；真書大標首字頂比部序號低 6.02pt（0.26 字槽）為 v1 整數槽模型已知差異入 GAPS，不擴段前 pt 偏移模型（Phase 2〜3 樣式系統再議）；y 向 bbox 口徑差（思源 ascender 鬆於華康）屬字型度量差異非位置錯誤（§3.3 不比字形輪廓） | 三部扉一手量測（A 級三頁互證同值）＋樣張行軸抽驗 228.49／194.12 精確重合 |
 | 2026-07-11（Sprint 21） | 目錄嵌線與縮退形態定案：穿線判定純幾何（行首字頂 y＝天頭＋start_slot×字距 < 虛線 y 即斷開；「嵌線」本義，非樣式白名單）；條目縮退用段級整數槽 head_offset（engine 揉進 start_slot，首行疊 indent、容量同縮；縮退 3 槽 29.93pt vs 真書 27.04，+2.89pt 差入 GAPS，維持 Sprint 20「不擴 pt 偏移模型」決議）；斷開邊距取行槽緣口徑量測中值（before 28.5／after 3.9，真書手排離散 26.9〜30.1／3.7〜4.1 誠實記錄）；斷開 x 區間由後端 rule_break_ranges 以 slot＋book_number 求（同 TocEntryMark 行軸模式，兩後端同源）；帶起訖（前置條目無線、帶起於首篇名、跨頁延續記號±10mm）與篇序 11pt 密排騎線＋詩句 16pt 同行混排不建模（v1 已知差異入 GAPS）；Sprint 15「貫穿頁寬」修正為設計推定（當時未量 x 起訖），本次量測證實真書分段 | p002/p003 三篇名一手量測（A 級：篇名天頭 107.96 三處同值）＋樣張 PyMuPDF 抽驗兩段端點 0.00pt 重合 |
+| 2026-07-11（Sprint 22） | 鏡像側別定案（修正 Sprint 12 決議）：**偶數書頁＝右頁（書口在右）、奇數書頁＝左頁（書口在左）**；右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大；Sprint 12「奇右偶左」為西式左翻書慣例誤植，其「與真書右翻一致」比對記錄錯誤（當時測試與實作同源同錯，未被攔截）。實作：render.is_right_page 單一事實來源（line_axis／horizontal_left／兩後端 footer 共 5 判定點收斂）；footer 奇偶 gate（pages 配置）與書口側別拆分；mirror=false 恆以 outer 槽為起排側（直排 B＝右、橫排 F＝左，B/F 幾何皆不變）；A 書名書眉 pages odd→even；F margins outer↔inner 對調（25.81＝p178 左頁書口，名實相符） | 真書三向互證（A 級）：頁碼側（索引 4/12/30/40 四 spread：偶頁頁碼 x 789.5 書口右、奇頁 x 36.9 書口左）＋書眉側（書名皆偶頁）＋版心側（偶頁右邊距 21.00mm＝outer 精確）；第一章 --first-page 20 兩頁 Read 親驗＋CIP 框 0.01pt 複驗 |
 
 ## 11. 證據附錄（關鍵引用）
 

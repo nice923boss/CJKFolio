@@ -31,6 +31,16 @@ def mm_to_pt(mm: float) -> float:
     return mm * PT_PER_MM
 
 
+def is_right_page(book_number: int) -> bool:
+    """右頁（書口在右）＝偶數書頁。
+
+    真書《內在整理》三向互證（Sprint 22，A 級）：頁碼側（偶頁頁碼書口右）、
+    書眉側（書名書眉皆偶頁）、版心側（偶頁右邊距 21mm＝outer 精確）。
+    右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大。
+    """
+    return book_number % 2 == 0
+
+
 def line_axis_x_pt(
     template: Template,
     master: MasterPage,
@@ -38,18 +48,22 @@ def line_axis_x_pt(
     page_number: int,
     line_slots: int = 1,
 ) -> float:
-    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，奇數＝右頁書口在右。"""
+    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，偶數＝右頁書口在右；
+    mirror=false 恆以 outer 槽為起排側（B 部扉先例）。"""
     page_w = mm_to_pt(template.page_width_mm)
-    outer_side = (page_number % 2 == 1) or not master.mirror
+    outer_side = is_right_page(page_number) or not master.mirror
     margin_mm = master.margins.outer_mm if outer_side else master.margins.inner_mm
     axis0 = page_w - mm_to_pt(margin_mm) - master.grid.base_size_pt / 2
     return axis0 - (slot + (line_slots - 1) / 2) * master.grid.line_pitch_pt
 
 
 def horizontal_left_x_pt(master: MasterPage, book_number: int) -> float:
-    """橫排頁文字左起 x（pt）：奇數（右頁）訂口在左，自訂口內推；偶數鏡像用書口。"""
-    odd = (book_number % 2 == 1) or not master.mirror
-    left_mm = master.margins.inner_mm if odd else master.margins.outer_mm
+    """橫排頁文字左起 x（pt）：偶數（右頁）左側＝訂口內推；奇數（左頁）左側＝書口；
+    mirror=false 恆以 outer 槽為起排側（p178 版權頁＝左頁，左側書口 25.81mm）。"""
+    if not master.mirror or not is_right_page(book_number):
+        left_mm = master.margins.outer_mm
+    else:
+        left_mm = master.margins.inner_mm
     return mm_to_pt(left_mm)
 
 
@@ -267,11 +281,12 @@ class PageRenderer:
         """頁腳三件組（頁碼＋書眉）：水平文字，錨定書口側，依書頁號奇偶鏡像。"""
         master, template = self.master, self.template
         page_w_pt = mm_to_pt(template.page_width_mm)
-        odd = (book_number % 2 == 1) or not master.mirror
+        page_odd = book_number % 2 == 1  # 奇偶 gate（pages 配置語意）
+        outer_right = is_right_page(book_number) or not master.mirror  # 書口側別
         for item in master.footer.values():
-            if item.pages == "odd" and not odd:
+            if item.pages == "odd" and not page_odd:
                 continue
-            if item.pages == "even" and odd:
+            if item.pages == "even" and page_odd:
                 continue
             text = footer_texts.get(item.source, "")
             if not text:
@@ -282,7 +297,7 @@ class PageRenderer:
             self._note_missing(shaper, missing)
             ascent_px = style.size_pt * self.scale * 0.88
             y = round(item.baseline_from_top_pt * self.scale - ascent_px)
-            if odd:  # 書口在右：文字右緣對齊 outer_offset
+            if outer_right:  # 書口在右：文字右緣對齊 outer_offset
                 x = round((page_w_pt - item.outer_offset_pt) * self.scale) - strip.width
             else:
                 x = round(item.outer_offset_pt * self.scale)

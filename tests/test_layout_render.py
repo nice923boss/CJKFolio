@@ -167,14 +167,16 @@ def test_layout_justify_stats(template):
 # ---------- render 幾何（純數學） ----------
 
 def test_line_axis_positions_odd_even_mirror(template):
+    """真書側別（Sprint 22 三向互證修正）：偶數書頁＝右頁（書口右）、
+    奇數書頁＝左頁（書口左、slot 0 自訂口內推）。"""
     master = template.masters["A-內文版"]
     page_w = mm_to_pt(template.page_width_mm)
     odd0 = line_axis_x_pt(template, master, slot=0, page_number=1)
     even0 = line_axis_x_pt(template, master, slot=0, page_number=2)
-    assert odd0 == pytest.approx(page_w - mm_to_pt(master.margins.outer_mm) - 11.5 / 2)
-    assert even0 == pytest.approx(page_w - mm_to_pt(master.margins.inner_mm) - 11.5 / 2)
-    assert odd0 > even0  # 奇數頁（右頁）書口在右，行軸更靠右
-    assert line_axis_x_pt(template, master, slot=3, page_number=1) == pytest.approx(odd0 - 3 * 23.0)
+    assert even0 == pytest.approx(page_w - mm_to_pt(master.margins.outer_mm) - 11.5 / 2)
+    assert odd0 == pytest.approx(page_w - mm_to_pt(master.margins.inner_mm) - 11.5 / 2)
+    assert even0 > odd0  # 偶數頁（右頁）書口在右，行軸更靠右
+    assert line_axis_x_pt(template, master, slot=3, page_number=2) == pytest.approx(even0 - 3 * 23.0)
 
 
 # ---------- render 著墨（需字型） ----------
@@ -241,21 +243,22 @@ def _footer_band(img, scale):
 @needs_fonts
 def test_footer_page_number_and_running_title(template, tmp_path):
     doc = make_doc([{"text": BODY_500, "style": "內文-明體直排"}])
-    # first_page=30：頁 1＝書頁 30（偶數＝左頁）、頁 2＝書頁 31（奇數＝右頁），鏡像依書頁號（GAPS #16）
+    # first_page=30：頁 1＝書頁 30（偶數＝右頁）、頁 2＝書頁 31（奇數＝左頁），
+    # 側別依真書三向互證（Sprint 22）
     result = render_document(doc, template, tmp_path, dpi=150, first_page=30)
     scale = 150 / 72.0
     page_w_px = mm_to_pt(148) * scale
-    # 頁 1＝書頁 30（偶數＝左頁）：頁碼鏡像靠書口（左）緣、無書眉（書眉限奇數頁）
+    # 頁 1＝書頁 30（偶數＝右頁）：頁碼靠書口（右）緣、書眉（書名）齊版心外緣
     ink1 = _footer_band(Image.open(result.paths[0]), scale)
     assert ink1 is not None, "偶數書頁頁腳帶無著墨"
-    assert ink1[0] < page_w_px * 0.2, "偶數書頁頁腳應靠書口（左）側"
-    # 頁 2＝書頁 31（奇數＝右頁）：頁碼靠右緣、書眉（書名）齊版心外緣
+    assert ink1[2] > page_w_px * 0.8, "偶數書頁頁腳應靠書口（右）側"
+    # 頁 2＝書頁 31（奇數＝左頁）：頁碼鏡像靠書口（左）緣、無書眉（書名書眉限偶數頁）
     ink2 = _footer_band(Image.open(result.paths[1]), scale)
     assert ink2 is not None, "奇數書頁頁腳帶無著墨"
-    assert ink2[2] > page_w_px * 0.8, "奇數書頁頁腳應靠書口（右）側"
+    assert ink2[0] < page_w_px * 0.2, "奇數書頁頁腳應靠書口（左）側"
     used = {Path(f).name for f in result.fonts_used}
     assert "jf-openhuninn-2.1.ttf" in used       # 頁碼（全頁）
-    assert "ChenYuluoyan-2.0-Thin.ttf" in used   # 書眉（書頁 31 奇數頁）
+    assert "ChenYuluoyan-2.0-Thin.ttf" in used   # 書眉（書頁 30 偶數頁）
 
 
 @needs_fonts
@@ -275,12 +278,12 @@ def _ink_cx(path):
 
 @needs_fonts
 def test_body_axis_mirrors_by_book_page(template, tmp_path):
-    """鏡像依書頁號：偶數起頁的首頁＝左頁（書口左）行軸偏左，奇數起頁偏右（GAPS #16）。"""
+    """鏡像依書頁號：偶數起頁的首頁＝右頁（書口右）行軸偏右，奇數起頁偏左（Sprint 22）。"""
     doc = make_doc([{"text": "永", "style": "內文-明體直排"}])
     even = render_document(doc, template, tmp_path / "even", dpi=150, footer=False, first_page=20)
     odd = render_document(doc, template, tmp_path / "odd", dpi=150, footer=False, first_page=21)
-    # 版面頁號同為 1；書頁號 20（偶＝左頁，訂口在右→行軸偏左）vs 21（奇＝右頁，書口在右→行軸偏右）
-    assert _ink_cx(odd.paths[0]) > _ink_cx(even.paths[0])
+    # 版面頁號同為 1；書頁號 20（偶＝右頁，書口在右→行軸偏右）vs 21（奇＝左頁，訂口在右→行軸偏左）
+    assert _ink_cx(even.paths[0]) > _ink_cx(odd.paths[0])
 
 
 # ---------- 橫排版面軸（Sprint 13：版權頁-CIP，GAPS #13） ----------
@@ -327,9 +330,9 @@ def test_layout_horizontal_no_justify_and_flags_direction(template):
 
 def test_horizontal_geometry_left_and_baseline(template):
     master = template.masters["F-版權頁"]
-    # 左起 x：mirror=false → 恆用訂口（inner）內推
+    # 左起 x：mirror=false → 恆以 outer 槽為起排側（p178 左頁書口 25.81mm，Sprint 22）
     left = horizontal_left_x_pt(master, book_number=1)
-    assert left == pytest.approx(mm_to_pt(master.margins.inner_mm))
+    assert left == pytest.approx(mm_to_pt(master.margins.outer_mm))
     assert horizontal_left_x_pt(master, book_number=2) == pytest.approx(left)  # 無鏡像
     # 基線：行由上而下，每行 +line_pitch；首行含 ascent
     b0 = horizontal_baseline_y_pt(master, slot=0, size_pt=8.0)
@@ -359,8 +362,8 @@ def test_render_horizontal_page_lands_top_left(template, tmp_path):
     crop = img.crop((ox, oy, round(rect.x1 * scale) - inset, round(rect.y1 * scale) - inset))
     ink = ImageOps.invert(crop).getbbox()
     assert ink is not None, "框內橫排文字無著墨"
-    # 文字左緣貼訂口（inner）內推（頁面座標＝crop 原點＋crop 內 ink）
-    left_px = mm_to_pt(master.margins.inner_mm) * scale
+    # 文字左緣自起排側（outer，p178 左頁書口）內推（頁面座標＝crop 原點＋crop 內 ink）
+    left_px = mm_to_pt(master.margins.outer_mm) * scale
     assert abs((ox + ink[0]) - left_px) < 12, f"橫排文字左緣 {ox + ink[0]} vs {left_px}"
     # 由上而下兩行：文字頂緣接近天頭
     top_px = mm_to_pt(master.margins.top_mm) * scale
