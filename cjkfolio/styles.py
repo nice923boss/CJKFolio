@@ -66,6 +66,22 @@ class FooterItem:
     pages: str = "all"      # "all" | "odd" | "even"
 
 
+KNOWN_FRAME_KINDS = frozenset({"cip-box"})  # v1 只有 CIP 細框
+
+
+@dataclass(frozen=True)
+class FrameSpec:
+    """主版向量裝飾框（v1：CIP 細框，PLAN §1 精緻設計細節）。
+
+    cmyk 為描邊色 (c,m,y,k) 各 0〜1（一律 DeviceCMYK，維持 §9 全 CMYK）；
+    幾何由 primitives.cip_frame_rect 依主版 grid 與內容行數推導。
+    """
+    kind: str
+    cmyk: tuple = (0.0, 0.0, 0.0, 1.0)
+    line_width_pt: float = 0.5
+    pad_pt: float = 6.0
+
+
 @dataclass(frozen=True)
 class MasterPage:
     name: str
@@ -73,6 +89,7 @@ class MasterPage:
     grid: Grid
     mirror: bool = True  # 對開鏡像（奇數書頁書口在右；奇偶依書頁號）
     footer: dict = field(default_factory=dict)  # name → FooterItem
+    frame: Optional[FrameSpec] = None  # 向量裝飾框（v1：CIP 細框；None＝不畫框）
     evidence: Optional[str] = None
     note: Optional[str] = None
 
@@ -134,6 +151,21 @@ def _footer_item(name: str, d: dict, ctx: str) -> FooterItem:
     )
 
 
+def _frame_spec(d: dict, ctx: str) -> FrameSpec:
+    kind = str(_require(d, "kind", ctx))
+    if kind not in KNOWN_FRAME_KINDS:
+        raise TemplateError(f"{ctx}.kind={kind!r} 非已知框類型 {sorted(KNOWN_FRAME_KINDS)}")
+    cmyk = d.get("cmyk", [0.0, 0.0, 0.0, 1.0])
+    if not (isinstance(cmyk, (list, tuple)) and len(cmyk) == 4):
+        raise TemplateError(f"{ctx}.cmyk 須為 4 元素 [c,m,y,k]，得到 {cmyk!r}")
+    return FrameSpec(
+        kind=kind,
+        cmyk=tuple(float(v) for v in cmyk),
+        line_width_pt=float(d.get("line_width_pt", 0.5)),
+        pad_pt=float(d.get("pad_pt", 6.0)),
+    )
+
+
 def _master(name: str, d: dict) -> MasterPage:
     ctx = f"masters[{name}]"
     m = _require(d, "margins_mm", ctx)
@@ -158,6 +190,7 @@ def _master(name: str, d: dict) -> MasterPage:
             fname: _footer_item(fname, fd, f"{ctx}.footer[{fname}]")
             for fname, fd in d.get("footer", {}).items()
         },
+        frame=_frame_spec(d["frame"], f"{ctx}.frame") if d.get("frame") else None,
         evidence=d.get("evidence"),
         note=d.get("note"),
     )

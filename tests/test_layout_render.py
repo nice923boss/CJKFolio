@@ -17,6 +17,7 @@ from cjkfolio.layout import (
     style_advance_pt,
     style_line_capacity,
 )
+from cjkfolio.primitives import cip_frame_rect
 from cjkfolio.render import (
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,
@@ -337,16 +338,22 @@ def test_render_horizontal_page_lands_top_left(template, tmp_path):
     assert result.violations == []
     master = template.masters["F-版權頁"]
     scale = 200 / 72.0
-    img = Image.open(result.paths[0])
-    ink = ImageOps.invert(img.convert("L")).getbbox()
-    assert ink is not None, "橫排頁整頁空白"
-    # 左起貼訂口（inner）內推：著墨左緣接近 left margin
+    img = Image.open(result.paths[0]).convert("L")
+    # F 版有 CIP 細框（Sprint 14）：量文字須排除框，裁掉框邊界內側再取 ink
+    rect = cip_frame_rect(master, horizontal_left_x_pt(master, book_number=1),
+                          n_lines=2, frame=master.frame)
+    inset = round((master.frame.line_width_pt + 1) * scale)
+    ox, oy = round(rect.x0 * scale) + inset, round(rect.y0 * scale) + inset
+    crop = img.crop((ox, oy, round(rect.x1 * scale) - inset, round(rect.y1 * scale) - inset))
+    ink = ImageOps.invert(crop).getbbox()
+    assert ink is not None, "框內橫排文字無著墨"
+    # 文字左緣貼訂口（inner）內推（頁面座標＝crop 原點＋crop 內 ink）
     left_px = mm_to_pt(master.margins.inner_mm) * scale
-    assert abs(ink[0] - left_px) < 12, f"橫排左緣 {ink[0]} vs {left_px}"
-    # 由上而下兩行：著墨頂緣接近天頭
+    assert abs((ox + ink[0]) - left_px) < 12, f"橫排文字左緣 {ox + ink[0]} vs {left_px}"
+    # 由上而下兩行：文字頂緣接近天頭
     top_px = mm_to_pt(master.margins.top_mm) * scale
-    assert ink[1] < top_px + 8.0 * scale, "橫排首行應貼天頭"
-    # 橫向鋪展：著墨寬度遠大於高度（LTR 兩短行）
+    assert (oy + ink[1]) < top_px + 8.0 * scale, "橫排首行應貼天頭"
+    # 橫向鋪展：文字寬度遠大於高度（LTR 兩短行）
     assert (ink[2] - ink[0]) > (ink[3] - ink[1])
     assert "SourceHanSerifTC-Regular.otf" in {Path(f).name for f in result.fonts_used}
 
@@ -359,3 +366,32 @@ def test_render_missing_glyph_warns(template, tmp_path):
     doc = make_doc([{"text": "字。", "style": "內文-明體直排"}])
     result = render_document(doc, template, tmp_path, dpi=150, footer=False)
     assert any("無字形" in w for w in result.font_warnings), result.font_warnings
+
+
+# ---------- CIP 細框向量原件（Sprint 14） ----------
+
+@needs_fonts
+def test_render_cip_frame_is_outer_ink(template, tmp_path):
+    """CIP 細框為最外層著墨：整頁 ink bbox ≈ cip_frame_rect 幾何（線寬容差）。"""
+    doc = make_cip_doc([
+        "自由排版工作室出版品預行編目資料",
+        "ISBN 978-0-00-000000-0（平裝）",
+    ])
+    result = render_document(doc, template, tmp_path, dpi=200, footer=False)
+    master = template.masters["F-版權頁"]
+    scale = 200 / 72.0
+    rect = cip_frame_rect(
+        master, horizontal_left_x_pt(master, book_number=1), n_lines=2, frame=master.frame)
+    ink = ImageOps.invert(Image.open(result.paths[0]).convert("L")).getbbox()
+    assert ink is not None, "橫排框頁整頁空白"
+    # 框寬＝版心滿行寬（遠大於兩短行文字），四緣皆由框決定
+    assert abs(ink[0] - rect.x0 * scale) < 6, f"框左 {ink[0]} vs {rect.x0 * scale}"
+    assert abs(ink[1] - rect.y0 * scale) < 6, f"框上 {ink[1]} vs {rect.y0 * scale}"
+    assert abs(ink[2] - rect.x1 * scale) < 6, f"框右 {ink[2]} vs {rect.x1 * scale}"
+    assert abs(ink[3] - rect.y1 * scale) < 6, f"框下 {ink[3]} vs {rect.y1 * scale}"
+
+
+def test_no_frame_master_has_no_frame(template):
+    """未配置 frame 的主版（直排 A、部扉 B）不畫框（render_page 依此 gate）。"""
+    assert template.masters["A-內文版"].frame is None
+    assert template.masters["B-部扉"].frame is None

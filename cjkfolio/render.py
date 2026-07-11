@@ -11,7 +11,7 @@ from pathlib import Path
 
 import freetype
 import uharfbuzz as hb
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
 from .layout import (
@@ -21,6 +21,7 @@ from .layout import (
     style_line_slots,
 )
 from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
+from .primitives import cip_frame_rect
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -159,6 +160,18 @@ def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scal
     return missing
 
 
+def _draw_stroke_rect(img, rect, scale):
+    """描邊矩形（PIL "L" 模式，outline=0 純黑）：top-down pt × scale → px。
+
+    PNG 為灰階預覽，不表達 CMYK（描邊 CMYK 差異只在 PDF 後端）；框線純黑同文字。
+    """
+    draw = ImageDraw.Draw(img)
+    w_px = max(1, round(rect.line_width_pt * scale))
+    box = [round(rect.x0 * scale), round(rect.y0 * scale),
+           round(rect.x1 * scale), round(rect.y1 * scale)]
+    draw.rectangle(box, outline=0, width=w_px)
+
+
 def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, scale):
     """橫排一個 cell：LTR 塑形直接落在頁面 (pen_x, baseline)。回傳缺字來源字元。
 
@@ -287,6 +300,15 @@ class PageRenderer:
                     self._note_missing(use_shaper, missing)
                 pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
 
+    def _draw_frame(self, img, page, book_number: int) -> None:
+        """主版向量裝飾框（v1：橫排 CIP 細框）：圍住內容網格盒，與 pdf_writer 同源。"""
+        n_lines = max(pl.slot for pl in page.placed) + 1
+        rect = cip_frame_rect(
+            self.master, horizontal_left_x_pt(self.master, book_number),
+            n_lines, self.master.frame,
+        )
+        _draw_stroke_rect(img, rect, self.scale)
+
     def render_page(self, page, footer_texts=None, book_number=None,
                     vertical: bool = True) -> Image.Image:
         template = self.template
@@ -297,6 +319,9 @@ class PageRenderer:
             round(mm_to_pt(template.page_height_mm) * self.scale),
         )
         img = Image.new("L", size_px, 255)
+        # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先畫）
+        if not vertical and self.master.frame and page.placed:
+            self._draw_frame(img, page, book_number)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
         else:

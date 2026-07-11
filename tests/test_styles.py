@@ -1,9 +1,15 @@
 """三層樣式模型（cjkfolio.styles）：模版載入與驗證。"""
+import json
 from pathlib import Path
 
 import pytest
 
-from cjkfolio.styles import TemplateError, load_template, template_from_dict
+from cjkfolio.styles import (
+    FrameSpec,
+    TemplateError,
+    load_template,
+    template_from_dict,
+)
 
 TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "neizai-zhengli.json"
 
@@ -79,3 +85,41 @@ def test_template_missing_masters_rejected():
             "paragraph_styles": {},
             "character_styles": {},
         })
+
+
+# ---------- 向量裝飾框（Sprint 14：CIP 細框） ----------
+
+def test_master_frame_parsing(template):
+    f = template.masters["F-版權頁"].frame
+    assert isinstance(f, FrameSpec)
+    assert f.kind == "cip-box"
+    assert f.cmyk == (0.0, 0.0, 0.0, 1.0)
+    assert f.line_width_pt == 0.5
+    assert f.pad_pt == 6.0
+    # 非版權頁主版無框（None）
+    assert template.masters["A-內文版"].frame is None
+    assert template.masters["B-部扉"].frame is None
+
+
+def _template_with_frame(frame_dict):
+    data = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    data["masters"]["F-版權頁"]["frame"] = frame_dict
+    return data
+
+
+def test_frame_unknown_kind_rejected():
+    with pytest.raises(TemplateError, match="框類型"):
+        template_from_dict(_template_with_frame({"kind": "菱形雙線"}))
+
+
+def test_frame_bad_cmyk_rejected():
+    with pytest.raises(TemplateError, match="cmyk"):
+        template_from_dict(_template_with_frame({"kind": "cip-box", "cmyk": [0, 0, 0]}))
+
+
+def test_frame_defaults_when_optional_omitted():
+    tpl = template_from_dict(_template_with_frame({"kind": "cip-box"}))
+    f = tpl.masters["F-版權頁"].frame
+    assert f.cmyk == (0.0, 0.0, 0.0, 1.0)  # 預設純黑
+    assert f.line_width_pt == 0.5
+    assert f.pad_pt == 6.0

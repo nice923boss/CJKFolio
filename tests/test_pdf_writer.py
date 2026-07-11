@@ -10,6 +10,7 @@ import pytest
 
 from cjkfolio.document import document_from_dict
 from cjkfolio.pdf_writer import export_pdf, page_boxes_pt, subset_tag
+from cjkfolio.primitives import cip_frame_rect
 from cjkfolio.render import (
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,
@@ -423,3 +424,59 @@ def test_export_pdfx_requires_title(template, tmp_path):
     })
     with pytest.raises(ValueError, match="Title"):
         export_pdf(doc, template, tmp_path / "t.pdf", footer=False)
+
+
+# ---------- CIP 細框向量原件（Sprint 14） ----------
+
+def _frame_re(content: str):
+    """抽內容流第一個矩形路徑 (x_ll, y_ll, w, h)。"""
+    m = re.search(r"([\d.\-]+) ([\d.\-]+) ([\d.\-]+) ([\d.\-]+) re", content)
+    return tuple(map(float, m.groups())) if m else None
+
+
+@needs_fonts
+def test_export_cip_frame_cmyk_stroke_before_text(template, tmp_path):
+    """CIP 細框：CMYK 描邊矩形（re/S/K）在 BT 之前、無 rg/RG（preflight color 不退步）。"""
+    doc = make_cip_doc(["自由排版工作室出版品預行編目資料"])
+    out = tmp_path / "framed.pdf"
+    export_pdf(doc, template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    assert _frame_re(content) is not None, "缺矩形路徑 re"
+    assert "\nS\n" in content, "缺描邊算符 S"
+    assert "0 0 0 1 K" in content, "框描邊非 DeviceCMYK 純黑 K"
+    assert content.index(" re") < content.index("BT"), "path 須在文字物件 BT 之前"
+    assert " rg" not in content and " RG" not in content, "框殘留 RGB 描邊"
+
+
+@needs_fonts
+def test_export_cip_frame_two_backend_parity(template, tmp_path):
+    """框 re 座標＝render 幾何助手（cip_frame_rect）＋出血偏移，兩後端同源。"""
+    lines = ["自由排版工作室", "臺北市出版", "ISBN 978-0-00-000000-0"]
+    out = tmp_path / "parity.pdf"
+    export_pdf(make_cip_doc(lines), template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    x_ll, y_ll, w, h = _frame_re(content)
+
+    master = template.masters["F-版權頁"]
+    rect = cip_frame_rect(master, horizontal_left_x_pt(master, book_number=1),
+                          n_lines=len(lines), frame=master.frame)
+    page_h = mm_to_pt(template.page_height_mm)
+    assert x_ll == pytest.approx(BLEED_PT + rect.x0, abs=0.3)
+    assert y_ll == pytest.approx(page_h + BLEED_PT - rect.y1, abs=0.3)  # y-up 左下角
+    assert w == pytest.approx(rect.x1 - rect.x0, abs=0.3)
+    assert h == pytest.approx(rect.y1 - rect.y0, abs=0.3)
+
+
+@needs_fonts
+def test_export_cip_frame_preflight_green(template, tmp_path):
+    """加框後 CIP PDF 仍過全部 X-1a 機械規則（color-cmyk-only 不退步）。"""
+    from cjkfolio.preflight import check_pdfx1a
+    out = tmp_path / "framedx.pdf"
+    export_pdf(make_cip_doc([
+        "自由排版工作室出版品預行編目資料",
+        "ISBN 978-0-00-000000-0（平裝）",
+    ]), template, out, footer=False)
+    report = check_pdfx1a(out)
+    assert report.ok, [f for f in report.findings if not f.ok]

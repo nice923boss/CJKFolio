@@ -38,6 +38,7 @@ from .placement import (
     tcy_placements,
     ttb_char_placements,
 )
+from .primitives import cip_frame_rect
 from .render import (
     Shaper,
     horizontal_baseline_y_pt,
@@ -343,8 +344,22 @@ class _EmbeddedFont:
 
 class _Content:
     def __init__(self):
+        self.prologue: list = []  # 圖形（path）算符，置於文字塊（BT／ET）之前
         self.ops = ["q", f"0 0 0 {_fmt(TEXT_K)} k", "BT"]
         self._cur = None
+
+    def stroke_rect(self, cmyk, line_width_pt: float,
+                    x_ll: float, y_ll: float, w: float, h: float) -> None:
+        """DeviceCMYK 描邊矩形（獨立 q…Q 狀態塊，狀態隔離；`K` 不觸 preflight rg/RG）。"""
+        c, m, y, k = cmyk
+        self.prologue += [
+            "q",
+            f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
+            f"{_fmt(line_width_pt)} w",
+            f"{x_ll:.3f} {y_ll:.3f} {_fmt(w)} {_fmt(h)} re",
+            "S",
+            "Q",
+        ]
 
     def show(self, res_name: str, code: int, x: float, y: float,
              size_pt: float, rotated: bool) -> None:
@@ -356,7 +371,7 @@ class _Content:
         self.ops.append(f"{tm} Tm <{code:04X}> Tj")
 
     def finish(self) -> bytes:
-        return "\n".join(self.ops + ["ET", "Q"]).encode("latin-1")
+        return "\n".join(self.prologue + self.ops + ["ET", "Q"]).encode("latin-1")
 
 
 # ---------- 頁面寫出 ----------
@@ -484,11 +499,26 @@ class _PdfPageWriter:
                         use_shaper, cell.text, pen_x, baseline_y, use_size))
                 pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
 
+    def _frame(self, content: _Content, page, book_number: int) -> None:
+        """主版向量框（v1 橫排 CIP 細框）：與 render._draw_frame 幾何同源，CMYK 描邊。"""
+        n_lines = max(pl.slot for pl in page.placed) + 1
+        rect = cip_frame_rect(
+            self.master, horizontal_left_x_pt(self.master, book_number),
+            n_lines, self.master.frame,
+        )
+        x_ll = self.bleed_pt + rect.x0
+        y_ll = self.page_h_pt + self.bleed_pt - rect.y1  # top-down 下緣 → y-up 左下角
+        content.stroke_rect(rect.cmyk, rect.line_width_pt, x_ll, y_ll,
+                            rect.x1 - rect.x0, rect.y1 - rect.y0)
+
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True) -> bytes:
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
         content = _Content()
+        # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先 emit）
+        if not vertical and self.master.frame and page.placed:
+            self._frame(content, page, book_number)
         if vertical:
             self._vertical_body(content, page, book_number)
         else:

@@ -280,7 +280,8 @@
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
    "grid": {"chars_per_line": 34, "lines_per_page": 27, "char_advance_pt": 8.4, "line_pitch_pt": 14.0, "base_size_pt": 8.0},
    "mirror": false,
-   "evidence": "全書唯一橫排（p178 CIP 細框）；Sprint 13 渲染器已支援橫排（horizontal-tb）。橫排版心為自擬合理幾何（8pt CIP、字距 8.4pt＝×1.05、行距 14pt），p178 真實版心未量測留 GAPS #13"
+   "frame": {"kind": "cip-box", "cmyk": [0, 0, 0, 1], "line_width_pt": 0.5, "pad_pt": 6.0},
+   "evidence": "全書唯一橫排（p178 CIP 細框）；Sprint 13 渲染器已支援橫排（horizontal-tb），Sprint 14 加 CIP 細框向量原件（cip-box，純黑 CMYK 0.5pt 描邊）。橫排版心與框幾何為自擬合理幾何（8pt CIP、字距 8.4pt＝×1.05、行距 14pt、框四周 pad 6pt），p178 真實版心未量測留 GAPS #13"
   },
   "G-圖文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
