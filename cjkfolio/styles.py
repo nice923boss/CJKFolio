@@ -25,6 +25,7 @@ class ParagraphStyle:
     para_gap_slots: int = 1
     writing_mode: str = "vertical-rl"
     head_offset_chars: int = 0  # 段級天頭縮退（字格）：目錄條目相對篇名的縮退（Sprint 21）
+    lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調（Sprint 29）
     source_font: Optional[str] = None
     note: Optional[str] = None
 
@@ -191,6 +192,7 @@ def _paragraph_style(name: str, d: dict) -> ParagraphStyle:
         para_gap_slots=int(d.get("para_gap_slots", 1)),
         writing_mode=str(d.get("writing_mode", "vertical-rl")),
         head_offset_chars=int(d.get("head_offset_chars", 0)),
+        lead_offset_pt=float(d.get("lead_offset_pt", 0.0)),
         source_font=d.get("source_font"),
         note=d.get("note"),
     )

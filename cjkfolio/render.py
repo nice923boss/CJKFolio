@@ -322,7 +322,7 @@ class PageRenderer:
             )
             # 齊行：非段末行行首行尾雙錨定（縮排偏移用網格字距，內容用實效字距）
             adv, _status = line_justified_advance(placed.line, advance)
-            line_top = top_pt + placed.line.start_slot * advance
+            line_top = top_pt + placed.line.start_slot * advance + placed.lead_offset_pt
             content_i = 0
             for cell in placed.line.cells:
                 cell_top = line_top + content_i * adv

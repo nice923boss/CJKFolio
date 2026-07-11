@@ -214,6 +214,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 page_no=p.page_no,
                 para_idx=i,
                 head_offset=st.head_offset_chars,
+                lead_offset_pt=st.lead_offset_pt,
             )
         )
     raw_pages = flow_pages(

@@ -2,6 +2,23 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.24.0（2026-07-12，Sprint 29）引擎 pt 精度模型：段級 inline 軸 sub-slot 偏移（lead_offset_pt）
+
+### 新增
+
+- [實作] 段落樣式 `lead_offset_pt`（段級 inline 軸 sub-slot pt 偏移）：載體鏈 ParagraphStyle → ParagraphSpec → PlacedLine → 兩後端 body inline-start（`top_pt + start_slot × advance + lead_offset_pt`，render／pdf_writer 同源一致式）；純位置微調不改斷行容量（不進 `_break_cells`，斷行禁則齊行不動）。整數字槽定位自此可疊加 sub-slot pt 精度（護城河引擎，Owner 指示「最複雜架構先做」）。
+- [實作] tests/test_lead_offset.py：布線（font-free：大標 PlacedLine 帶 6.02、部序號帶 0）＋兩後端兩渲染差分（offset 6.02 vs 0，字型 ascent 抵消）證大標首字下移恰 6.02pt、部序號不動。測試 206 → 209（另開新檔，test_layout_render.py 792 行近上限）。
+
+### 變更（模版：Sprint 20 三部扉一手量測，A 級）
+
+- 部扉大標-明體W9 加 `lead_offset_pt` 6.02：大標首字頂 cell_top 176.84 → 182.86pt，貼真書量測 182.86（部序號維持天頭 176.84）。關閉 GAPS #13 的 B 部扉「大標首字頂低 6.02pt（0.26 字槽）v1 整數槽差」子項。
+- 重議 Sprint 20 決議「段前 pt 偏移延後 Phase 2〜3」：Owner 要求最複雜架構，正式觸發重議（決議紀錄）。
+
+### 已知限制（詳 GAPS.md #13）
+
+- lead_offset_pt v1 只套用直排 body；橫排 body 與 toc 引導線／rule 穿線判定不套用（現無 combined 用例：唯一使用者部扉大標為直排無 toc／rule）。
+- 目錄條目縮退（+2.89pt）、目錄章名（+2.27pt）、para_gap（Sprint 25 個案中標）等其他整數槽差待後續 Sprint 以同 inline 軸機制逐軸套用＋量測驗收。
+
 ## v0.23.0（2026-07-12，Sprint 28）preflight trailer-id 假陰性勘正（基線綠回復）
 
 ### 修正（baseline 假陰性：接手動工前跑基線發現）

@@ -103,8 +103,9 @@
    "size_pt": 21.9,
    "indent_chars": 0,
    "para_gap_slots": 1,
+   "lead_offset_pt": 6.02,
    "source_font": "DFMingStd-W9",
-   "note": "三篇部扉（掃描 p18/68/114）"
+   "note": "三篇部扉（掃描 p18/68/114）；lead_offset_pt 6.02：大標首字頂比部序號低 6.02pt（0.26 字槽，Sprint 20 三頁互證量測），Sprint 29 pt 精度模型落地，首字頂 176.84→182.86pt 貼真書（原整數槽模型兩段同天頭）"
   },
   "章名大標-明體W7": {
    "font_family": "思源宋體 TC",

@@ -72,6 +72,7 @@ class ParagraphSpec:
     page_no: Optional[str] = None  # 目錄條目頁碼（純載體，掛到段末行，不影響斷行禁則）
     para_idx: Optional[int] = None  # 文件段索引（純載體，供畫布反查文件游標）
     head_offset: int = 0  # 段級天頭縮退（槽）：整段每行起始槽位下移（目錄條目縮退）
+    lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調，不改斷行容量（Sprint 29）
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ class PlacedLine:
     style: str
     page_no: Optional[str] = None  # 目錄條目頁碼（僅段末行帶值）
     para_idx: Optional[int] = None  # 文件段索引（provenance 載體）
+    lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt，純載體，body 定位用）
 
 
 def normalize_with_offsets(text: str):
@@ -258,13 +260,15 @@ def flow_pages(
     cur: list = []
     slot = 0
 
-    def emit(line: Line, style: str, line_slots: int, page_no=None, para_idx=None) -> None:
+    def emit(line: Line, style: str, line_slots: int, page_no=None, para_idx=None,
+             lead_offset_pt=0.0) -> None:
         nonlocal slot, cur
         if slot + line_slots > slots_per_page:
             pages.append(cur)
             cur = []
             slot = 0
-        cur.append(PlacedLine(slot, line, style, page_no=page_no, para_idx=para_idx))
+        cur.append(PlacedLine(slot, line, style, page_no=page_no, para_idx=para_idx,
+                              lead_offset_pt=lead_offset_pt))
         slot += line_slots
 
     for pi, spec in enumerate(specs):
@@ -278,7 +282,7 @@ def flow_pages(
         for line in _break_cells(cells, cap, indent=indent, head=spec.head_offset):
             emit(line, spec.style, spec.line_slots,
                  page_no=spec.page_no if line.para_end else None,
-                 para_idx=spec.para_idx)
+                 para_idx=spec.para_idx, lead_offset_pt=spec.lead_offset_pt)
         if pi < len(specs) - 1:
             slot += spec.gap_after
             if slot >= slots_per_page:
