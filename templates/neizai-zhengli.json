@@ -61,14 +61,14 @@
    "source_font": "DFKaiShuStd-W3",
    "note": "章扉題詞（掃描 10 頁）"
   },
-  "推薦序大標-楷書W5": {
-   "font_family": "全字庫正楷體 TW-Kai",
+  "推薦序大標-黑體": {
+   "font_family": "思源黑體 TC",
    "font_weight": "medium",
-   "size_pt": 16.3,
+   "size_pt": 12.9,
    "indent_chars": 0,
-   "para_gap_slots": 1,
-   "source_font": "DFKaiShuStd-W5",
-   "note": "推薦序標題與裝飾線（掃描 7 頁）"
+   "para_gap_slots": 4,
+   "source_font": "NotoSansCJKtc-Medium",
+   "note": "序文標題（p004/p007/p009 三頁互證：NotoSans Medium 12.9pt、slot 0、段後 4 空槽＝內文自 slot 5 起；原書即用思源黑體 Medium，OFL）。勘誤（Sprint 23）：原名「推薦序大標-楷書W5 16.3pt」為掃描誤抓署名行長橫「─」（楷 W5 16.3 單字元，署名行自由手排，v1 不建模入 GAPS）"
   },
   "章節小標-黑體": {
    "font_family": "思源黑體 TC",
@@ -230,8 +230,19 @@
  },
  "masters": {
   "A-內文版": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
    "mirror": true,
    "footer": {
     "page_number": {
@@ -253,42 +264,160 @@
    "note": "頁腳 v1 為頁碼（全頁）＋書名書眉（偶數頁＝右頁）；原書左頁（奇數頁）書眉為章節副標、個案頁另有 Case 編號，待章節結構與個案主版進場"
   },
   "B-部扉": {
-   "margins_mm": {"top": 62.38, "bottom": 41.13, "outer": 63.53, "inner": 25.58},
-   "grid": {"chars_per_line": 10, "lines_per_page": 8, "char_advance_pt": 23.1, "line_pitch_pt": 34.37, "base_size_pt": 21.9},
+   "margins_mm": {
+    "top": 62.38,
+    "bottom": 41.13,
+    "outer": 63.53,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 10,
+    "lines_per_page": 8,
+    "char_advance_pt": 23.1,
+    "line_pitch_pt": 34.37,
+    "base_size_pt": 21.9
+   },
    "mirror": false,
    "evidence": "三部扉一手量測（Sprint 20，PDF 索引 18/68/114 三頁互證同值）：部序號行軸 228.49pt（slot 0＝419.53−outer 180.09−21.9/2）、大標行軸 194.12pt（slot 1，行距 34.37）、天頭＝部序號首字頂 176.84pt=62.38mm、大標字距 23.1pt（§10 換算規則 21.9×12.08/11.5）；部扉無頁腳。已知差異（GAPS #13）：真書大標首字頂 182.86 比部序號低 6.02pt（0.26 字槽），v1 整數槽模型兩段同天頭起排；雙線菱形裝飾框為手繪美術資產不規則化（Sprint 15 決議）",
    "note": "掃描定位 p18/68/114"
   },
   "C-個案扉頁": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
    "mirror": true,
    "evidence": "版心承 A；個案扉佈局（大標＋資訊列＋Case 編號）未逐頁量測"
   },
   "D-目錄": {
-   "margins_mm": {"top": 38.09, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "margins_mm": {
+    "top": 38.09,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
    "mirror": true,
-   "rule": {"kind": "toc-rule", "cmyk": [0, 0, 0, 0.57], "line_width_pt": 1.0, "dash_on_pt": 3.0, "dash_off_pt": 2.0, "y_from_top_pt": 122.46, "break_before_pt": 28.5, "break_after_pt": 3.9},
-   "toc": {"page_no_style": "頁碼數字-GillSans", "page_no_bottom_pt": 490.0, "leader_width_pt": 0.1, "leader_gap_pt": 2.0, "leader_cmyk": [0, 0, 0, 0.92]},
+   "rule": {
+    "kind": "toc-rule",
+    "cmyk": [
+     0,
+     0,
+     0,
+     0.57
+    ],
+    "line_width_pt": 1.0,
+    "dash_on_pt": 3.0,
+    "dash_off_pt": 2.0,
+    "y_from_top_pt": 122.46,
+    "break_before_pt": 28.5,
+    "break_after_pt": 3.9
+   },
+   "toc": {
+    "page_no_style": "頁碼數字-GillSans",
+    "page_no_bottom_pt": 490.0,
+    "leader_width_pt": 0.1,
+    "leader_gap_pt": 2.0,
+    "leader_cmyk": [
+     0,
+     0,
+     0,
+     0.92
+    ]
+   },
    "evidence": "天頭 38.09mm＝篇名（第N篇）首字頂 107.96pt（p002/p003 三處一手量測同值，Sprint 21）；條目縮退見「目錄-篇章條目」head_offset（原 47.63mm 條目錨 135pt 改由縮退表達）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；篇名嵌線斷開邊距 break_before 28.5pt／break_after 3.9pt（p002/p003 行槽緣→線端量測中值，真書手排離散 before 26.9〜30.1／after 3.7〜4.1 入 GAPS）；條目頁碼底錨 490pt 與引導線 0.1pt 為 p003 實測、頁碼字型以頁碼數字樣式對映（原書 Times 9pt，Sprint 16）；帶起訖（前置條目區無線、跨頁延續記號）與篇序 11pt 密排騎線混排不建模（v1 已知差異，GAPS #13）"
   },
   "E-序文版": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
    "mirror": true,
-   "evidence": "版心承 A；序文頁未逐頁量測（掃描 p3-17）"
+   "evidence": "版心承 A 一手驗證成立（Sprint 23，p004/p007/p009 三頁互證同值）：內文天頭 92.09pt=32.49mm、行距 23.0（行軸序列）、字距 12.08（字頂序列）、首行縮排 2 字（116.47pt 吻合）；標題（推薦序大標-黑體 12.9pt）slot 0、內文自 slot 5 起（行軸差 114.76pt=4.99 槽）；已知差異：標題行軸實測 342.16 vs inner 承 A 推導 341.26（差 0.9pt≈inner 0.32mm）、欄標「推薦序」（黑 W5 9pt）為標題行右側 16.2pt 肩位（v1 無肩注機制）、署名行（楷 W5 16.3 長橫＋明 W9 11.1）y 頂底皆隨頁變動＝自由手排（皆入 GAPS #13）；頁腳承 A（p004 頁碼 x 36.85pt 與 A outer_offset 36.8 精確吻合、序文偶頁書眉「內在整理」實測 x 741.9 同 A）",
+   "footer": {
+    "page_number": {
+     "style": "頁碼數字-GillSans",
+     "source": "number",
+     "baseline_from_top_pt": 530.43,
+     "outer_offset_pt": 36.8,
+     "pages": "all"
+    },
+    "running_title": {
+     "style": "書眉副標-手札體",
+     "source": "title",
+     "baseline_from_top_pt": 529.15,
+     "outer_offset_pt": 59.53,
+     "pages": "even"
+    }
+   }
   },
   "F-版權頁": {
-   "margins_mm": {"top": 43.48, "bottom": 41.13, "outer": 25.81, "inner": 21.0},
-   "grid": {"chars_per_line": 23, "lines_per_page": 45, "char_advance_pt": 5.66, "line_pitch_pt": 7.74, "base_size_pt": 5.63},
+   "margins_mm": {
+    "top": 43.48,
+    "bottom": 41.13,
+    "outer": 25.81,
+    "inner": 21.0
+   },
+   "grid": {
+    "chars_per_line": 23,
+    "lines_per_page": 45,
+    "char_advance_pt": 5.66,
+    "line_pitch_pt": 7.74,
+    "base_size_pt": 5.63
+   },
    "mirror": false,
-   "frame": {"kind": "cip-box", "cmyk": [0, 0, 0, 0.92], "line_width_pt": 0.14, "pad_pt": 5.05, "pad_v_pt": 4.94},
+   "frame": {
+    "kind": "cip-box",
+    "cmyk": [
+     0,
+     0,
+     0,
+     0.92
+    ],
+    "line_width_pt": 0.14,
+    "pad_pt": 5.05,
+    "pad_v_pt": 4.94
+   },
    "evidence": "p178 一手量測（Sprint 19，tools/measure_cip_page.py）：CIP 5.63pt、字距 5.66pt（樣本 7 行均值）、主體行距 7.74pt、內容左 73.15pt=25.81mm＝書口（p178 為左半＝奇數頁＝左頁，Sprint 22 側別修正後 25.81 改標 outer，mirror=false 恆以 outer 為起排側，幾何不變）、首行 baseline 128.2pt→top=128.2−5.63×0.88=123.25pt=43.48mm（baseline 錨定）、框線 0.141pt 暖黑（同內文→單 K92）、框 pad 水平 5.05／垂直 4.94pt、滿行 23 字（內容寬 131.48pt÷5.66）。inner 21.0 承 A 自擬（p178 訂口側未量測）。lines_per_page 45 為幾何推導（(595.28−123.25−116.64)÷7.74）非量測。已知差異（GAPS #13）：後段 3 行行距 12.73／11.73pt 分區（v1 單一 pitch）、框上方標題行（v1 不區分框內外行）"
   },
   "G-圖文版": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
-   "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
    "mirror": true,
    "evidence": "版心承 A；圖文繞排為 Phase 4 範圍，佈局未量測"
   }

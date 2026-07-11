@@ -286,6 +286,41 @@ def test_body_axis_mirrors_by_book_page(template, tmp_path):
     assert _ink_cx(even.paths[0]) > _ink_cx(odd.paths[0])
 
 
+# ---------- E 序文版頁型（Sprint 23） ----------
+
+def test_preface_master_and_title_style(template):
+    """E 序文版（p004/p007/p009 三頁互證）：版心承 A；序文標題＝思源黑體
+    Medium 12.9pt（勘誤：原楷書W5 16.3 為署名長橫誤抓）、段後 4 空槽。"""
+    master = template.masters["E-序文版"]
+    assert master.margins.top_mm == pytest.approx(32.49)  # 內文天頭 92.09pt 承 A 驗證
+    assert master.grid.line_pitch_pt == pytest.approx(23.0)
+    assert master.grid.char_advance_pt == pytest.approx(12.08)
+    title = template.paragraph_styles["推薦序大標-黑體"]
+    assert title.font_family == "思源黑體 TC"
+    assert title.size_pt == pytest.approx(12.9)
+    assert title.para_gap_slots == 4  # 內文自 slot 5 起（實測行軸差 4.99 槽）
+    assert title.source_font == "NotoSansCJKtc-Medium"
+
+
+def test_preface_layout_title_slot0_body_slot5(template):
+    """序文樣張幾何：標題 slot 0、內文 slot 5（標題 1 槽＋gap 4）、
+    內文首行縮排 2 字（首字頂＝天頭＋2×12.08，p004 實測 116.47pt 吻合）。"""
+    doc = document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "序文樣張", "template": "neizai-zhengli", "master": "E-序文版"},
+        "paragraphs": [
+            {"text": "把時間留給真正重要的人", "style": "推薦序大標-黑體"},
+            {"text": "這些年我陪伴許多家庭整理住所，看見的往往不是物件的去留，而是人與人之間的靠近。", "style": "內文-明體直排"},
+        ],
+    })
+    layout = layout_document(doc, template)
+    assert layout.violations == []
+    placed = layout.pages[0].placed
+    assert placed[0].slot == 0 and placed[0].style == "推薦序大標-黑體"
+    assert placed[1].slot == 5 and placed[1].style == "內文-明體直排"
+    assert placed[1].line.start_slot == 2  # 段首縮排 2 字
+
+
 # ---------- 橫排版面軸（Sprint 13：版權頁-CIP，GAPS #13） ----------
 
 def test_page_is_vertical_detects_direction(template):

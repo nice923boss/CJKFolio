@@ -1,0 +1,14 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "序文測試範例",
+  "template": "neizai-zhengli",
+  "master": "E-序文版",
+  "language": "zh-TW"
+ },
+ "paragraphs": [
+  {"text": "把時間留給真正重要的人", "style": "推薦序大標-黑體"},
+  {"text": "這些年我陪伴許多家庭整理住所，看見的往往不是物件的去留，而是人與人之間的靠近。每一次收納的決定，其實都是一次關係的整理。", "style": "內文-明體直排"},
+  {"text": "這本書把整理這件事，放回生活的正中央，讀來溫柔而踏實。", "style": "內文-明體直排"}
+ ]
+}
