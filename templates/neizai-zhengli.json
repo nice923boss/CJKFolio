@@ -141,8 +141,9 @@
    "indent_chars": 0,
    "para_gap_slots": 0,
    "head_offset_chars": 2,
+   "lead_offset_pt": 6.24,
    "source_font": "DFHeiStd-W5",
-   "note": "目錄帶頁碼章名條目（p002/p003 一手量測，Sprint 24）：DFHeiStd-W5 11.5pt（黑 W5，對映思源黑體 Medium OFL，已入庫不 fallback）；勘誤（原記楷 W3 9.5pt＝掃描把不帶頁碼摘要層字型誤設為章名層，同 Sprint 23 署名長橫勘誤）；head_offset 2 字格＝黑字距 12.08×2＝24.16pt，章名首字頂 132.12 vs 真書 135.15（整數槽差 −3.03pt 入 GAPS）；v1 不建模：條目摘要層（楷 W3 9.5 不帶頁碼、真書 top_y 166）、【結語】黑 W5 10pt 變體、章名與摘要縱向錯落及多層列距（GAPS #13）"
+   "note": "目錄帶頁碼章名條目（p002/p003 一手量測，Sprint 24）：DFHeiStd-W5 11.5pt（黑 W5，對映思源黑體 Medium OFL，已入庫不 fallback）；勘誤（原記楷 W3 9.5pt＝掃描把不帶頁碼摘要層字型誤設為章名層，同 Sprint 23 署名長橫勘誤）；head_offset 2 字格＝黑字距 12.08×2＝24.16pt（框頂 132.12）；lead_offset_pt 6.24（Sprint 30 pt 精度）：條目墨頂扣 3mm 出血後於 trim 同口徑貼真書 135.15，勘正 Sprint 24 墨頂比對之出血座標框錯配（原以 model 含出血 media 137.42 比真書無出血 trim 135.15，未扣 8.504pt，屬 GAPS #21 同型；正確 trim 差 +6.24 下移，方向與原記 +2.27 相反）；v1 不建模：條目摘要層（楷 W3 9.5 不帶頁碼、真書 top_y 166）、【結語】黑 W5 10pt 變體、章名與摘要縱向錯落及多層列距（GAPS #13）"
   },
   "版權頁-CIP橫排": {
    "font_family": "思源宋體 TC",

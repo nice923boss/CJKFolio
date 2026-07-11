@@ -146,7 +146,10 @@ def _toc_marks(pages, template: Template, master) -> tuple:
             adv = style_advance_pt(entry_style, grid)
             digit_adv = style_advance_pt(cstyle, grid)
             used = sum(c.width for c in pl.line.cells)
-            title_end = top_pt + (pl.line.start_slot + used) * adv
+            # 標題末隨條目 body 的 lead_offset_pt 同步偏移（Sprint 30；body inline-start
+            # 已含 lead_offset），引導線起點 leader_y0 因而跟隨；頁碼底錨 page_no_top 為
+            # 頁面固定列（所有條目頁碼底對齊），不隨條目位置微調。
+            title_end = top_pt + (pl.line.start_slot + used) * adv + pl.lead_offset_pt
             page_no_top = toc.page_no_bottom_pt - len(pl.page_no) * digit_adv
             mark = TocEntryMark(
                 slot=pl.slot,
@@ -182,7 +185,9 @@ def _rule_breaks(pages, template: Template, master) -> dict:
     for page in pages:
         for pl in page.placed:
             style = template.paragraph_styles[pl.style]
-            line_top = top_pt + pl.line.start_slot * style_advance_pt(style, grid)
+            # 穿線判定跟隨 body 實際位置：行首字頂含 lead_offset_pt（Sprint 30），
+            # 條目下移／上移後穿線與否與 body inline-start 同步，不失步。
+            line_top = top_pt + pl.line.start_slot * style_advance_pt(style, grid) + pl.lead_offset_pt
             if line_top < master.rule.y_from_top_pt - _EPS:
                 breaks.setdefault(page.number, []).append(
                     RuleBreak(slot=pl.slot, line_slots=style_line_slots(style, grid))

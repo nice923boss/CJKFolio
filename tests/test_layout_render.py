@@ -634,7 +634,8 @@ def test_layout_toc_marks_geometry(template):
     # 條目縮退 head_offset 槽下移，Sprint 21）
     entry_style = template.paragraph_styles["目錄-篇章條目"]
     adv = style_advance_pt(entry_style, grid)
-    title_end = master.margins.top_mm * PT + (entry_style.head_offset_chars + 10) * adv
+    title_end = (master.margins.top_mm * PT + (entry_style.head_offset_chars + 10) * adv
+                 + entry_style.lead_offset_pt)  # Sprint 30：標題末隨條目 lead_offset 偏移
     assert m.slot == 0
     assert m.leader_y0_pt == pytest.approx(title_end + 2.0)
     assert m.leader_y1_pt == pytest.approx(m.page_no_top_pt - 2.0)
@@ -715,7 +716,8 @@ def test_layout_rule_breaks_crossing_line_only(template):
     part_style = template.paragraph_styles["目錄-部名"]
     entry_style = template.paragraph_styles["目錄-篇章條目"]
     assert top_pt < master.rule.y_from_top_pt
-    entry_top = top_pt + entry_style.head_offset_chars * style_advance_pt(entry_style, grid)
+    entry_top = (top_pt + entry_style.head_offset_chars * style_advance_pt(entry_style, grid)
+                 + entry_style.lead_offset_pt)  # Sprint 30：條目起點含 lead_offset（下移更不穿線）
     assert entry_top > master.rule.y_from_top_pt
     breaks = layout.rule_breaks[1]
     assert len(breaks) == 1  # 只有部名行穿線
@@ -785,7 +787,8 @@ def test_render_toc_entry_without_page_no_has_no_leader(template, tmp_path):
     entry_style = template.paragraph_styles["目錄-篇章條目"]
     adv = style_advance_pt(entry_style, master.grid)
     title_end_px = round(
-        (master.margins.top_mm * PT + (entry_style.head_offset_chars + 6) * adv + 2)
+        (master.margins.top_mm * PT + (entry_style.head_offset_chars + 6) * adv + 2
+         + entry_style.lead_offset_pt)  # Sprint 30：條目下移，末字後起點跟隨
         * scale)
     bot_px = round(master.toc.page_no_bottom_pt * scale)
     col = [img.getpixel((ax_px, y)) for y in range(title_end_px, bot_px)]

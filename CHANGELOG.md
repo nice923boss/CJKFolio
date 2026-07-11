@@ -2,6 +2,29 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.25.0（2026-07-12，Sprint 30）目錄章名條目 inline 偏移＋Gate 4 出血座標框勘正
+
+### 新增
+
+- [實作] layout：`lead_offset_pt` 接入 `_toc_marks`（`title_end` → 引導線起 `leader_y0`）與 `_rule_breaks`（`line_top` 穿線判定），目錄條目 body 偏移時引導線起點與穿線與否同步跟隨 body 實際位置（Sprint 29 刻意延後部分，本 sprint 正題）；頁碼底錨 `page_no_top`／線終 `leader_y1` 為頁面固定列不隨條目。兩後端 render／pdf_writer 消費同一 `TocEntryMark`／`RuleBreak`，改 layout 即自動 parity。
+- [實作] tests/test_lead_offset.py：目錄機制（font-free：`leader_y0` 隨 lead_offset 同移、頁碼底錨不動、穿線判定同步）＋兩後端絕對值（PyMuPDF span top 扣出血 → trim 貼真書 135.15）＋兩渲染差分（PNG／PDF on−off ＝ 6.24）。既有 3 toc/rule 測試預期式同步加 `lead_offset_pt`。測試 209 → 214。
+
+### 變更（模版：Gate 4 出血座標框勘正）
+
+- 目錄-篇章條目加 `lead_offset_pt` 6.24：條目首字墨頂（PyMuPDF span top 扣 3mm 出血 → trim 空間）貼真書 135.15（端到端實測精確 135.15）。
+- **勘正 Sprint 24 墨頂比對之出血座標框錯配（GAPS #21 同型）**：Sprint 24「墨頂 137.42 vs 真書 135.15、差 +2.27」係拿 model 含出血 media 座標比真書無出血 trim（真書 PDF 本機實測 media ＝ trim ＝ bleed，頂部出血 padding 0.000pt），未扣出血 8.504pt。扣出血後 model trim 墨頂 128.91 vs 真書 135.15，正確 lead_offset ＝ +6.24（下移），方向與原記 -2.27（上移）相反。數學自洽：假差 +2.27 ＝ 真實 trim 差(-6.24) ＋ 出血(8.504)。
+
+### 驗證（Gate 4 獨立）
+
+- scratchpad probe：真書 PDF 頁盒本機實測（media／trim／bleed 三者同尺寸、頂部 padding 0.000pt ＝ 無出血）；model export PDF media span top 137.42（與 Sprint 24 記錄吻合 0.005pt）扣出血得 trim 128.91。
+- 端到端 samples/toc.doc.json：render PNG Read 親驗（部名穿線＋4 條目縮退在虛線下＋引導線＋直排頁碼 17／63／109／155 底對齊）、export preflight 12/12、條目墨頂 trim 135.15、兩後端 parity。
+- 全套 `pytest spikes tests` 214 passed / 0 failed；typecheck EXIT=0。
+
+### 已知限制（詳 GAPS.md #13）
+
+- +6.24 為 PyMuPDF 同口徑（字型 ascent 線）扣出血對齊，殘留思源／華康 ascent 度量差（§3.3 不比字形輪廓，位置偏移無法消除）；出血 8.504pt 才是可修正的座標框錯配。
+- lead_offset_pt 仍未套用橫排 body（無 combined 用例）；para_gap block 軸（Sprint 25 個案中標相鄰）待 block 軸 pt 偏移新機制。
+
 ## v0.24.0（2026-07-12，Sprint 29）引擎 pt 精度模型：段級 inline 軸 sub-slot 偏移（lead_offset_pt）
 
 ### 新增
