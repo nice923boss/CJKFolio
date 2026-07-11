@@ -10,7 +10,7 @@ import pytest
 
 from cjkfolio.document import document_from_dict
 from cjkfolio.pdf_writer import export_pdf, page_boxes_pt, subset_tag
-from cjkfolio.primitives import cip_frame_rect
+from cjkfolio.primitives import cip_frame_rect, toc_rule_line
 from cjkfolio.render import (
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,
@@ -477,6 +477,71 @@ def test_export_cip_frame_preflight_green(template, tmp_path):
     export_pdf(make_cip_doc([
         "自由排版工作室出版品預行編目資料",
         "ISBN 978-0-00-000000-0（平裝）",
+    ]), template, out, footer=False)
+    report = check_pdfx1a(out)
+    assert report.ok, [f for f in report.findings if not f.ok]
+
+
+# ---------- 目錄水平虛線向量原件（Sprint 15） ----------
+
+def make_toc_doc(entries):
+    """自擬直排目錄文件（master D、樣式 目錄-篇章條目）。"""
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "目錄樣張", "template": "neizai-zhengli", "master": "D-目錄"},
+        "paragraphs": [{"text": t, "style": "目錄-篇章條目"} for t in entries],
+    })
+
+
+@needs_fonts
+def test_export_toc_rule_dash_stroke_before_text(template, tmp_path):
+    """目錄虛線：dash 算符＋灰 K 描邊（d/m/l/S/K）在 BT 之前、q…Q 隔離、無 rg/RG。"""
+    out = tmp_path / "toc.pdf"
+    export_pdf(make_toc_doc(["安放與整理的十個提問"]), template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    assert "[ 3 2 ] 0 d" in content, "缺 dash 算符 [ 3 2 ] 0 d"
+    assert re.search(r"[\d.\-]+ [\d.\-]+ m\n[\d.\-]+ [\d.\-]+ l\nS", content), "缺 m/l/S 線段路徑"
+    assert "0 0 0 0.57 K" in content, "虛線描邊非灰 K57"
+    assert content.index(" d\n") < content.index("BT"), "dash 須在文字物件 BT 之前"
+    assert " rg" not in content and " RG" not in content, "虛線殘留 RGB 描邊"
+    # dash 狀態隔離（q…Q 內）：PyMuPDF 獨立解析回報 dashes
+    draws = pdf[0].get_drawings()
+    dash_lines = [d for d in draws if d.get("dashes") and "3" in d["dashes"]]
+    assert dash_lines, f"PyMuPDF 未解析出 dash 線：{[d.get('dashes') for d in draws]}"
+
+
+@needs_fonts
+def test_export_toc_rule_two_backend_parity(template, tmp_path):
+    """虛線 m/l 座標＝render 幾何助手（toc_rule_line）＋出血偏移，兩後端同源。"""
+    out = tmp_path / "toc-parity.pdf"
+    export_pdf(make_toc_doc(["把回憶放回原位的方法"]), template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    m = re.search(r"([\d.\-]+) ([\d.\-]+) m\n([\d.\-]+) ([\d.\-]+) l", content)
+    assert m, "缺 m/l 線段路徑"
+    x0, y0, x1, y1 = map(float, m.groups())
+
+    master = template.masters["D-目錄"]
+    line = toc_rule_line(mm_to_pt(template.page_width_mm), master.rule)
+    page_h = mm_to_pt(template.page_height_mm)
+    assert x0 == pytest.approx(BLEED_PT + line.x0, abs=0.3)
+    assert x1 == pytest.approx(BLEED_PT + line.x1, abs=0.3)
+    y_up = page_h + BLEED_PT - line.y0  # top-down → y-up
+    assert y0 == pytest.approx(y_up, abs=0.3) and y1 == pytest.approx(y_up, abs=0.3)
+    # 貼邊出血：線兩端正好落在出血邊（x0=0、x1=頁寬＋2×出血）
+    assert x0 == pytest.approx(0.0, abs=0.3)
+    assert x1 == pytest.approx(mm_to_pt(template.page_width_mm) + 2 * BLEED_PT, abs=0.3)
+
+
+@needs_fonts
+def test_export_toc_rule_preflight_green(template, tmp_path):
+    """加虛線後目錄 PDF 仍過全部 X-1a 機械規則（color-cmyk-only 不退步）。"""
+    from cjkfolio.preflight import check_pdfx1a
+    out = tmp_path / "tocx.pdf"
+    export_pdf(make_toc_doc([
+        "安放與整理的十個提問",
+        "把回憶放回原位的方法",
     ]), template, out, footer=False)
     report = check_pdfx1a(out)
     assert report.ok, [f for f in report.findings if not f.ok]

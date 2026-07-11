@@ -67,6 +67,7 @@ class FooterItem:
 
 
 KNOWN_FRAME_KINDS = frozenset({"cip-box"})  # v1 只有 CIP 細框
+KNOWN_RULE_KINDS = frozenset({"toc-rule"})  # v1 只有目錄天頭虛線
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,24 @@ class FrameSpec:
 
 
 @dataclass(frozen=True)
+class RuleSpec:
+    """主版向量裝飾線（v1：目錄天頭水平虛線，PLAN §1 精緻設計細節）。
+
+    cmyk 一律 DeviceCMYK；y_from_top_pt 為線的天頭下位置（參考書 p003 實測
+    122.46pt）；dash_on_pt/dash_off_pt 為虛線節奏（實測 [3 2]），on=0 為實線；
+    bleed_extend_pt 為兩端越出頁邊的出血延伸（§9 貼邊元素出血全出）。
+    幾何由 primitives.toc_rule_line 依頁寬推導。
+    """
+    kind: str
+    y_from_top_pt: float
+    cmyk: tuple = (0.0, 0.0, 0.0, 1.0)
+    line_width_pt: float = 1.0
+    dash_on_pt: float = 3.0
+    dash_off_pt: float = 2.0
+    bleed_extend_pt: float = 3.0 * 72.0 / 25.4
+
+
+@dataclass(frozen=True)
 class MasterPage:
     name: str
     margins: Margins
@@ -90,6 +109,7 @@ class MasterPage:
     mirror: bool = True  # 對開鏡像（奇數書頁書口在右；奇偶依書頁號）
     footer: dict = field(default_factory=dict)  # name → FooterItem
     frame: Optional[FrameSpec] = None  # 向量裝飾框（v1：CIP 細框；None＝不畫框）
+    rule: Optional[RuleSpec] = None  # 向量裝飾線（v1：目錄天頭虛線；None＝不畫線）
     evidence: Optional[str] = None
     note: Optional[str] = None
 
@@ -166,6 +186,25 @@ def _frame_spec(d: dict, ctx: str) -> FrameSpec:
     )
 
 
+def _rule_spec(d: dict, ctx: str) -> RuleSpec:
+    kind = str(_require(d, "kind", ctx))
+    if kind not in KNOWN_RULE_KINDS:
+        raise TemplateError(f"{ctx}.kind={kind!r} 非已知線類型 {sorted(KNOWN_RULE_KINDS)}")
+    y = _require(d, "y_from_top_pt", ctx)
+    cmyk = d.get("cmyk", [0.0, 0.0, 0.0, 1.0])
+    if not (isinstance(cmyk, (list, tuple)) and len(cmyk) == 4):
+        raise TemplateError(f"{ctx}.cmyk 須為 4 元素 [c,m,y,k]，得到 {cmyk!r}")
+    return RuleSpec(
+        kind=kind,
+        y_from_top_pt=float(y),
+        cmyk=tuple(float(v) for v in cmyk),
+        line_width_pt=float(d.get("line_width_pt", 1.0)),
+        dash_on_pt=float(d.get("dash_on_pt", 3.0)),
+        dash_off_pt=float(d.get("dash_off_pt", 2.0)),
+        bleed_extend_pt=float(d.get("bleed_extend_pt", 3.0 * 72.0 / 25.4)),
+    )
+
+
 def _master(name: str, d: dict) -> MasterPage:
     ctx = f"masters[{name}]"
     m = _require(d, "margins_mm", ctx)
@@ -191,6 +230,7 @@ def _master(name: str, d: dict) -> MasterPage:
             for fname, fd in d.get("footer", {}).items()
         },
         frame=_frame_spec(d["frame"], f"{ctx}.frame") if d.get("frame") else None,
+        rule=_rule_spec(d["rule"], f"{ctx}.rule") if d.get("rule") else None,
         evidence=d.get("evidence"),
         note=d.get("note"),
     )

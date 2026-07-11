@@ -265,10 +265,11 @@
    "evidence": "版心承 A；個案扉佈局（大標＋資訊列＋Case 編號）未逐頁量測"
   },
   "D-目錄": {
-   "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "margins_mm": {"top": 47.63, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
    "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
    "mirror": true,
-   "evidence": "版心承 A；水平虛線分隔與直排數字頁碼佈局未量測（p1-2）"
+   "rule": {"kind": "toc-rule", "cmyk": [0, 0, 0, 0.57], "line_width_pt": 1.0, "dash_on_pt": 3.0, "dash_off_pt": 2.0, "y_from_top_pt": 122.46},
+   "evidence": "天頭 47.63mm＝條目內容起點 135pt（p003 Case 標籤 y 實測，內容在虛線之下）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；虛線篇名斷開（部名嵌線）與條目縮退、直排數字頁碼佈局未實作（GAPS #13）"
   },
   "E-序文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},

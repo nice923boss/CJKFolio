@@ -6,6 +6,7 @@ import pytest
 
 from cjkfolio.styles import (
     FrameSpec,
+    RuleSpec,
     TemplateError,
     load_template,
     template_from_dict,
@@ -123,3 +124,49 @@ def test_frame_defaults_when_optional_omitted():
     assert f.cmyk == (0.0, 0.0, 0.0, 1.0)  # 預設純黑
     assert f.line_width_pt == 0.5
     assert f.pad_pt == 6.0
+
+
+# ---------- 向量裝飾線（Sprint 15：目錄水平虛線） ----------
+
+def test_master_rule_parsing(template):
+    r = template.masters["D-目錄"].rule
+    assert isinstance(r, RuleSpec)
+    assert r.kind == "toc-rule"
+    assert r.cmyk == (0.0, 0.0, 0.0, 0.57)  # 灰 K57（參考書 p003 實測 RGB 0.427 推導）
+    assert r.line_width_pt == 1.0
+    assert r.dash_on_pt == 3.0 and r.dash_off_pt == 2.0  # 實測 dash pattern [3 2]
+    assert r.y_from_top_pt == pytest.approx(122.46)  # 實測天頭下位置
+    # 非目錄主版無虛線（None）
+    assert template.masters["A-內文版"].rule is None
+    assert template.masters["F-版權頁"].rule is None
+
+
+def _template_with_rule(rule_dict):
+    data = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    data["masters"]["D-目錄"]["rule"] = rule_dict
+    return data
+
+
+def test_rule_unknown_kind_rejected():
+    with pytest.raises(TemplateError, match="線類型"):
+        template_from_dict(_template_with_rule({"kind": "波浪線", "y_from_top_pt": 100}))
+
+
+def test_rule_bad_cmyk_rejected():
+    with pytest.raises(TemplateError, match="cmyk"):
+        template_from_dict(_template_with_rule(
+            {"kind": "toc-rule", "y_from_top_pt": 100, "cmyk": [0, 0]}))
+
+
+def test_rule_missing_y_rejected():
+    with pytest.raises(TemplateError, match="y_from_top_pt"):
+        template_from_dict(_template_with_rule({"kind": "toc-rule"}))
+
+
+def test_rule_defaults_when_optional_omitted():
+    tpl = template_from_dict(_template_with_rule({"kind": "toc-rule", "y_from_top_pt": 100.0}))
+    r = tpl.masters["D-目錄"].rule
+    assert r.cmyk == (0.0, 0.0, 0.0, 1.0)  # 預設純黑
+    assert r.line_width_pt == 1.0
+    assert r.dash_on_pt == 3.0 and r.dash_off_pt == 2.0
+    assert r.bleed_extend_pt == pytest.approx(3.0 * 72.0 / 25.4)  # 預設出血 3mm

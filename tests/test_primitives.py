@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from cjkfolio.primitives import PT_PER_MM, StrokeRect, cip_frame_rect
-from cjkfolio.styles import FrameSpec, load_template
+from cjkfolio.primitives import PT_PER_MM, StrokeLine, StrokeRect, cip_frame_rect, toc_rule_line
+from cjkfolio.styles import FrameSpec, RuleSpec, load_template
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -49,3 +49,31 @@ def test_cip_frame_pad_widens_box(fmaster):
     assert padded.x1 == pytest.approx(tight.x1 + 10.0)
     assert padded.y0 == pytest.approx(tight.y0 - 10.0)
     assert padded.y1 == pytest.approx(tight.y1 + 10.0)
+
+
+# ---------- 目錄水平虛線（Sprint 15） ----------
+
+def test_toc_rule_line_geometry():
+    rule = RuleSpec(kind="toc-rule", cmyk=(0.0, 0.0, 0.0, 0.57), line_width_pt=1.0,
+                    dash_on_pt=3.0, dash_off_pt=2.0, y_from_top_pt=122.46)
+    page_w = 148.0 * PT_PER_MM
+    line = toc_rule_line(page_w, rule)
+    assert isinstance(line, StrokeLine)
+    # 水平線：y 固定於實測天頭下位置
+    assert line.y0 == pytest.approx(122.46) and line.y1 == pytest.approx(122.46)
+    # 貫穿頁寬並向兩側延伸出血（貼邊元素出血全出，§9）
+    assert line.x0 == pytest.approx(-rule.bleed_extend_pt)
+    assert line.x1 == pytest.approx(page_w + rule.bleed_extend_pt)
+    assert line.x0 < line.x1
+    # 樣式參數原樣傳遞
+    assert line.cmyk == (0.0, 0.0, 0.0, 0.57)
+    assert line.line_width_pt == pytest.approx(1.0)
+    assert line.dash_on_pt == pytest.approx(3.0)
+    assert line.dash_off_pt == pytest.approx(2.0)
+
+
+def test_toc_rule_line_solid_when_dash_on_zero():
+    # dash_on_pt=0 語意為實線（後端據此不分段）
+    rule = RuleSpec(kind="toc-rule", y_from_top_pt=100.0, dash_on_pt=0.0, dash_off_pt=0.0)
+    line = toc_rule_line(400.0, rule)
+    assert line.dash_on_pt == 0.0

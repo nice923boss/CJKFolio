@@ -4,8 +4,9 @@
 pdf 寫出時轉 y-up 並加出血偏移。描邊色一律 DeviceCMYK（維持 PLAN §9 全 CMYK；
 preflight color-cmyk-only 檢查不退步，描邊走 `K` 算符不觸 `rg`／`RG`）。
 
-v1 只有 CIP 細框（版權頁）一種原件，幾何由主版 grid 與內容行數確定性推導；
-此層為後續部扉雙線菱形框（B 主版）與目錄水平虛線（D 主版）的地基（PLAN §1）。
+原件：CIP 細框（F 版權頁，Sprint 14）、目錄水平虛線（D 主版，Sprint 15），
+幾何由主版 grid／樣式參數確定性推導；此層為後續部扉雙線菱形框（B 主版）
+等向量裝飾的地基（PLAN §1）。
 """
 from dataclasses import dataclass
 
@@ -21,6 +22,39 @@ class StrokeRect:
     y1: float
     cmyk: tuple
     line_width_pt: float
+
+
+@dataclass(frozen=True)
+class StrokeLine:
+    """描邊線段（top-down pt）。dash_on_pt>0 時為虛線（畫 on 空 off），=0 為實線。"""
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    cmyk: tuple
+    line_width_pt: float
+    dash_on_pt: float = 0.0
+    dash_off_pt: float = 0.0
+
+
+def toc_rule_line(page_width_pt: float, rule) -> StrokeLine:
+    """目錄天頭水平虛線（top-down pt）：y 取實測 rule.y_from_top_pt，貫穿頁寬並向
+    兩側延伸 rule.bleed_extend_pt（貼邊元素出血全出，PLAN §9）。
+
+    參考書 p003 一手量測（A 級）：y=122.46pt、1.0pt、dash [3 2]、灰 K57；量測
+    「參數」入模版（Sprint 7 頁腳先例），「內容」不入 repo。篇名斷開與條目縮退
+    屬目錄頁型工程（GAPS #13 剩項），v1 全寬貫穿。
+    """
+    return StrokeLine(
+        x0=-rule.bleed_extend_pt,
+        y0=rule.y_from_top_pt,
+        x1=page_width_pt + rule.bleed_extend_pt,
+        y1=rule.y_from_top_pt,
+        cmyk=rule.cmyk,
+        line_width_pt=rule.line_width_pt,
+        dash_on_pt=rule.dash_on_pt,
+        dash_off_pt=rule.dash_off_pt,
+    )
 
 
 def cip_frame_rect(master, left_x_pt: float, n_lines: int, frame) -> StrokeRect:

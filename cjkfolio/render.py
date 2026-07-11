@@ -21,7 +21,7 @@ from .layout import (
     style_line_slots,
 )
 from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
-from .primitives import cip_frame_rect
+from .primitives import cip_frame_rect, toc_rule_line
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -172,6 +172,33 @@ def _draw_stroke_rect(img, rect, scale):
     draw.rectangle(box, outline=0, width=w_px)
 
 
+def _draw_stroke_line(img, line, scale):
+    """描邊線段（PIL "L" 模式）：top-down pt × scale → px，dash_on_pt>0 時分段畫。
+
+    PNG 為灰階預覽：描邊灰值以 255×(1−k) 近似（只取 k 分量，c/m/y 不表達；
+    CMYK 忠實表達只在 PDF 後端）。分段節奏與 pdf 端 `d` 算符同源（同一 StrokeLine）。
+    """
+    draw = ImageDraw.Draw(img)
+    gray = max(0, min(255, round(255 * (1.0 - line.cmyk[3]))))
+    w_px = max(1, round(line.line_width_pt * scale))
+    x0, y0 = line.x0 * scale, line.y0 * scale
+    x1, y1 = line.x1 * scale, line.y1 * scale
+    if line.dash_on_pt <= 0:  # 實線
+        draw.line([(x0, y0), (x1, y1)], fill=gray, width=w_px)
+        return
+    length = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+    if length <= 0:
+        return
+    ux, uy = (x1 - x0) / length, (y1 - y0) / length
+    on, off = line.dash_on_pt * scale, line.dash_off_pt * scale
+    t = 0.0
+    while t < length:
+        seg = min(on, length - t)
+        draw.line([(x0 + ux * t, y0 + uy * t),
+                   (x0 + ux * (t + seg), y0 + uy * (t + seg))], fill=gray, width=w_px)
+        t += on + off
+
+
 def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, scale):
     """橫排一個 cell：LTR 塑形直接落在頁面 (pen_x, baseline)。回傳缺字來源字元。
 
@@ -309,6 +336,11 @@ class PageRenderer:
         )
         _draw_stroke_rect(img, rect, self.scale)
 
+    def _draw_rule(self, img) -> None:
+        """主版向量裝飾線（v1：目錄天頭水平虛線）：貫穿頁寬，與 pdf_writer 同源。"""
+        line = toc_rule_line(mm_to_pt(self.template.page_width_mm), self.master.rule)
+        _draw_stroke_line(img, line, self.scale)
+
     def render_page(self, page, footer_texts=None, book_number=None,
                     vertical: bool = True) -> Image.Image:
         template = self.template
@@ -322,6 +354,9 @@ class PageRenderer:
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先畫）
         if not vertical and self.master.frame and page.placed:
             self._draw_frame(img, page, book_number)
+        # 主版向量線（v1 toc-rule 為直排目錄原件，貫穿頁寬；底層裝飾先畫）
+        if vertical and self.master.rule and page.placed:
+            self._draw_rule(img)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
         else:

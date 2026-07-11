@@ -395,3 +395,56 @@ def test_no_frame_master_has_no_frame(template):
     """未配置 frame 的主版（直排 A、部扉 B）不畫框（render_page 依此 gate）。"""
     assert template.masters["A-內文版"].frame is None
     assert template.masters["B-部扉"].frame is None
+
+
+# ---------- 目錄水平虛線向量原件（Sprint 15） ----------
+
+def make_toc_doc(entries):
+    """自擬直排目錄文件（master D、樣式 目錄-篇章條目）。"""
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "目錄樣張", "template": "neizai-zhengli", "master": "D-目錄"},
+        "paragraphs": [{"text": t, "style": "目錄-篇章條目"} for t in entries],
+    })
+
+
+@needs_fonts
+def test_render_toc_rule_dashed_gray_full_width(template, tmp_path):
+    """目錄天頭虛線：y 於實測 122.46pt、斷續（dash 生效）、灰值（K57 非純黑）、貫穿頁寬。"""
+    doc = make_toc_doc(["安放與整理的十個提問", "把回憶放回原位的方法"])
+    result = render_document(doc, template, tmp_path, dpi=200, footer=False)
+    assert result.violations == []
+    master = template.masters["D-目錄"]
+    scale = 200 / 72.0
+    img = Image.open(result.paths[0]).convert("L")
+    y_px = round(master.rule.y_from_top_pt * scale)
+    row = [img.getpixel((x, y_px)) for x in range(img.width)]
+    ink = [v for v in row if v < 250]
+    assert ink, "虛線列無著墨"
+    # dash 生效：白→墨轉換多次（全寬 148mm ≈ 420pt／(3+2)pt ≈ 84 段，至少取 30）
+    runs = sum(1 for a, b in zip(row, row[1:]) if a >= 250 and b < 250)
+    assert runs >= 30, f"虛線未斷續（white→ink 轉換僅 {runs} 次）"
+    # 灰 K57：中位 ink 值在灰域（PNG 灰階預覽以 255×(1−k) 近似）
+    gray = sorted(ink)[len(ink) // 2]
+    assert 80 <= gray <= 140, f"虛線灰值 {gray} 不在 K57 灰域（預期 ≈110）"
+    # 貫穿頁寬：版心外的頁緣兩側也有墨（貼邊出血元素）
+    left_band = [v for v in row[: round(10 * scale)] if v < 250]
+    right_band = [v for v in row[-round(10 * scale):] if v < 250]
+    assert left_band and right_band, "虛線未貫穿至頁緣（左右頁邊帶無墨）"
+    # 虛線之下才是條目文字（D 主版天頭 47.63mm＝內容起點 135pt 實測，在虛線之下）
+    body = ImageOps.invert(img.crop((0, y_px + 4, img.width, img.height))).getbbox()
+    assert body is not None, "虛線下方無條目文字"
+    above = ImageOps.invert(img.crop((0, 0, img.width, y_px - 4))).getbbox()
+    assert above is None, f"虛線上方不應有文字墨（v1 部名嵌線未實作，GAPS #13）：{above}"
+
+
+@needs_fonts
+def test_render_no_rule_master_band_empty(template, tmp_path):
+    """未配置 rule 的主版（A 內文版）在同一 y 列的頁邊帶不著墨（gate 守護）。"""
+    doc = make_doc([{"text": "字。", "style": "內文-明體直排"}])
+    result = render_document(doc, template, tmp_path, dpi=200, footer=False)
+    scale = 200 / 72.0
+    img = Image.open(result.paths[0]).convert("L")
+    y_px = round(122.46 * scale)
+    row = [img.getpixel((x, y_px)) for x in range(round(10 * scale))]
+    assert all(v >= 250 for v in row), "無 rule 主版的頁邊帶不應有虛線墨"

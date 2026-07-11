@@ -8,6 +8,7 @@
 | 檔案 | 用途 |
 | --- | --- |
 | `cip-copyright.doc.json` | 橫排版權頁-CIP 樣張（虛構書目）。示範 Sprint 13 的橫排版面軸（horizontal-tb）與 Sprint 14 的 CIP 細框向量原件（cip-box，兩後端 CMYK 描邊）。 |
+| `toc.doc.json` | 直排目錄樣張（虛構條目）。示範 Sprint 15 的目錄天頭水平虛線向量原件（toc-rule，灰 K57、dash [3 2]，貫穿頁寬含出血，兩後端同源）。 |
 
 重現：
 
@@ -15,4 +16,8 @@
 python -m cjkfolio.cli render samples/cip-copyright.doc.json -o out/cip --dpi 300 --no-footer
 python -m cjkfolio.cli export-pdf samples/cip-copyright.doc.json -o out/cip/cip.pdf --no-footer
 python -m cjkfolio.cli preflight out/cip/cip.pdf
+
+python -m cjkfolio.cli render samples/toc.doc.json -o out/toc --dpi 300 --no-footer
+python -m cjkfolio.cli export-pdf samples/toc.doc.json -o out/toc/toc.pdf --no-footer
+python -m cjkfolio.cli preflight out/toc/toc.pdf
 ```

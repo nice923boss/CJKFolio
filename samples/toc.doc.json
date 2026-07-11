@@ -1,0 +1,16 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "目錄測試範例",
+  "template": "neizai-zhengli",
+  "master": "D-目錄",
+  "language": "zh-TW"
+ },
+ "paragraphs": [
+  {"text": "把日子放回原位", "style": "目錄-部名"},
+  {"text": "第一章　安放與整理的十個提問", "style": "目錄-篇章條目"},
+  {"text": "第二章　把回憶放回原位的方法", "style": "目錄-篇章條目"},
+  {"text": "第三章　留下的與離開的都有位置", "style": "目錄-篇章條目"},
+  {"text": "第四章　收納是一場溫柔的告別", "style": "目錄-篇章條目"}
+ ]
+}

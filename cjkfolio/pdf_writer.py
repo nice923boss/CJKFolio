@@ -38,7 +38,7 @@ from .placement import (
     tcy_placements,
     ttb_char_placements,
 )
-from .primitives import cip_frame_rect
+from .primitives import cip_frame_rect, toc_rule_line
 from .render import (
     Shaper,
     horizontal_baseline_y_pt,
@@ -361,6 +361,27 @@ class _Content:
             "Q",
         ]
 
+    def stroke_line(self, cmyk, line_width_pt: float,
+                    x0: float, y0: float, x1: float, y1: float,
+                    dash_on_pt: float = 0.0, dash_off_pt: float = 0.0) -> None:
+        """DeviceCMYK 描邊線段（獨立 q…Q 狀態塊）。dash_on_pt>0 時掛 `d` dash 陣列，
+        dash 狀態隨 Q 還原不外洩（spike8 實證）；`d`/`m`/`l` 不觸 preflight rg/RG。"""
+        c, m, y, k = cmyk
+        ops = [
+            "q",
+            f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
+            f"{_fmt(line_width_pt)} w",
+        ]
+        if dash_on_pt > 0:
+            ops.append(f"[ {_fmt(dash_on_pt)} {_fmt(dash_off_pt)} ] 0 d")
+        ops += [
+            f"{x0:.3f} {y0:.3f} m",
+            f"{x1:.3f} {y1:.3f} l",
+            "S",
+            "Q",
+        ]
+        self.prologue += ops
+
     def show(self, res_name: str, code: int, x: float, y: float,
              size_pt: float, rotated: bool) -> None:
         key = (res_name, round(size_pt, 4))
@@ -511,6 +532,15 @@ class _PdfPageWriter:
         content.stroke_rect(rect.cmyk, rect.line_width_pt, x_ll, y_ll,
                             rect.x1 - rect.x0, rect.y1 - rect.y0)
 
+    def _rule(self, content: _Content) -> None:
+        """主版向量線（v1 目錄天頭水平虛線）：與 render._draw_rule 幾何同源，CMYK 描邊。"""
+        line = toc_rule_line(mm_to_pt(self.template.page_width_mm), self.master.rule)
+        y_up = self.page_h_pt + self.bleed_pt - line.y0  # top-down → y-up（水平線 y0=y1）
+        content.stroke_line(line.cmyk, line.line_width_pt,
+                            self.bleed_pt + line.x0, y_up,
+                            self.bleed_pt + line.x1, y_up,
+                            line.dash_on_pt, line.dash_off_pt)
+
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True) -> bytes:
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
@@ -519,6 +549,9 @@ class _PdfPageWriter:
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先 emit）
         if not vertical and self.master.frame and page.placed:
             self._frame(content, page, book_number)
+        # 主版向量線（v1 toc-rule 為直排目錄原件，貫穿頁寬；底層裝飾先 emit）
+        if vertical and self.master.rule and page.placed:
+            self._rule(content)
         if vertical:
             self._vertical_body(content, page, book_number)
         else:
