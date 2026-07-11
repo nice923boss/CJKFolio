@@ -38,7 +38,12 @@ from .placement import (
     tcy_placements,
     ttb_char_placements,
 )
-from .primitives import cip_frame_rect, toc_rule_segments
+from .primitives import (
+    cip_frame_rect,
+    figure_slot_edges,
+    figure_slot_rect,
+    toc_rule_segments,
+)
 from .render import (
     Shaper,
     horizontal_baseline_y_pt,
@@ -547,6 +552,20 @@ class _PdfPageWriter:
                                 self.bleed_pt + line.x1, y_up,
                                 line.dash_on_pt, line.dash_off_pt)
 
+    def _figure(self, content: _Content, book_number: int) -> None:
+        """主版圖框保留區佔位框（v1 G 圖文版照片區）：承版心四邊淡虛線，與
+        render._draw_figure 幾何同源（figure_slot_rect＋edges），CMYK 描邊；
+        top-down → y-up 逐端點加出血偏移。Phase 2 圖片置入後由實際照片取代。"""
+        page_w = mm_to_pt(self.template.page_width_mm)
+        rect = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+                                self.master.figure)
+        for edge in figure_slot_edges(rect, self.master.figure):
+            content.stroke_line(
+                edge.cmyk, edge.line_width_pt,
+                self.bleed_pt + edge.x0, self.page_h_pt + self.bleed_pt - edge.y0,
+                self.bleed_pt + edge.x1, self.page_h_pt + self.bleed_pt - edge.y1,
+                edge.dash_on_pt, edge.dash_off_pt)
+
     def _toc_marks(self, content: _Content, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
         幾何取 layout.TocEntryMark，與 render._draw_toc_marks 同源。"""
@@ -578,6 +597,9 @@ class _PdfPageWriter:
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先 emit）
         if vertical and self.master.rule and page.placed:
             self._rule(content, rule_breaks, book_number)
+        # 主版圖框保留區（v1 photo-slot 為 G 圖文版照片區佔位；淡虛線骨架，Phase 2 圖片取代）
+        if vertical and self.master.figure and page.placed:
+            self._figure(content, book_number)
         if vertical:
             self._vertical_body(content, page, book_number)
         else:

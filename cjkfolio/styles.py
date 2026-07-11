@@ -69,6 +69,7 @@ class FooterItem:
 
 KNOWN_FRAME_KINDS = frozenset({"cip-box"})  # v1 只有 CIP 細框
 KNOWN_RULE_KINDS = frozenset({"toc-rule"})  # v1 只有目錄天頭虛線
+KNOWN_FIGURE_KINDS = frozenset({"photo-slot"})  # v1 只有 G 圖文版前後對照照片保留區
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,28 @@ class FrameSpec:
     line_width_pt: float = 0.5
     pad_pt: float = 6.0
     pad_v_pt: Optional[float] = None  # 垂直 pad（p178 實測不對稱）；None＝同 pad_pt
+
+
+@dataclass(frozen=True)
+class FigureSpec:
+    """主版圖框保留區（v1：G-圖文版前後對照照片區，PLAN §4.2）。
+
+    記錄圖片置入的保留區：縱向 top_from_top_pt→bottom_from_top_pt（參考書典型
+    雙照片全頁一手量測），橫向承主版版心（primitives.figure_slot_rect 鏡像推導）。
+    Phase 1 以淡虛線佔位框標示保留區（版面骨架校對，InDesign 空框慣例）；Phase 2
+    圖片置入後由實際照片取代、不留框線。此為代表性量測：實際照片逐頁變異（單/雙、
+    高度不一），屬美術資產（§8 不生成）＋Phase 2 自由佈局。cmyk 一律 DeviceCMYK
+    （維持 §9 全 CMYK，佔位框走 `K` 不觸 preflight rg/RG）；dash_on_pt>0 為虛線
+    （佔位語意，與最終墨區隔）。
+    """
+    kind: str
+    top_from_top_pt: float
+    bottom_from_top_pt: float
+    cmyk: tuple = (0.0, 0.0, 0.0, 0.3)
+    line_width_pt: float = 0.5
+    dash_on_pt: float = 4.0
+    dash_off_pt: float = 3.0
+    note: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +156,7 @@ class MasterPage:
     frame: Optional[FrameSpec] = None  # 向量裝飾框（v1：CIP 細框；None＝不畫框）
     rule: Optional[RuleSpec] = None  # 向量裝飾線（v1：目錄天頭虛線；None＝不畫線）
     toc: Optional[TocSpec] = None  # 目錄條目配置（頁碼底錨＋引導線；None＝非目錄頁）
+    figure: Optional[FigureSpec] = None  # 圖框保留區（v1：G 圖文版照片區佔位；None＝非圖文頁）
     evidence: Optional[str] = None
     note: Optional[str] = None
 
@@ -248,6 +272,31 @@ def _toc_spec(d: dict, ctx: str) -> TocSpec:
     )
 
 
+def _figure_spec(d: dict, ctx: str) -> FigureSpec:
+    kind = str(_require(d, "kind", ctx))
+    if kind not in KNOWN_FIGURE_KINDS:
+        raise TemplateError(f"{ctx}.kind={kind!r} 非已知圖框類型 {sorted(KNOWN_FIGURE_KINDS)}")
+    top = float(_require(d, "top_from_top_pt", ctx))
+    bottom = float(_require(d, "bottom_from_top_pt", ctx))
+    if not bottom > top:
+        raise TemplateError(
+            f"{ctx}.bottom_from_top_pt（{bottom}）須大於 top_from_top_pt（{top}）"
+        )
+    cmyk = d.get("cmyk", [0.0, 0.0, 0.0, 0.3])
+    if not (isinstance(cmyk, (list, tuple)) and len(cmyk) == 4):
+        raise TemplateError(f"{ctx}.cmyk 須為 4 元素 [c,m,y,k]，得到 {cmyk!r}")
+    return FigureSpec(
+        kind=kind,
+        top_from_top_pt=top,
+        bottom_from_top_pt=bottom,
+        cmyk=tuple(float(v) for v in cmyk),
+        line_width_pt=float(d.get("line_width_pt", 0.5)),
+        dash_on_pt=float(d.get("dash_on_pt", 4.0)),
+        dash_off_pt=float(d.get("dash_off_pt", 3.0)),
+        note=d.get("note"),
+    )
+
+
 def _master(name: str, d: dict) -> MasterPage:
     ctx = f"masters[{name}]"
     m = _require(d, "margins_mm", ctx)
@@ -275,6 +324,7 @@ def _master(name: str, d: dict) -> MasterPage:
         frame=_frame_spec(d["frame"], f"{ctx}.frame") if d.get("frame") else None,
         rule=_rule_spec(d["rule"], f"{ctx}.rule") if d.get("rule") else None,
         toc=_toc_spec(d["toc"], f"{ctx}.toc") if d.get("toc") else None,
+        figure=_figure_spec(d["figure"], f"{ctx}.figure") if d.get("figure") else None,
         evidence=d.get("evidence"),
         note=d.get("note"),
     )

@@ -22,8 +22,8 @@ def template():
 
 
 def test_template_three_layers_complete(template):
-    # §4.2：15 段落樣式、9 字元樣式、7 主版
-    assert len(template.paragraph_styles) == 15
+    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＝16、9 字元樣式、7 主版
+    assert len(template.paragraph_styles) == 16
     assert len(template.character_styles) == 9
     assert len(template.masters) == 7
 
@@ -215,3 +215,68 @@ def test_toc_unknown_page_no_style_rejected():
     with pytest.raises(TemplateError, match="頁碼字元樣式"):
         template_from_dict(_template_with_toc(
             {"page_no_style": "不存在的樣式", "page_no_bottom_pt": 490}))
+
+
+# ---------- 圖框保留區（Sprint 27：G 圖文版照片區） ----------
+
+def test_master_figure_parsing(template):
+    from cjkfolio.styles import FigureSpec
+    fig = template.masters["G-圖文版"].figure
+    assert isinstance(fig, FigureSpec)
+    assert fig.kind == "photo-slot"
+    # 典型雙照片全頁一手量測（Sprint 27，tools/measure_figure_page.py，32 頁）
+    assert fig.top_from_top_pt == pytest.approx(107.04)
+    assert fig.bottom_from_top_pt == pytest.approx(467.62)
+    assert fig.cmyk == (0.0, 0.0, 0.0, 0.3)  # 淡佔位灰
+    assert fig.dash_on_pt == pytest.approx(4.0) and fig.dash_off_pt == pytest.approx(3.0)
+    # 非圖文主版無圖框保留區（None）
+    assert template.masters["A-內文版"].figure is None
+    assert template.masters["F-版權頁"].figure is None
+
+
+def test_figure_caption_style_present(template):
+    # 圖說標籤段落樣式：辰宇落雁體 15.9pt（量測 15.92，與裝飾大字-辰宇落雁體同構）
+    cap = template.paragraph_styles["圖說-辰宇落雁"]
+    assert cap.font_family == "辰宇落雁體"
+    assert cap.size_pt == pytest.approx(15.9)
+    assert cap.source_font == "ChenYuluoyan-Thin"
+
+
+def _template_with_figure(figure_dict):
+    data = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    data["masters"]["G-圖文版"]["figure"] = figure_dict
+    return data
+
+
+def test_figure_unknown_kind_rejected():
+    with pytest.raises(TemplateError, match="圖框類型"):
+        template_from_dict(_template_with_figure(
+            {"kind": "圓角框", "top_from_top_pt": 107, "bottom_from_top_pt": 467}))
+
+
+def test_figure_bad_cmyk_rejected():
+    with pytest.raises(TemplateError, match="cmyk"):
+        template_from_dict(_template_with_figure(
+            {"kind": "photo-slot", "top_from_top_pt": 107, "bottom_from_top_pt": 467,
+             "cmyk": [0, 0, 0]}))
+
+
+def test_figure_bottom_must_exceed_top_rejected():
+    with pytest.raises(TemplateError, match="bottom_from_top_pt"):
+        template_from_dict(_template_with_figure(
+            {"kind": "photo-slot", "top_from_top_pt": 467, "bottom_from_top_pt": 107}))
+
+
+def test_figure_missing_required_rejected():
+    with pytest.raises(TemplateError, match="top_from_top_pt"):
+        template_from_dict(_template_with_figure(
+            {"kind": "photo-slot", "bottom_from_top_pt": 467}))
+
+
+def test_figure_defaults_when_optional_omitted():
+    tpl = template_from_dict(_template_with_figure(
+        {"kind": "photo-slot", "top_from_top_pt": 107.0, "bottom_from_top_pt": 467.0}))
+    fig = tpl.masters["G-圖文版"].figure
+    assert fig.cmyk == (0.0, 0.0, 0.0, 0.3)  # 預設淡佔位灰
+    assert fig.line_width_pt == pytest.approx(0.5)
+    assert fig.dash_on_pt == pytest.approx(4.0) and fig.dash_off_pt == pytest.approx(3.0)

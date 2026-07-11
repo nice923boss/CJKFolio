@@ -161,6 +161,15 @@
    "para_gap_slots": 0,
    "source_font": "HanziPenTC-W5",
    "note": "圖注與旁注；另有 9pt 變體（掃描 4 頁）"
+  },
+  "圖說-辰宇落雁": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "size_pt": 15.9,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "source_font": "ChenYuluoyan-Thin",
+   "note": "G 圖文版照片圖說標籤（如「整理前／整理後」）；一手量測 15.92pt（31 span 同值，Sprint 27，tools/measure_figure_page.py），與字元樣式裝飾大字-辰宇落雁體 15.9pt 同構；真書圖說自由置於照片上（美術，§8）＋Phase 2，此段落樣式供獨立圖說置放"
   }
  },
  "character_styles": {
@@ -419,7 +428,22 @@
     "base_size_pt": 11.5
    },
    "mirror": true,
-   "evidence": "版心承 A；圖文繞排為 Phase 4 範圍，佈局未量測"
+   "figure": {
+    "kind": "photo-slot",
+    "top_from_top_pt": 107.04,
+    "bottom_from_top_pt": 467.62,
+    "cmyk": [
+     0,
+     0,
+     0,
+     0.3
+    ],
+    "line_width_pt": 0.5,
+    "dash_on_pt": 4.0,
+    "dash_off_pt": 3.0,
+    "note": "前後對照照片保留區；典型雙照片全頁一手量測（Sprint 27）"
+   },
+   "evidence": "版心承 A 一手驗證（Sprint 27，tools/measure_figure_page.py，32 全頁圖文版頁）：圖框保留區橫向承 A 版心（R 頁 x0=72.51／x1=360.0、L 頁 59.53／347.02，鏡像感知），縱向雙照片區 top 107.04pt（38.20mm）／bottom 467.62pt（一致值）；辰宇落雁體圖說 15.92pt（31 span 同值，頂錨 y0≈117）。頁型＝房名黑體標題＋前後對照灰階照片＋手寫圖說（本書整理術核心頁型，如廚房整理前/後）。圖框以淡虛線佔位框標示（Phase 1 骨架，photo-slot），Phase 2 圖片置入取代。已知差異（GAPS #13）：真書照片略溢版心 1〜4pt、實際照片逐頁變異（單/雙、高度 385〜500pt）屬美術自由佈局（§8）；房名黑體標題、辰宇自由圖說位置、裝飾括號為美術＋Phase 2；照片嵌入為 Phase 2、圖文繞排為 Phase 4"
   }
  }
 }

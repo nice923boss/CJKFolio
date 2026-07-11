@@ -732,3 +732,60 @@ def test_export_toc_rule_break_preflight_green(template, tmp_path):
     ]), template, out, footer=False)
     report = check_pdfx1a(out)
     assert report.ok, [f for f in report.findings if not f.ok]
+
+
+# ---------- G 圖文版圖框保留區佔位框（Sprint 27） ----------
+
+def make_figure_doc(captions):
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "圖文版樣張", "template": "neizai-zhengli", "master": "G-圖文版"},
+        "paragraphs": [{"text": c, "style": "圖說-辰宇落雁"} for c in captions],
+    })
+
+
+@needs_fonts
+def test_export_figure_slot_dash_stroke_before_text(template, tmp_path):
+    """圖框保留區佔位框：4 邊 dash 描邊（d/m/l/S/淡灰 K30）在 BT 前、q…Q 隔離、無 rg/RG。"""
+    out = tmp_path / "fig.pdf"
+    export_pdf(make_figure_doc(["改造前", "改造後"]), template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    assert "[ 4 3 ] 0 d" in content, "缺 dash 算符 [ 4 3 ] 0 d"
+    assert "0 0 0 0.3 K" in content, "佔位框描邊非淡灰 K30"
+    assert content.index(" d\n") < content.index("BT"), "dash 須在文字 BT 之前"
+    assert " rg" not in content and " RG" not in content, "佔位框殘留 RGB 描邊"
+    dashed = [d for d in pdf[0].get_drawings() if d.get("dashes") and "4" in d["dashes"]]
+    assert dashed, "PyMuPDF 未解析出佔位框 dash 線"
+
+
+@needs_fonts
+def test_export_figure_slot_two_backend_parity(template, tmp_path):
+    """佔位框四邊 m/l 座標＝figure_slot_rect（承版心鏡像）＋出血偏移，與 render 同源。"""
+    from cjkfolio.primitives import figure_slot_edges, figure_slot_rect
+    from cjkfolio.render import is_right_page
+    out = tmp_path / "fig-parity.pdf"
+    export_pdf(make_figure_doc(["改造前"]), template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    segs = [tuple(map(float, g)) for g in
+            re.findall(r"([\d.\-]+) ([\d.\-]+) m\n([\d.\-]+) ([\d.\-]+) l", content)]
+    master = template.masters["G-圖文版"]
+    page_h = mm_to_pt(template.page_height_mm)
+    rect = figure_slot_rect(mm_to_pt(template.page_width_mm), master,
+                            is_right_page(1), master.figure)
+    for edge in figure_slot_edges(rect, master.figure):
+        want = (BLEED_PT + edge.x0, page_h + BLEED_PT - edge.y0,
+                BLEED_PT + edge.x1, page_h + BLEED_PT - edge.y1)
+        assert any(all(a == pytest.approx(b, abs=0.3) for a, b in zip(seg, want))
+                   for seg in segs), f"缺與 render 同源的邊 {want}"
+
+
+@needs_fonts
+def test_export_figure_preflight_green(template, tmp_path):
+    """加圖框保留區佔位框後 G 頁 PDF 仍過全部 X-1a 機械規則（color-cmyk-only 不退步）。"""
+    from cjkfolio.preflight import check_pdfx1a
+    out = tmp_path / "figx.pdf"
+    export_pdf(make_figure_doc(["改造前", "改造後"]), template, out, footer=False)
+    report = check_pdfx1a(out)
+    assert report.ok, [f for f in report.findings if not f.ok]

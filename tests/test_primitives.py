@@ -133,3 +133,73 @@ def test_toc_rule_segments_multiple_gaps_sorted_and_clipped():
     # gap(-20,50) 蓋掉線頭（零長段不產出）→ 段：50〜300、350〜400
     assert [(s.x0, s.x1) for s in segs] == [
         pytest.approx((50.0, 300.0)), pytest.approx((350.0, 400.0))]
+
+
+# ---------- G 圖文版圖框保留區（Sprint 27） ----------
+
+@pytest.fixture(scope="module")
+def gmaster():
+    return load_template(TEMPLATE).masters["G-圖文版"]
+
+
+def test_figure_slot_rect_right_page_geometry(gmaster):
+    """右頁（書口右）：橫向左緣＝inner、右緣＝頁寬−outer，縱向取量測 top/bottom。"""
+    from cjkfolio.primitives import figure_slot_rect
+    fig = gmaster.figure
+    page_w = 148.0 * PT_PER_MM
+    rect = figure_slot_rect(page_w, gmaster, True, fig)
+    assert isinstance(rect, StrokeRect)
+    assert rect.x0 == pytest.approx(gmaster.margins.inner_mm * PT_PER_MM)
+    assert rect.x1 == pytest.approx(page_w - gmaster.margins.outer_mm * PT_PER_MM)
+    assert rect.y0 == pytest.approx(fig.top_from_top_pt)
+    assert rect.y1 == pytest.approx(fig.bottom_from_top_pt)
+    assert rect.x0 < rect.x1 and rect.y0 < rect.y1  # top-down 不變式
+    assert rect.cmyk == fig.cmyk and rect.line_width_pt == pytest.approx(fig.line_width_pt)
+
+
+def test_figure_slot_rect_mirror_left_page(gmaster):
+    """左頁鏡像：書口在左，左右邊距對調（inner↔outer）；版心寬與縱向不變。"""
+    from cjkfolio.primitives import figure_slot_rect
+    fig = gmaster.figure
+    page_w = 148.0 * PT_PER_MM
+    r_right = figure_slot_rect(page_w, gmaster, True, fig)
+    r_left = figure_slot_rect(page_w, gmaster, False, fig)
+    assert r_left.x0 == pytest.approx(gmaster.margins.outer_mm * PT_PER_MM)
+    assert r_left.x1 == pytest.approx(page_w - gmaster.margins.inner_mm * PT_PER_MM)
+    assert (r_left.x1 - r_left.x0) == pytest.approx(r_right.x1 - r_right.x0)
+    assert r_left.y0 == r_right.y0 and r_left.y1 == r_right.y1
+    assert r_left.x0 != r_right.x0  # 鏡像確實位移
+
+
+def test_figure_slot_rect_no_mirror_uses_outer_left(gmaster):
+    """mirror=False 恆以 outer 為左緣（不受 is_right 影響）。"""
+    from dataclasses import replace
+
+    from cjkfolio.primitives import figure_slot_rect
+    m = replace(gmaster, mirror=False)
+    page_w = 148.0 * PT_PER_MM
+    a = figure_slot_rect(page_w, m, True, m.figure)
+    b = figure_slot_rect(page_w, m, False, m.figure)
+    assert a.x0 == pytest.approx(m.margins.outer_mm * PT_PER_MM)
+    assert a.x0 == pytest.approx(b.x0)
+
+
+def test_figure_slot_edges_four_dashed(gmaster):
+    """四邊虛線佔位框：4 條 dashed StrokeLine，貼齊矩形上下左右邊、原樣傳遞樣式。"""
+    from cjkfolio.primitives import figure_slot_edges, figure_slot_rect
+    fig = gmaster.figure
+    rect = figure_slot_rect(148.0 * PT_PER_MM, gmaster, True, fig)
+    edges = figure_slot_edges(rect, fig)
+    assert len(edges) == 4
+    assert fig.dash_on_pt > 0  # 虛線佔位語意
+    for e in edges:
+        assert isinstance(e, StrokeLine)
+        assert e.dash_on_pt == pytest.approx(fig.dash_on_pt)
+        assert e.dash_off_pt == pytest.approx(fig.dash_off_pt)
+        assert e.cmyk == fig.cmyk
+        assert e.line_width_pt == pytest.approx(fig.line_width_pt)
+    seg = {(round(e.x0, 2), round(e.y0, 2), round(e.x1, 2), round(e.y1, 2)) for e in edges}
+    assert (round(rect.x0, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y0, 2)) in seg
+    assert (round(rect.x0, 2), round(rect.y1, 2), round(rect.x1, 2), round(rect.y1, 2)) in seg
+    assert (round(rect.x0, 2), round(rect.y0, 2), round(rect.x0, 2), round(rect.y1, 2)) in seg
+    assert (round(rect.x1, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y1, 2)) in seg

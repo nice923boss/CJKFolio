@@ -21,7 +21,13 @@ from .layout import (
     style_line_slots,
 )
 from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
-from .primitives import StrokeLine, cip_frame_rect, toc_rule_segments
+from .primitives import (
+    StrokeLine,
+    cip_frame_rect,
+    figure_slot_edges,
+    figure_slot_rect,
+    toc_rule_segments,
+)
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -377,6 +383,15 @@ class PageRenderer:
                                      self.master.rule, gaps):
             _draw_stroke_line(img, seg, self.scale)
 
+    def _draw_figure(self, img, book_number: int) -> None:
+        """主版圖框保留區佔位框（v1：G 圖文版照片區）：承版心的淡虛線四邊，與
+        pdf_writer._figure 幾何同源；Phase 2 圖片置入後由實際照片取代、不留框線。"""
+        page_w = mm_to_pt(self.template.page_width_mm)
+        rect = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+                                self.master.figure)
+        for edge in figure_slot_edges(rect, self.master.figure):
+            _draw_stroke_line(img, edge, self.scale)
+
     def _draw_toc_marks(self, img, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
         幾何取 layout.TocEntryMark，與 pdf_writer 同源。"""
@@ -414,6 +429,9 @@ class PageRenderer:
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先畫）
         if vertical and self.master.rule and page.placed:
             self._draw_rule(img, rule_breaks, book_number)
+        # 主版圖框保留區（v1 photo-slot 為 G 圖文版照片區佔位；淡虛線骨架，Phase 2 圖片取代）
+        if vertical and self.master.figure and page.placed:
+            self._draw_figure(img, book_number)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
         else:

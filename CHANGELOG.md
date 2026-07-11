@@ -2,6 +2,32 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.22.0（2026-07-12，Sprint 27）G-圖文版主版：頁型骨架（§4.2 主版 7 種完備）
+
+### 新增
+
+- [實作] tools/measure_figure_page.py：分類量測圖文版頁（Type 1 全頁圖文版 vs Type 2 內文內嵌小圖），只聚合 32 全頁圖文版頁的圖框保留區與辰宇圖說幾何（一手量測，輸出 assets/reference 本機不入 repo）。
+- [實作] cjkfolio.styles.FigureSpec＋MasterPage.figure：圖框保留區主版欄位（photo-slot，縱向 top/bottom＋佔位框 dash/cmyk；載入驗證未知 kind／bottom≤top／壞 cmyk 快速失敗）。
+- [實作] cjkfolio.primitives.figure_slot_rect／figure_slot_edges：承版心鏡像的圖框保留區幾何＋四邊虛線（reuse 既有 dashed-line 路徑，兩後端同源）。
+- [實作] render._draw_figure／pdf_writer._figure：G 圖文版圖框保留區淡虛線佔位框（gate vertical＋master.figure＋page.placed），render PIL 灰值分段／pdf `d` dash＋K 描邊，兩後端幾何同源。
+- [實作] 段落樣式「圖說-辰宇落雁」（辰宇落雁體 15.9pt）＋samples/figure-page.doc.json（自擬圖說標籤，紅線不取真書文字與照片）。
+- [實作] tests：figure_slot_rect 鏡像 L/R＋四邊虛線（test_primitives，+4）、FigureSpec 載入/驗證＋圖說樣式（test_styles，+7）、佔位框 dash 描邊/兩後端 parity/preflight（test_pdf_writer，+3）。測試 191 → 205。
+
+### 變更（模版：G 圖文版 32 頁一手量測，A 級）
+
+- G-圖文版主版：evidence 由「版心承 A；佈局未量測」推定升級為一手驗證：圖框橫向承 A 版心鏡像（R 頁 x0=72.51／x1=360.0、L 頁 59.53／347.02）、雙照片區 top 107.04／bottom 467.62pt、辰宇圖說 15.92pt（31 span 同值）；加 figure（photo-slot 保留區）。
+- §4.2 主版 7 種（A／B／C／D／E／F／G）於 Phase 1 骨架層完備。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 與 B-部扉同型（美術本體延後）：真書照片嵌入為 Phase 2 圖片置入（§9 灰階單 K／300-350ppi）、房名黑體標題＋辰宇自由圖說位置＋裝飾括號為手繪美術（§8 不生成）、前後照片配對與圖文繞排為 Phase 4；真書照片略溢版心 1〜4pt、實際照片逐頁變異（單/雙、高度 385〜500pt）＝美術自由佈局。
+- 佔位框為 Phase 1 版面骨架導引（InDesign 空框慣例，真書照片無邊框），Phase 2 圖片置入取代、不留框線；preflight 誠實聲明「v1 尚無影像置入」。
+- tests/test_pdf_writer.py 791 行、test_layout_render.py 792 行皆近 800 上限，後續 PDF／layout 測試需先評估分檔。
+
+### 待 Owner 真實素材驗收
+
+- G-圖文版樣張為自擬（改造前／改造後）；真書圖文版照片置入品質、前後配對版式待 Phase 2；斷行逐行一致率比對（Owner 抽檢）延續。
+
 ## v0.21.0（2026-07-12，Sprint 26）GAPS #21 勘正：直排字墨偏移為量測框錯配（非置中 bug）
 
 ### 勘正（GAPS #21：Sprint 25 Gate 4 誤判）
