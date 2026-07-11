@@ -132,6 +132,47 @@ def test_export_glyph_geometry_on_grid(template, tmp_path):
 
 
 @needs_fonts
+def test_case_ttb_ink_centered_on_line_axis(template, tmp_path):
+    """GAPS #21 勘正：C 個案扉頁直排字墨在 PDF 內對準 line_axis（trim 空間置中）。
+
+    Sprint 25 Gate 4 誤把 PDF MediaBox 座標（含 3mm 出血 BLEED_PT）比 trim 空間
+    line_axis，得假性 +8.5pt（＝出血、與字級無關）；扣出血後大標（17.9pt）與資訊列
+    （11.4pt）字墨 cx＝line_axis。PNG 側置中見
+    test_layout_render::test_render_single_char_lands_in_first_cell。"""
+    doc = document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "個案扉樣張", "template": "neizai-zhengli", "master": "C-個案扉頁"},
+        "paragraphs": [
+            {"text": "每個家都有自己的故事", "style": "個案中標-NotoSans"},
+            {"text": "重新安放生活的重量", "style": "個案大標-NotoSans"},
+        ],
+    })
+    first_page = 2  # 偶＝右頁；單頁 → book_number = 版面頁號1 + first_page − 1 = first_page
+    out = tmp_path / "case.pdf"
+    export_pdf(doc, template, out, first_page=first_page, footer=False)
+    chars = [
+        (c["bbox"], s["size"])
+        for b in fitz.open(str(out))[0].get_text("rawdict")["blocks"]
+        for ln in b.get("lines", []) for s in ln.get("spans", [])
+        for c in s.get("chars", [])
+    ]
+    master = template.masters["C-個案扉頁"]
+
+    def trim_cx(pred) -> float:
+        cxs = [(bb[0] + bb[2]) / 2 - BLEED_PT for bb, sz in chars if pred(sz)]
+        assert cxs, "無符合字級的字墨"
+        return sum(cxs) / len(cxs)
+
+    axis_title = line_axis_x_pt(template, master, 1, first_page)  # 大標 slot 1
+    axis_info = line_axis_x_pt(template, master, 0, first_page)   # 資訊列 slot 0
+    assert trim_cx(lambda sz: sz > 15) == pytest.approx(axis_title, abs=0.3)
+    assert trim_cx(lambda sz: 10 < sz < 13) == pytest.approx(axis_info, abs=0.3)
+    # 反例保護：未扣出血恆偏 +BLEED_PT（框差為常數、與字級無關，佐證非置中錯誤）
+    mb_title = [(bb[0] + bb[2]) / 2 for bb, sz in chars if sz > 15]
+    assert sum(mb_title) / len(mb_title) - axis_title == pytest.approx(BLEED_PT, abs=0.3)
+
+
+@needs_fonts
 def test_export_page_selection_and_footer(template, tmp_path):
     doc = make_doc([{"text": BODY_500, "style": "內文-明體直排"}])
     # 全頁匯出：520 字 → 2 頁；first_page=30 → 頁 1＝書頁 30（偶＝右頁）、

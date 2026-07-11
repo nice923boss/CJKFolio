@@ -5,7 +5,7 @@
 >
 > 規劃日期：2026-06-16　規劃紀律：證據先行、不浮誇、實作與空殼分清、未驗證項明確標示。
 > 修訂：2026-07-10 執行層補強（Phase 0 執行細則、spike 語言與依賴、素材版權紅線、驗收檢核清單）；同日擴充內容匯入與 AI 輔助樣式指派（§4.4、Spike 5，PoC 8/8 已驗證）。
-> 修訂沿革（2026-07-12 精簡）：Phase 0 五 spike 條件性通過、Phase 1 各 Sprint（2〜25）進度／代決／勘誤，統一見 §6 里程碑、§10 決議紀錄與 devlog/；逐 Sprint 摘要不再累積於檔頭。
+> 修訂沿革（2026-07-12 精簡）：Phase 0 五 spike 條件性通過、Phase 1 各 Sprint（2〜26）進度／代決／勘誤，統一見 §6 里程碑、§10 決議紀錄與 devlog/；逐 Sprint 摘要不再累積於檔頭。
 
 ---
 
@@ -423,6 +423,7 @@ CJKFolio/
 | 2026-07-11（Sprint 23） | E 序文版定案：版心與頁腳全承 A（一手驗證非推定）；序文標題樣式勘誤改名「推薦序大標-黑體」（NotoSans Medium 12.9pt；原「楷書W5 16.3pt」為 scan_reference_styles 誤把署名行長橫「─」當標題，個案大標 17.9pt 為不同級不共用）、para_gap_slots 4（內文自 slot 5 起）；欄標「推薦序」肩位（標題行右 16.2pt，非 23 網格）與署名行（楷長橫＋明 W9 混級、y 頂底隨頁變動＝自由手排）v1 不建模；模版 JSON 經 json.dump 統一重排（indent=1），內容等價 | p004/p007/p009 三頁互證完全同值（A 級）＋樣張行軸抽驗 341.27 vs 推導 341.26（重合）、真書 342.16（差 0.9pt 記錄）＋preflight 12/12 |
 | 2026-07-11（Sprint 24） | 目錄章名條目定案：帶頁碼章名＝黑體 W5 11.5pt（思源黑體 Medium，勘誤原記楷 W3 9.5pt＝掃描把不帶頁碼摘要層字型誤設為章名層，同 Sprint 23 署名長橫勘誤）；head_offset 3→2 槽（黑字距 12.08×2＝24.16pt，章名首字框頂 132.12／墨頂 137.42 貼真書 135.15，整數槽＋思源華康字框度量差入 GAPS）；不帶頁碼摘要層（楷 W3 9.5）、【結語】黑 W5 10pt 變體、章名摘要縱向錯落與多層列距 v1 不建模；量測工具加 entry_columns 直排列分析（按字中心 x 聚列） | p002/p003 一手量測（A 級：章名黑 W5 全帶頁碼 top_y 135.15、摘要楷 W3 9.5 不帶頁碼 top_y 166、篇名明 W7 16pt 穿線）＋樣張 PyMuPDF 抽驗 4 列 SourceHanSansTC-Medium 列距 23pt＋preflight 12/12 |
 | 2026-07-11（Sprint 25） | C 個案扉頁定案：個案大標 NotoSans Medium 17.9pt 置 slot 1、資訊列（Case 編號 DFHeiStd-W5 13pt＋副標 11.4pt）slot 0、內文承 A 自 slot 2（天頭 92.09pt、首行縮排 2 字＝116.47）；大標右頁 line_axis 331.25 貼真書墨欄中心 331.28（差 0.03）；個案中標 para_gap_slots 1→0 勘誤（實測資訊列與大標相鄰，同 Sprint 20 標籤先例）；資訊列雙元素、內文精確 gap、雙線框 v1 不建模。Gate 4 閉環抽驗發現 GAPS #21（直排字墨 cx 系統性偏書口 +8.5pt，全直排既有正確性問題、非本 Sprint 引入、非單一頁型）：不在本 Sprint 硬修（context 保護、避免 Sprint 22 式同源同錯降級），列 Sprint 26 專項 | C 個案扉頁一手量測（A 級，數十頁互證，tools/measure_case_page.py）＋Gate 4 PyMuPDF get_texttrace 抽驗（A 級：大標墨 cx 339.75 偏 line_axis 331.25＋8.5pt，資訊列 11.4pt 同偏＋8.50 與字級無關，真書華康大標墨＝欄中心差 0.03） |
+| 2026-07-12（Sprint 26） | GAPS #21 勘正定案：Sprint 25 Gate 4 的「直排字墨偏 +8.5pt」非置中 bug，係量測拿 PDF MediaBox 座標（含 3mm 出血 8.5039pt）比 trim 空間 line_axis 之框錯配（偏移與字級無關＝純出血常數，非隨字級變的置中誤差）；渲染層本就正確，兩後端字墨在各自 trim 框內對準 line_axis 且吻合真書 ink 中心。不修渲染碼（避免反向雙重補償破壞正確置中）；新增 PDF 側置中回歸測試（框一致扣 BLEED_PT，大標＋資訊列＋反例保護）、修正 test 誤導註解、關 GAPS #21 | 實證 probe＋回歸測試（A 級）：大標 17.9pt／資訊列 11.4pt MediaBox cx 各扣出血後＝line_axis 331.25／354.25（Δ+0.00pt）；既有 test_export_glyph_geometry_on_grid 早已用 BLEED_PT 扣出血比對、test_render_single_char_lands_in_first_cell 早已驗 PNG trim 空間置中，Gate 4 手驗漏扣出血常數 |
 
 ## 11. 證據附錄（關鍵引用）
 

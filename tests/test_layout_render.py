@@ -372,7 +372,8 @@ def test_case_master_and_title_placement(template):
     assert placed[1].slot == 1 and placed[1].style == "個案大標-NotoSans"  # 大標 slot 1
     axis = line_axis_x_pt(template, master, 1, 2, line_slots=1)  # 偶＝右頁
     assert axis == pytest.approx(331.25, abs=0.1)  # layout 欄中心＝真書墨 cx 331.28
-    # 註：PDF/PNG 實際字墨 cx 偏此 +8.5pt（GAPS #21 全直排既有問題，非 layout 定位錯誤）
+    # 字墨 cx 對準此軸（trim 空間置中）；PDF MediaBox 另加 3mm 出血＝+8.5pt（框差，非
+    # 置中錯誤），PDF 側置中見 test_pdf_writer::test_case_ttb_ink_centered_on_line_axis。
 
 
 # ---------- 橫排版面軸（Sprint 13：版權頁-CIP，GAPS #13） ----------

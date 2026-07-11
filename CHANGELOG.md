@@ -2,6 +2,25 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.21.0（2026-07-12，Sprint 26）GAPS #21 勘正：直排字墨偏移為量測框錯配（非置中 bug）
+
+### 勘正（GAPS #21：Sprint 25 Gate 4 誤判）
+
+- Sprint 25 Gate 4 抽驗報「直排字墨 cx 偏 line_axis +8.5pt」、判為全直排正確性問題。**本 Sprint 實證勘正為量測座標框錯配，渲染層本就正確**：+8.5pt＝3mm 出血（BLEED_PT 8.5039pt），係拿 PyMuPDF MediaBox 座標（含出血）比 trim 空間 line_axis 所致；偏移與字級無關（大標 17.9pt 與資訊列 11.4pt 同偏 +8.50）＝純出血常數，非隨字級變的置中誤差。
+- 實證（probe＋回歸測試）：export 後大標 MediaBox cx 339.75、資訊列 362.75，各扣出血後 trim cx＝331.25／354.25＝line_axis（Δ+0.00pt），與真書 ink 中心同構（331.28 差 0.03）。既有 test_export_glyph_geometry_on_grid 早已用 BLEED_PT 扣出血比對、test_render_single_char_lands_in_first_cell 早已驗 PNG trim 置中；Gate 4 手驗漏扣此常數。
+
+### 新增
+
+- [實作] tests/test_pdf_writer.py::test_case_ttb_ink_centered_on_line_axis：釘住 PDF 側直排置中（C 大標 17.9pt＋資訊列 11.4pt，扣 BLEED_PT 後字墨 cx＝line_axis）＋反例保護（未扣出血恆偏 +BLEED_PT，佐證框差非置中錯誤）。測試 190 → 191。
+
+### 變更
+
+- tests/test_layout_render.py：test_case_master_and_title_placement 誤導註解（原「PDF/PNG 實際字墨 cx 偏此 +8.5pt」）勘正為出血框差說明並指向新測試；PDF 置中測試置於 test_pdf_writer.py（依 fitz／export_pdf 分層，test_layout_render.py 回 800 行以下）。
+
+### 未動（誠實記錄）
+
+- 不修渲染碼：placement／render／pdf_writer 直排置中本就正確；任何「補償 −8.5pt」都是反向雙重補償、會破壞現有與真書吻合的置中。
+
 ## v0.20.0（2026-07-11，Sprint 25）C 個案扉頁大標置位＋直排墨偏移發現（GAPS #21）
 
 ### 新增
