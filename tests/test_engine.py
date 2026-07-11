@@ -251,3 +251,24 @@ def test_flow_pages_multi_slot_line_advances_slot():
     placed = pages[0]
     assert placed[0].slot == 0
     assert placed[1].slot == 3  # 標題佔槽 0-1、空 1 槽、內文在槽 3
+
+
+def test_flow_pages_head_offset_shifts_all_lines():
+    """head_offset（目錄條目縮退，Sprint 21）：整段每行起始槽位下移、容量同縮；
+    段首行再疊 indent；不帶 head_offset 的段不受影響。"""
+    specs = [
+        ParagraphSpec("縮退條目八字折行", style="條目", indent=1, head_offset=3,
+                      chars_per_line=6),
+        ParagraphSpec("部名", style="部名", indent=0),
+    ]
+    pages = flow_pages(specs, chars_per_line=10, slots_per_page=13)
+    entry_lines = [p for p in pages[0] if p.style == "條目"]
+    # 段首行：start＝head＋indent＝4、容量 6−4＝2 字
+    assert entry_lines[0].line.start_slot == 4
+    assert "".join(c.text for c in entry_lines[0].line.cells) == "縮退"
+    # 後續行：start＝head＝3、容量 6−3＝3 字
+    assert entry_lines[1].line.start_slot == 3
+    assert "".join(c.text for c in entry_lines[1].line.cells) == "條目八"
+    # 不帶 head_offset 的段照舊從 0 起
+    part_lines = [p for p in pages[0] if p.style == "部名"]
+    assert part_lines[0].line.start_slot == 0

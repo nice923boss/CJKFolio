@@ -632,3 +632,61 @@ def test_export_toc_entry_preflight_green(template, tmp_path):
     ]), template, out, footer=False)
     report = check_pdfx1a(out)
     assert report.ok, [f for f in report.findings if not f.ok]
+
+
+# ---------- 目錄篇名嵌線斷開（Sprint 21） ----------
+
+def make_toc_doc_with_part(part, entries_with_pages):
+    paras = [{"text": part, "style": "目錄-部名"}]
+    for text, page_no in entries_with_pages:
+        paras.append({"text": text, "style": "目錄-篇章條目", "page_no": page_no})
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "目錄樣張", "template": "neizai-zhengli", "master": "D-目錄"},
+        "paragraphs": paras,
+    })
+
+
+@needs_fonts
+def test_export_toc_rule_break_two_backend_parity(template, tmp_path):
+    """篇名嵌線斷開：PDF 虛線分兩段，端點＝rule_break_ranges＋toc_rule_segments
+    手推＋出血偏移（兩後端同源）。"""
+    from cjkfolio.layout import layout_document
+    from cjkfolio.primitives import toc_rule_segments
+    from cjkfolio.render import rule_break_ranges
+    doc = make_toc_doc_with_part("把日子放回原位", [("安放與整理的十個提問", "17")])
+    out = tmp_path / "toc-break.pdf"
+    export_pdf(doc, template, out, footer=False)
+
+    master = template.masters["D-目錄"]
+    layout = layout_document(doc, template)
+    gaps = rule_break_ranges(template, master, layout.rule_breaks[1], 1)
+    segs = toc_rule_segments(mm_to_pt(template.page_width_mm), master.rule, gaps)
+    assert len(segs) == 2  # 部名一行 → 斷成兩段
+
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    page_h = mm_to_pt(template.page_height_mm)
+    y_up = page_h + BLEED_PT - master.rule.y_from_top_pt
+    found = [
+        (float(m.group(1)), float(m.group(3)))
+        for m in re.finditer(r"([\d.\-]+) ([\d.\-]+) m\n([\d.\-]+) ([\d.\-]+) l\nS", content)
+        if abs(float(m.group(2)) - y_up) < 0.3 and abs(float(m.group(4)) - y_up) < 0.3
+    ]
+    assert len(found) == 2, f"虛線 y 列應有兩段線，得到 {found}"
+    for (px0, px1), seg in zip(sorted(found), segs):
+        assert px0 == pytest.approx(BLEED_PT + seg.x0, abs=0.3)
+        assert px1 == pytest.approx(BLEED_PT + seg.x1, abs=0.3)
+
+
+@needs_fonts
+def test_export_toc_rule_break_preflight_green(template, tmp_path):
+    """篇名嵌線斷開後目錄 PDF 仍過全部 X-1a 機械規則。"""
+    from cjkfolio.preflight import check_pdfx1a
+    out = tmp_path / "toc-breakx.pdf"
+    export_pdf(make_toc_doc_with_part("把日子放回原位", [
+        ("安放與整理的十個提問", "17"),
+        ("把回憶放回原位的方法", "63"),
+    ]), template, out, footer=False)
+    report = check_pdfx1a(out)
+    assert report.ok, [f for f in report.findings if not f.ok]

@@ -91,3 +91,45 @@ def test_toc_rule_line_solid_when_dash_on_zero():
     rule = RuleSpec(kind="toc-rule", y_from_top_pt=100.0, dash_on_pt=0.0, dash_off_pt=0.0)
     line = toc_rule_line(400.0, rule)
     assert line.dash_on_pt == 0.0
+
+
+# ---------- 目錄虛線篇名斷開（Sprint 21） ----------
+
+def test_toc_rule_segments_no_gap_single_full_span():
+    """無斷開區間＝單段，幾何同原全寬線（向後相容）。"""
+    from cjkfolio.primitives import toc_rule_segments
+    rule = RuleSpec(kind="toc-rule", cmyk=(0.0, 0.0, 0.0, 0.57), y_from_top_pt=122.46)
+    page_w = 148.0 * PT_PER_MM
+    segs = toc_rule_segments(page_w, rule)
+    assert len(segs) == 1
+    assert segs[0].x0 == pytest.approx(-rule.bleed_extend_pt)
+    assert segs[0].x1 == pytest.approx(page_w + rule.bleed_extend_pt)
+    assert segs[0].y0 == pytest.approx(122.46) and segs[0].y1 == pytest.approx(122.46)
+
+
+def test_toc_rule_segments_split_at_gaps():
+    """斷開區間把線切段：段端點貼齊 gap 邊、樣式參數原樣傳遞每段。"""
+    from cjkfolio.primitives import toc_rule_segments
+    rule = RuleSpec(kind="toc-rule", cmyk=(0.0, 0.0, 0.0, 0.57), line_width_pt=1.0,
+                    dash_on_pt=3.0, dash_off_pt=2.0, y_from_top_pt=122.46)
+    page_w = 148.0 * PT_PER_MM
+    segs = toc_rule_segments(page_w, rule, gaps=((100.0, 150.0),))
+    assert len(segs) == 2
+    assert segs[0].x0 == pytest.approx(-rule.bleed_extend_pt)
+    assert segs[0].x1 == pytest.approx(100.0)
+    assert segs[1].x0 == pytest.approx(150.0)
+    assert segs[1].x1 == pytest.approx(page_w + rule.bleed_extend_pt)
+    for s in segs:
+        assert s.y0 == pytest.approx(122.46) and s.y1 == pytest.approx(122.46)
+        assert s.cmyk == (0.0, 0.0, 0.0, 0.57)
+        assert s.dash_on_pt == pytest.approx(3.0)
+
+
+def test_toc_rule_segments_multiple_gaps_sorted_and_clipped():
+    """多斷開：未排序輸入仍正確切段；越出線端的 gap 裁剪、零長段不產出。"""
+    from cjkfolio.primitives import toc_rule_segments
+    rule = RuleSpec(kind="toc-rule", y_from_top_pt=100.0, bleed_extend_pt=0.0)
+    segs = toc_rule_segments(400.0, rule, gaps=((300.0, 350.0), (-20.0, 50.0)))
+    # gap(-20,50) 蓋掉線頭（零長段不產出）→ 段：50〜300、350〜400
+    assert [(s.x0, s.x1) for s in segs] == [
+        pytest.approx((50.0, 300.0)), pytest.approx((350.0, 400.0))]

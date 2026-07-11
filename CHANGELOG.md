@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.16.0（2026-07-11，Sprint 21）目錄篇名嵌線斷開＋條目縮退（p002/p003 量測）
+
+### 新增
+
+- [實作] engine：`ParagraphSpec.head_offset`（段級天頭縮退槽，整段每行起始槽位下移；縮退已含於 `start_slot`，兩後端 y 幾何零改動）。
+- [實作] styles：`ParagraphStyle.head_offset_chars`、`RuleSpec.break_before_pt`／`break_after_pt`（篇名嵌線斷開邊距）。
+- [實作] primitives：`toc_rule_segments`（虛線依斷開區間切段；gap 裁剪、零長段不產出；`toc_rule_line` 保留為全寬幾何來源）。
+- [實作] layout：`RuleBreak`＋`LayoutResult.rule_breaks`（穿線行判定純幾何：行首字頂 y 高於虛線 y 即斷開，非樣式白名單）。
+- [實作] render：`rule_break_ranges`（穿線行行槽範圍±斷開邊距 → 斷開 x 區間，兩後端同源）；`_draw_rule`／pdf `_rule` 改多段。
+- [實作] tools/measure_toc_page.py：目錄頁虛線分段＋穿線行＋縮退量測工具（Sprint 19 先例，量測 JSON 本機不入 repo）。
+- [實作] tests：engine head_offset、primitives 切段 3 項、layout 穿線判定 3 項、render 著墨斷開、pdf 兩後端 parity＋preflight。測試 176 → 186。
+
+### 變更（模版 D-目錄：p002/p003 一手量測，A 級三處互證）
+
+- margins：top 47.63 → **38.09mm**（篇名「第N篇」首字頂 107.96pt，三處同值；原 47.63mm 條目錨 135pt 改由縮退表達）。
+- 樣式「目錄-篇章條目」：**head_offset_chars 3**（縮退 29.93pt vs 真書 27.04pt，整數槽差 +2.89pt）。
+- rule：加 **break_before_pt 28.5**／**break_after_pt 3.9**（行槽緣→線端量測中值）。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 條目縮退整數槽差 +2.89pt（v1 整數槽模型，同 Sprint 20 先例）；斷開邊距真書手排離散（before 26.9〜30.1／after 3.7〜4.1，取中值）。
+- 帶起訖不建模：真書前置條目區（目次大標、推薦序）無線、帶起於首篇名、跨頁延續記號±10mm；v1 全寬貫穿＋出血。
+- 篇序（第N篇 11pt W7 密排騎線）＋部名詩句 16pt 同行混排不建模（v1 部名單一樣式；真書詩句字距 17.12 亦非 §10 換算 16.81）。
+
+### 待 Owner 真實素材驗收
+
+- out/toc21/（本機，重生成）：page-001.png 部名穿線＋虛線斷開＋條目縮退已 Read 親驗；toc.pdf preflight 12/12、PyMuPDF 抽驗兩段虛線端點與手推**完全重合**（0.00pt）；待 Owner 與真書 p003 並排目視比對。
+
 ## v0.15.0（2026-07-11，Sprint 20）B 部扉頁型大標置位（三部扉量測）
 
 ### 新增

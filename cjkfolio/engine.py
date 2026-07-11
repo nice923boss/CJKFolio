@@ -71,6 +71,7 @@ class ParagraphSpec:
     runs: Optional[tuple] = None  # ((text, char_style|None), ...)；None → 全段無字元樣式
     page_no: Optional[str] = None  # 目錄條目頁碼（純載體，掛到段末行，不影響斷行禁則）
     para_idx: Optional[int] = None  # 文件段索引（純載體，供畫布反查文件游標）
+    head_offset: int = 0  # 段級天頭縮退（槽）：整段每行起始槽位下移（目錄條目縮退）
 
 
 @dataclass(frozen=True)
@@ -173,10 +174,11 @@ def break_paragraph(text: str, chars_per_line: int, indent: int = 2,
     return _break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
 
 
-def _break_cells(cells: list, chars_per_line: int, indent: int = 2) -> list:
+def _break_cells(cells: list, chars_per_line: int, indent: int = 2,
+                 head: int = 0) -> list:
     lines: list = []
     idx = 0
-    start = indent
+    start = head + indent  # head＝段級天頭縮退（每行）；indent 只疊段首行
     while idx < len(cells):
         cap = chars_per_line - start
         line: list = []
@@ -219,7 +221,7 @@ def _break_cells(cells: list, chars_per_line: int, indent: int = 2) -> list:
             line.append(cells[idx])
             idx += 1
         lines.append(Line(tuple(line), start, cap=cap, para_end=False))
-        start = 0
+        start = head
     if lines:
         last = lines[-1]
         lines[-1] = Line(last.cells, last.start_slot, cap=last.cap, para_end=True)
@@ -273,7 +275,7 @@ def flow_pages(
         else:
             norm, offs = normalize_with_offsets(spec.text)
             cells = tokenize(norm, vertical=vertical, offsets=offs)
-        for line in _break_cells(cells, cap, indent=indent):
+        for line in _break_cells(cells, cap, indent=indent, head=spec.head_offset):
             emit(line, spec.style, spec.line_slots,
                  page_no=spec.page_no if line.para_end else None,
                  para_idx=spec.para_idx)

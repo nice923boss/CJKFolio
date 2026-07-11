@@ -537,10 +537,11 @@ def test_layout_toc_marks_geometry(template):
     assert m.digit_size_pt == pytest.approx(cstyle.size_pt)
     # 頁碼底錨實測 490pt：首位頂＝底−位數×字距
     assert m.page_no_top_pt == pytest.approx(490.0 - 3 * digit_adv)
-    # 引導線：標題末＋gap 〜 頁碼頂−gap（標題 10 字、indent 0、slot 0）
+    # 引導線：標題末＋gap 〜 頁碼頂−gap（標題 10 字、indent 0、slot 0；
+    # 條目縮退 head_offset 槽下移，Sprint 21）
     entry_style = template.paragraph_styles["目錄-篇章條目"]
     adv = style_advance_pt(entry_style, grid)
-    title_end = master.margins.top_mm * PT + 10 * adv
+    title_end = master.margins.top_mm * PT + (entry_style.head_offset_chars + 10) * adv
     assert m.slot == 0
     assert m.leader_y0_pt == pytest.approx(title_end + 2.0)
     assert m.leader_y1_pt == pytest.approx(m.page_no_top_pt - 2.0)
@@ -590,6 +591,94 @@ def test_render_toc_page_no_and_leader(template, tmp_path):
     assert ink[3] <= crop.height
 
 
+# ---------- 目錄篇名嵌線斷開＋條目縮退（Sprint 21） ----------
+
+def make_toc_doc_with_part(part, entries_with_pages):
+    """自擬目錄文件：部名段（穿線）＋條目段（縮退）。"""
+    paras = [{"text": part, "style": "目錄-部名"}]
+    for text, page_no in entries_with_pages:
+        p = {"text": text, "style": "目錄-篇章條目"}
+        if page_no is not None:
+            p["page_no"] = page_no
+        paras.append(p)
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "目錄樣張", "template": "neizai-zhengli", "master": "D-目錄"},
+        "paragraphs": paras,
+    })
+
+
+def test_layout_rule_breaks_crossing_line_only(template):
+    """穿線行（行首字頂高於虛線 y）產 RuleBreak：部名（不縮退）穿線、
+    條目（head_offset 縮退）不穿（幾何判定，非樣式白名單）。"""
+    doc = make_toc_doc_with_part("把日子放回原位", [("安放與整理的十個提問", "17")])
+    layout = layout_document(doc, template)
+    assert layout.violations == []
+    master = template.masters["D-目錄"]
+    grid = master.grid
+    top_pt = master.margins.top_mm * PT
+    # 幾何前提（p002/p003 一手量測）：部名天頭 107.96pt 在虛線 122.46 之上；
+    # 條目縮退 3 槽後起點在虛線之下
+    part_style = template.paragraph_styles["目錄-部名"]
+    entry_style = template.paragraph_styles["目錄-篇章條目"]
+    assert top_pt < master.rule.y_from_top_pt
+    entry_top = top_pt + entry_style.head_offset_chars * style_advance_pt(entry_style, grid)
+    assert entry_top > master.rule.y_from_top_pt
+    breaks = layout.rule_breaks[1]
+    assert len(breaks) == 1  # 只有部名行穿線
+    b = breaks[0]
+    assert b.slot == 0  # 部名為首段首行
+    from cjkfolio.layout import style_line_slots
+    assert b.line_slots == style_line_slots(part_style, grid)
+
+
+def test_layout_rule_breaks_empty_without_crossing(template):
+    """全條目（皆縮退）＝無穿線行＝無斷開（虛線維持全寬）。"""
+    doc = make_toc_doc_paged([("安放與整理的十個提問", "17")])
+    layout = layout_document(doc, template)
+    assert layout.rule_breaks == {}
+
+
+def test_layout_rule_breaks_empty_without_rule_master(template):
+    """無 rule 配置的主版不產 rule_breaks（gate 守護）。"""
+    doc = make_doc([{"text": "字。", "style": "內文-明體直排"}])
+    layout = layout_document(doc, template)
+    assert layout.rule_breaks == {}
+
+
+@needs_fonts
+def test_render_toc_rule_breaks_at_part_title(template, tmp_path):
+    """篇名嵌線著墨驗證：虛線在部名行槽±斷開邊距內無線墨、兩側續畫；
+    部名字墨存在於虛線之上（穿線視覺）。"""
+    from cjkfolio.render import rule_break_ranges
+    doc = make_toc_doc_with_part("把日子放回原位", [("安放與整理的十個提問", "17")])
+    layout = layout_document(doc, template)
+    result = render_document(doc, template, tmp_path, dpi=200, footer=False)
+    assert result.violations == []
+    master = template.masters["D-目錄"]
+    (gap_lo, gap_hi), = rule_break_ranges(template, master, layout.rule_breaks[1], 1)
+    scale = 200 / 72.0
+    img = Image.open(result.paths[0]).convert("L")
+    y_px = round(master.rule.y_from_top_pt * scale)
+    row = [img.getpixel((x, y_px)) for x in range(img.width)]
+
+    def band_has_ink(x0_pt, x1_pt):
+        return any(v < 250 for v in row[max(0, round(x0_pt * scale)):round(x1_pt * scale)])
+
+    # 斷開區間內、行槽外（無字無線）的兩側 gap 帶：無墨
+    axis = line_axis_x_pt(template, master, 0, 1, line_slots=1)
+    half = master.grid.line_pitch_pt / 2
+    assert not band_has_ink(gap_lo + 0.5, axis - half - 0.5), "行後方斷開帶仍有線墨"
+    assert not band_has_ink(axis + half + 0.5, gap_hi - 0.5), "行前方斷開帶仍有線墨"
+    # 斷開區間外兩側：虛線續畫（dash 週期 5pt，取 8pt 帶必有 on 段）
+    assert band_has_ink(gap_lo - 8.0, gap_lo - 0.5), "斷開左側虛線未續畫"
+    assert band_has_ink(gap_hi + 0.5, gap_hi + 8.0), "斷開右側虛線未續畫"
+    # 部名穿線：虛線 y 之上、部名行槽帶內有字墨（首字「把」起於天頭 107.97pt）
+    above = img.crop((round((axis - half) * scale), 0,
+                      round((axis + half) * scale), y_px - 2))
+    assert ImageOps.invert(above).getbbox() is not None, "部名未穿線（虛線上方無字墨）"
+
+
 @needs_fonts
 def test_render_toc_entry_without_page_no_has_no_leader(template, tmp_path):
     """無 page_no 的條目不畫引導線與頁碼（標題以下至底錨帶無墨）。"""
@@ -602,7 +691,9 @@ def test_render_toc_entry_without_page_no_has_no_leader(template, tmp_path):
     ax_px = round(axis * scale)
     entry_style = template.paragraph_styles["目錄-篇章條目"]
     adv = style_advance_pt(entry_style, master.grid)
-    title_end_px = round((master.margins.top_mm * PT + 6 * adv + 2) * scale)
+    title_end_px = round(
+        (master.margins.top_mm * PT + (entry_style.head_offset_chars + 6) * adv + 2)
+        * scale)
     bot_px = round(master.toc.page_no_bottom_pt * scale)
     col = [img.getpixel((ax_px, y)) for y in range(title_end_px, bot_px)]
     assert all(v >= 250 for v in col), "無頁碼條目不應有引導線或頁碼墨"

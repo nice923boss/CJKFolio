@@ -38,13 +38,14 @@ from .placement import (
     tcy_placements,
     ttb_char_placements,
 )
-from .primitives import cip_frame_rect, toc_rule_line
+from .primitives import cip_frame_rect, toc_rule_segments
 from .render import (
     Shaper,
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,
     line_axis_x_pt,
     mm_to_pt,
+    rule_break_ranges,
 )
 
 BLEED_MM = 3.0
@@ -532,14 +533,17 @@ class _PdfPageWriter:
         content.stroke_rect(rect.cmyk, rect.line_width_pt, x_ll, y_ll,
                             rect.x1 - rect.x0, rect.y1 - rect.y0)
 
-    def _rule(self, content: _Content) -> None:
-        """主版向量線（v1 目錄天頭水平虛線）：與 render._draw_rule 幾何同源，CMYK 描邊。"""
-        line = toc_rule_line(mm_to_pt(self.template.page_width_mm), self.master.rule)
-        y_up = self.page_h_pt + self.bleed_pt - line.y0  # top-down → y-up（水平線 y0=y1）
-        content.stroke_line(line.cmyk, line.line_width_pt,
-                            self.bleed_pt + line.x0, y_up,
-                            self.bleed_pt + line.x1, y_up,
-                            line.dash_on_pt, line.dash_off_pt)
+    def _rule(self, content: _Content, rule_breaks, book_number: int) -> None:
+        """主版向量線（v1 目錄天頭水平虛線）：篇名嵌線處斷開，
+        與 render._draw_rule 幾何同源（rule_break_ranges＋toc_rule_segments），CMYK 描邊。"""
+        gaps = rule_break_ranges(self.template, self.master, rule_breaks, book_number)
+        for line in toc_rule_segments(mm_to_pt(self.template.page_width_mm),
+                                      self.master.rule, gaps):
+            y_up = self.page_h_pt + self.bleed_pt - line.y0  # top-down → y-up（水平線 y0=y1）
+            content.stroke_line(line.cmyk, line.line_width_pt,
+                                self.bleed_pt + line.x0, y_up,
+                                self.bleed_pt + line.x1, y_up,
+                                line.dash_on_pt, line.dash_off_pt)
 
     def _toc_marks(self, content: _Content, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
@@ -562,16 +566,16 @@ class _PdfPageWriter:
                     shaper, digit, axis, cell_top, m.digit_size_pt, m.digit_advance_pt))
 
     def build_page(self, page, footer_texts=None, book_number=None,
-                   vertical: bool = True, toc_marks=()) -> bytes:
+                   vertical: bool = True, toc_marks=(), rule_breaks=()) -> bytes:
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
         content = _Content()
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先 emit）
         if not vertical and self.master.frame and page.placed:
             self._frame(content, page, book_number)
-        # 主版向量線（v1 toc-rule 為直排目錄原件，貫穿頁寬；底層裝飾先 emit）
+        # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先 emit）
         if vertical and self.master.rule and page.placed:
-            self._rule(content)
+            self._rule(content, rule_breaks, book_number)
         if vertical:
             self._vertical_body(content, page, book_number)
         else:
@@ -636,7 +640,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             texts = {"number": str(book_number), "title": doc.title}
         contents.append(writer.build_page(
             page, footer_texts=texts, book_number=book_number, vertical=layout.vertical,
-            toc_marks=layout.toc_marks.get(page.number, ())))
+            toc_marks=layout.toc_marks.get(page.number, ()),
+            rule_breaks=layout.rule_breaks.get(page.number, ())))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []

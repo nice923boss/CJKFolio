@@ -42,8 +42,8 @@ def toc_rule_line(page_width_pt: float, rule) -> StrokeLine:
     兩側延伸 rule.bleed_extend_pt（貼邊元素出血全出，PLAN §9）。
 
     參考書 p003 一手量測（A 級）：y=122.46pt、1.0pt、dash [3 2]、灰 K57；量測
-    「參數」入模版（Sprint 7 頁腳先例），「內容」不入 repo。篇名斷開與條目縮退
-    屬目錄頁型工程（GAPS #13 剩項），v1 全寬貫穿。
+    「參數」入模版（Sprint 7 頁腳先例），「內容」不入 repo。篇名斷開見
+    toc_rule_segments（Sprint 21）。
     """
     return StrokeLine(
         x0=-rule.bleed_extend_pt,
@@ -54,6 +54,34 @@ def toc_rule_line(page_width_pt: float, rule) -> StrokeLine:
         line_width_pt=rule.line_width_pt,
         dash_on_pt=rule.dash_on_pt,
         dash_off_pt=rule.dash_off_pt,
+    )
+
+
+def toc_rule_segments(page_width_pt: float, rule, gaps=()) -> tuple:
+    """目錄天頭虛線的分段形（篇名嵌線斷開，Sprint 21）：在 gaps 各 (x_lo, x_hi)
+    區間斷開（穿線行的行槽範圍±斷開邊距，由 layout／後端幾何推導），其餘
+    與全寬線同幾何。gaps 空＝單段（同 toc_rule_line）。
+
+    參考書 p002／p003 一手量測（A 級）：虛線在「第N篇」行處斷開；越出線端的
+    gap 裁剪、零長段不產出。
+    """
+    full = toc_rule_line(page_width_pt, rule)
+    segs: list = []
+    cursor = full.x0
+    for lo, hi in sorted(gaps):
+        if hi <= cursor or lo >= full.x1:  # gap 在線外
+            cursor = max(cursor, hi)
+            continue
+        if lo > cursor:  # 零長段不產出
+            segs.append((cursor, min(lo, full.x1)))
+        cursor = max(cursor, hi)
+    if cursor < full.x1:
+        segs.append((cursor, full.x1))
+    return tuple(
+        StrokeLine(x0=x0, y0=full.y0, x1=x1, y1=full.y1, cmyk=full.cmyk,
+                   line_width_pt=full.line_width_pt,
+                   dash_on_pt=full.dash_on_pt, dash_off_pt=full.dash_off_pt)
+        for x0, x1 in segs
     )
 
 

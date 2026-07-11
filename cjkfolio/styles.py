@@ -24,6 +24,7 @@ class ParagraphStyle:
     indent_chars: int = 2
     para_gap_slots: int = 1
     writing_mode: str = "vertical-rl"
+    head_offset_chars: int = 0  # 段級天頭縮退（字格）：目錄條目相對篇名的縮退（Sprint 21）
     source_font: Optional[str] = None
     note: Optional[str] = None
 
@@ -100,6 +101,10 @@ class RuleSpec:
     dash_on_pt: float = 3.0
     dash_off_pt: float = 2.0
     bleed_extend_pt: float = 3.0 * 72.0 / 25.4
+    # 篇名嵌線斷開邊距（Sprint 21，p002／p003 實測中值）：穿線行行槽緣到線端的
+    # gap；before＝行前方（直排讀序 x 大側）、after＝行後方
+    break_before_pt: float = 0.0
+    break_after_pt: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -161,6 +166,7 @@ def _paragraph_style(name: str, d: dict) -> ParagraphStyle:
         indent_chars=int(d.get("indent_chars", 2)),
         para_gap_slots=int(d.get("para_gap_slots", 1)),
         writing_mode=str(d.get("writing_mode", "vertical-rl")),
+        head_offset_chars=int(d.get("head_offset_chars", 0)),
         source_font=d.get("source_font"),
         note=d.get("note"),
     )
@@ -222,6 +228,8 @@ def _rule_spec(d: dict, ctx: str) -> RuleSpec:
         dash_on_pt=float(d.get("dash_on_pt", 3.0)),
         dash_off_pt=float(d.get("dash_off_pt", 2.0)),
         bleed_extend_pt=float(d.get("bleed_extend_pt", 3.0 * 72.0 / 25.4)),
+        break_before_pt=float(d.get("break_before_pt", 0.0)),
+        break_after_pt=float(d.get("break_after_pt", 0.0)),
     )
 
 

@@ -139,8 +139,9 @@
    "size_pt": 9.5,
    "indent_chars": 0,
    "para_gap_slots": 0,
+   "head_offset_chars": 3,
    "source_font": "DFKaiShuStd-W3",
-   "note": "目次條目 608 字；章名另有黑體 W5 條目層（掃描）"
+   "note": "目次條目 608 字；章名另有黑體 W5 條目層（掃描）；head_offset 3 字格＝縮退 29.93pt vs 真書 27.04pt（條目錨 135−篇名天頭 107.96），整數槽差 +2.89pt 入 GAPS"
   },
   "版權頁-CIP橫排": {
    "font_family": "思源宋體 TC",
@@ -265,12 +266,12 @@
    "evidence": "版心承 A；個案扉佈局（大標＋資訊列＋Case 編號）未逐頁量測"
   },
   "D-目錄": {
-   "margins_mm": {"top": 47.63, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
+   "margins_mm": {"top": 38.09, "bottom": 41.13, "outer": 21.0, "inner": 25.58},
    "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
    "mirror": true,
-   "rule": {"kind": "toc-rule", "cmyk": [0, 0, 0, 0.57], "line_width_pt": 1.0, "dash_on_pt": 3.0, "dash_off_pt": 2.0, "y_from_top_pt": 122.46},
+   "rule": {"kind": "toc-rule", "cmyk": [0, 0, 0, 0.57], "line_width_pt": 1.0, "dash_on_pt": 3.0, "dash_off_pt": 2.0, "y_from_top_pt": 122.46, "break_before_pt": 28.5, "break_after_pt": 3.9},
    "toc": {"page_no_style": "頁碼數字-GillSans", "page_no_bottom_pt": 490.0, "leader_width_pt": 0.1, "leader_gap_pt": 2.0, "leader_cmyk": [0, 0, 0, 0.92]},
-   "evidence": "天頭 47.63mm＝條目內容起點 135pt（p003 Case 標籤 y 實測，內容在虛線之下）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；條目頁碼底錨 490pt 與引導線 0.1pt 為 p003 實測、頁碼字型以頁碼數字樣式對映（原書 Times 9pt，Sprint 16）；虛線篇名斷開（部名嵌線）與條目縮退未實作（GAPS #13）"
+   "evidence": "天頭 38.09mm＝篇名（第N篇）首字頂 107.96pt（p002/p003 三處一手量測同值，Sprint 21）；條目縮退見「目錄-篇章條目」head_offset（原 47.63mm 條目錨 135pt 改由縮退表達）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；篇名嵌線斷開邊距 break_before 28.5pt／break_after 3.9pt（p002/p003 行槽緣→線端量測中值，真書手排離散 before 26.9〜30.1／after 3.7〜4.1 入 GAPS）；條目頁碼底錨 490pt 與引導線 0.1pt 為 p003 實測、頁碼字型以頁碼數字樣式對映（原書 Times 9pt，Sprint 16）；帶起訖（前置條目區無線、跨頁延續記號）與篇序 11pt 密排騎線混排不建模（v1 已知差異，GAPS #13）"
   },
   "E-序文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},

@@ -102,12 +102,24 @@ class TocEntryMark:
 
 
 @dataclass(frozen=True)
+class RuleBreak:
+    """穿線行（行首字頂高於主版虛線 y）＝虛線斷開處（Sprint 21，篇名嵌線）。
+
+    x 由後端以 slot 求（render.rule_break_ranges，同 TocEntryMark 的行軸模式）；
+    判定純幾何（非樣式白名單）：「嵌線」本義即字穿線。
+    """
+    slot: int        # 穿線行行槽（行軸鍵）
+    line_slots: int  # 該行佔的行槽數（行槽範圍推導用）
+
+
+@dataclass(frozen=True)
 class LayoutResult:
     pages: tuple
     violations: list  # 禁則違規訊息（runtime 檢查，應為空）
     justify_stats: dict  # {"squeezed": n, "stretched": n, "beyond": n}
     vertical: bool = True  # 頁面書寫方向（False＝橫排 horizontal-tb）
     toc_marks: dict = field(default_factory=dict)  # page number → (TocEntryMark, ...)
+    rule_breaks: dict = field(default_factory=dict)  # page number → (RuleBreak, ...)
 
 
 def _toc_marks(pages, template: Template, master) -> tuple:
@@ -156,6 +168,28 @@ def _toc_marks(pages, template: Template, master) -> tuple:
     return {n: tuple(ms) for n, ms in marks.items()}, violations
 
 
+def _rule_breaks(pages, template: Template, master) -> dict:
+    """穿線行（行首字頂 y 高於虛線 y）→ RuleBreak（篇名嵌線斷開，Sprint 21）。
+
+    行首字頂 y＝天頭＋start_slot×字距（縮排偏移維持網格字距，同 render 幾何）；
+    head_offset 縮退已含在 start_slot 內。無 rule 配置的主版回空。
+    """
+    if master.rule is None:
+        return {}
+    grid = master.grid
+    top_pt = master.margins.top_mm * PT_PER_MM
+    breaks: dict = {}
+    for page in pages:
+        for pl in page.placed:
+            style = template.paragraph_styles[pl.style]
+            line_top = top_pt + pl.line.start_slot * style_advance_pt(style, grid)
+            if line_top < master.rule.y_from_top_pt - _EPS:
+                breaks.setdefault(page.number, []).append(
+                    RuleBreak(slot=pl.slot, line_slots=style_line_slots(style, grid))
+                )
+    return {n: tuple(bs) for n, bs in breaks.items()}
+
+
 def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
     master = template.masters[doc.master]
     grid = master.grid
@@ -179,6 +213,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 runs=tuple((r.text, r.char_style) for r in p.runs),
                 page_no=p.page_no,
                 para_idx=i,
+                head_offset=st.head_offset_chars,
             )
         )
     raw_pages = flow_pages(
@@ -189,6 +224,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
     violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
     toc_marks, toc_violations = _toc_marks(pages, template, master)
     violations += toc_violations
+    rule_breaks = _rule_breaks(pages, template, master) if vertical else {}
     stats = {"squeezed": 0, "stretched": 0, "beyond": 0}
     if vertical:  # 齊行為直排內文特徵；橫排版權頁短行左齊、不字距縮放
         for page in pages:
@@ -197,4 +233,5 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 if status in stats:
                     stats[status] += 1
     return LayoutResult(pages=pages, violations=violations, justify_stats=stats,
-                        vertical=vertical, toc_marks=toc_marks)
+                        vertical=vertical, toc_marks=toc_marks,
+                        rule_breaks=rule_breaks)

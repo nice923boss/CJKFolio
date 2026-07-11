@@ -21,7 +21,7 @@ from .layout import (
     style_line_slots,
 )
 from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
-from .primitives import StrokeLine, cip_frame_rect, toc_rule_line
+from .primitives import StrokeLine, cip_frame_rect, toc_rule_segments
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -58,6 +58,24 @@ def horizontal_baseline_y_pt(master: MasterPage, slot: int, size_pt: float,
     """橫排第 slot 行（由上而下）的基線 y（pt）。v1 CIP 皆 line_slots=1。"""
     top = mm_to_pt(master.margins.top_mm)
     return top + slot * master.grid.line_pitch_pt + size_pt * ASCENT_RATIO
+
+
+def rule_break_ranges(template: Template, master: MasterPage, breaks,
+                      book_number: int) -> tuple:
+    """穿線行的虛線斷開 x 區間（頁座標 pt，兩後端同源，Sprint 21）。
+
+    區間＝行槽範圍（行軸中心±行槽半寬）向兩側加斷開邊距：行前方（直排讀序
+    x 大側）加 rule.break_before_pt、行後方加 break_after_pt（p002／p003 量測）。
+    """
+    rule = master.rule
+    out = []
+    for b in breaks:
+        axis = line_axis_x_pt(template, master, b.slot, book_number,
+                              line_slots=b.line_slots)
+        half = master.grid.line_pitch_pt * b.line_slots / 2
+        out.append((axis - half - rule.break_after_pt,
+                    axis + half + rule.break_before_pt))
+    return tuple(sorted(out))
 
 
 class Shaper:
@@ -336,10 +354,13 @@ class PageRenderer:
         )
         _draw_stroke_rect(img, rect, self.scale)
 
-    def _draw_rule(self, img) -> None:
-        """主版向量裝飾線（v1：目錄天頭水平虛線）：貫穿頁寬，與 pdf_writer 同源。"""
-        line = toc_rule_line(mm_to_pt(self.template.page_width_mm), self.master.rule)
-        _draw_stroke_line(img, line, self.scale)
+    def _draw_rule(self, img, rule_breaks, book_number: int) -> None:
+        """主版向量裝飾線（v1：目錄天頭水平虛線）：貫穿頁寬、在穿線行（篇名嵌線）
+        處斷開，與 pdf_writer 同源。"""
+        gaps = rule_break_ranges(self.template, self.master, rule_breaks, book_number)
+        for seg in toc_rule_segments(mm_to_pt(self.template.page_width_mm),
+                                     self.master.rule, gaps):
+            _draw_stroke_line(img, seg, self.scale)
 
     def _draw_toc_marks(self, img, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
@@ -362,7 +383,8 @@ class PageRenderer:
                 self._note_missing(shaper, missing)
 
     def render_page(self, page, footer_texts=None, book_number=None,
-                    vertical: bool = True, toc_marks=()) -> Image.Image:
+                    vertical: bool = True, toc_marks=(),
+                    rule_breaks=()) -> Image.Image:
         template = self.template
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
@@ -374,9 +396,9 @@ class PageRenderer:
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先畫）
         if not vertical and self.master.frame and page.placed:
             self._draw_frame(img, page, book_number)
-        # 主版向量線（v1 toc-rule 為直排目錄原件，貫穿頁寬；底層裝飾先畫）
+        # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先畫）
         if vertical and self.master.rule and page.placed:
-            self._draw_rule(img)
+            self._draw_rule(img, rule_breaks, book_number)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
         else:
@@ -415,7 +437,8 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
             }
         img = renderer.render_page(page, footer_texts=texts, book_number=book_number,
                                    vertical=layout.vertical,
-                                   toc_marks=layout.toc_marks.get(page.number, ()))
+                                   toc_marks=layout.toc_marks.get(page.number, ()),
+                                   rule_breaks=layout.rule_breaks.get(page.number, ()))
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)

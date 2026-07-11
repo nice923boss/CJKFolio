@@ -21,6 +21,7 @@
 > 修訂：2026-07-11 Sprint 18：文件 provenance 載體（Phase 2 首項工程）：Cell.span（文件段 text 半開區間，normalize_with_offsets 索引映射處理 Cc 剝除位移）＋PlacedLine.para_idx（layout 建 spec 掛段索引），畫布點選 → 文件游標資料鏈補齊；第一章 5,361 cells round-trip 錯 0（詳 devlog/2026-07-11-sprint18-provenance.md）。
 > 修訂：2026-07-11 Sprint 19：F-版權頁真實版心 p178 一手量測（tools/measure_cip_page.py)：CIP 5.63pt／字距 5.66／行距 7.74／框線 0.14pt 暖黑 K92／pad 5.05×4.94 不對稱（FrameSpec 加 pad_v_pt），模版自擬幾何全面替換為量測值，樣張框左上角與首行 baseline 與 p178 精確重合；行距分區與框上標題行為 v1 已知差異入 GAPS，關 GAPS #13 (a)（詳 devlog/2026-07-11-sprint19-cip-metrics.md）。
 > 修訂：2026-07-11 Sprint 20：B 部扉頁型大標置位（三部扉 PDF 索引 18/68/114 一手量測三頁互證）：B 主版天頭 62.38mm、行距 34.37pt、部序號／大標行軸 228.49／194.12pt、字距合 §10 換算規則；標籤-篇序小標段後 gap 1→0；自擬樣張（samples/part-divider.doc.json）行軸抽驗與量測精確重合、preflight 12/12；大標首字頂 6.02pt 差（0.26 字槽）入 GAPS（詳 devlog/2026-07-11-sprint20-part-divider.md）。
+> 修訂：2026-07-11 Sprint 21：目錄篇名嵌線斷開＋條目縮退（tools/measure_toc_page.py，p002/p003 三篇名一手互證）：D 天頭改篇名首字頂 38.09mm（107.96pt 三處同值）、條目 head_offset 3 槽縮退（engine ParagraphSpec.head_offset 揉進 start_slot，y 幾何零改動）、虛線在穿線行（幾何判定）斷開（toc_rule_segments＋rule_break_ranges 兩後端同源，邊距 28.5／3.9 量測中值）；樣張 PyMuPDF 抽驗兩段虛線端點 0.00pt 重合、preflight 12/12；帶起訖與篇序密排騎線混排不建模入 GAPS，關 GAPS #13 (b) 嵌線與縮退（詳 devlog/2026-07-11-sprint21-toc-inline-title.md）。
 
 ---
 
@@ -433,6 +434,7 @@ CJKFolio/
 | 2026-07-11（Sprint 18） | provenance 座標系定案：Cell.span＝文件段 text（normalize 前原字串）半開區間；normalize 分解為 normalize_with_offsets（正規化＋原索引表）單一事實來源；ascii run（latin／tcy）span 覆蓋整串、內含被剝除 Cc 時區間自然涵蓋（選取涵蓋不可見字元）；直呼 tokenize 無 offsets 時 span 為輸入座標 identity（舊 API 相容） | 第一章 5,361 cells＋自擬含 Cc／表現形段 round-trip 全 0 錯（A 級） |
 | 2026-07-11（Sprint 19） | F-版權頁版心量測定案：top 以「首行 baseline 錨定」換算（top＝baseline−級數×ASCENT_RATIO＝128.2−5.63×0.88＝123.25pt＝43.48mm，文字位置優先於 bbox 口徑）；框色暖黑同內文 → 產品單 K92；FrameSpec 加 pad_v_pt（選配，None＝同 pad_pt）表達 p178 實測不對稱 pad（水平 5.05／垂直 4.94）；lines_per_page 45 為幾何推導非量測；後段行距分區（12.73／11.73）與框上標題行不擴 v1 模型，入 GAPS #13 誠實記錄 | p178 一手量測（A 級）＋樣張獨立抽驗框 y0=118.31／baseline 128.2 與實測精確重合 |
 | 2026-07-11（Sprint 20） | B 部扉頁型定案：文件兩段（段 1 標籤-篇序小標 slot 0 右、段 2 部扉大標 slot 1），行間距全含於 B 行距 34.37pt（標籤樣式 para_gap_slots 1→0）；B 主版 mirror=false、天頭＝部序號首字頂 62.38mm、outer 63.53mm（slot 0 行軸 228.49 反推）；真書大標首字頂比部序號低 6.02pt（0.26 字槽）為 v1 整數槽模型已知差異入 GAPS，不擴段前 pt 偏移模型（Phase 2〜3 樣式系統再議）；y 向 bbox 口徑差（思源 ascender 鬆於華康）屬字型度量差異非位置錯誤（§3.3 不比字形輪廓） | 三部扉一手量測（A 級三頁互證同值）＋樣張行軸抽驗 228.49／194.12 精確重合 |
+| 2026-07-11（Sprint 21） | 目錄嵌線與縮退形態定案：穿線判定純幾何（行首字頂 y＝天頭＋start_slot×字距 < 虛線 y 即斷開；「嵌線」本義，非樣式白名單）；條目縮退用段級整數槽 head_offset（engine 揉進 start_slot，首行疊 indent、容量同縮；縮退 3 槽 29.93pt vs 真書 27.04，+2.89pt 差入 GAPS，維持 Sprint 20「不擴 pt 偏移模型」決議）；斷開邊距取行槽緣口徑量測中值（before 28.5／after 3.9，真書手排離散 26.9〜30.1／3.7〜4.1 誠實記錄）；斷開 x 區間由後端 rule_break_ranges 以 slot＋book_number 求（同 TocEntryMark 行軸模式，兩後端同源）；帶起訖（前置條目無線、帶起於首篇名、跨頁延續記號±10mm）與篇序 11pt 密排騎線＋詩句 16pt 同行混排不建模（v1 已知差異入 GAPS）；Sprint 15「貫穿頁寬」修正為設計推定（當時未量 x 起訖），本次量測證實真書分段 | p002/p003 三篇名一手量測（A 級：篇名天頭 107.96 三處同值）＋樣張 PyMuPDF 抽驗兩段端點 0.00pt 重合 |
 
 ## 11. 證據附錄（關鍵引用）
 
