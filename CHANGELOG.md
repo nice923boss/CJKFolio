@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.30.0（2026-07-12，Sprint 35）個案扉頁 slot 0「Case 編號 13pt 雙元素」量測否決＋Sprint 25 誤讀勘正（GAPS #13）
+
+### 決策（honest-planning R1／R5／R8 先量測再動工；Owner AskUserQuestion 定案 B）
+
+- 候選 A（Owner「最複雜架構先做」常設指令）＝個案扉頁 slot 0「Case 編號黑 W5 13pt『01』雙元素」建模。依 R1 先量測，兩路探針 33 頁交叉驗證推翻前提：slot 0 無 Case 編號 13pt「01」（係把頁腳 Case 編號誤植＋臆造字級），連帶揭露 Sprint 25 對 C 主版 slot 0 系統性誤讀。第四例掃描誤讀（承 Sprint 23 署名長橫、24 摘要層字型、34 的 12.9pt），最深（推翻 Sprint 25 slot 0 建模）。Owner 定案 B（勘正記錄＋守門，不重定模型）：誠實記錄量測真相＋守門防復現，模型重定登記後續專項。
+
+### 量測（A 級一手證據，本機紅線不入 repo）
+
+- Q1 slot 0（cx 354.25±8）跨 33 頁：DFHeiStd-W7 11.5pt×26 頁／10.5pt×7 頁欄標「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談／理解與祝福」，33 頁全覆蓋、0 個 NotoSans 11.4、0 個 13pt。
+- Q2 個案中標 NotoSans 11.4pt：141 span，cx 全落 93~231（median 230.94），非 slot 0（354），在資訊區內文欄。
+- Q3 DFHeiStd 13pt：132 span，cx 117~240，為資訊區內文中標「父母的留戀…」，非 slot 0 編號。
+- Q4 黑體與大字數字編號「01」全書 0 命中；真書 Case 編號＝頁腳 PepitaMT 9pt「Case 1／2／3」（top 508.3，33 頁齊備）。
+
+### 變更
+
+- [實作] templates/neizai-zhengli.json：個案中標 note＋C-個案扉頁 evidence 兩處 slot 0 錯誤描述勘正（slot 0＝黑 W7 欄標、個案中標在資訊區、Case 編號在頁腳 Pepita、13pt 為資訊區內文中標）；否決「Case 編號黑 W5 13pt『01』雙元素」。size 11.4 與 para_gap_slots 0 不動（status-quo，Owner 定案 B 不重定模型）。
+- [實作] tests/test_styles.py：新增 `test_case_info_distinct_from_slot0_hei_label_and_case_no` 守門（個案中標 NotoSans Medium 11.4，不等於黑 W7 欄標 11.5／10.5、不等於虛構 Case 編號 13.0，防依誤導 note 併入）。測試 215 → 216。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 216 passed / 0 failed；typecheck（py_compile 全部）EXIT=0。
+- Gate 4 獨立驗證：量測（PyMuPDF get_text span cx／top／font／size）與守門測試（模版載入斷言）不同方法互證；Q4「01」全書 0 命中＋Q1 slot 0 黑 W7 33 頁全覆蓋為決定性反證（非單點推論，避免 Sprint 22 同源同錯）。
+- Gate 3 同類掃描：grep 模版確認 note 與 evidence 兩處 slot 0 錯誤描述均已勘正、無遺漏。
+- 繁中標點：本 Sprint 改動檔（模版／GAPS／PLAN／devlog／CHANGELOG／test_styles）無破折號字元殘留。
+
+### 已知限制（詳 GAPS.md #13）
+
+- slot 0「Case 編號 13pt 雙元素」否決（不存在，真書 Case 編號在頁腳 Pepita）。後續專項（需 Owner 決定投入，屬定案 C）＝黑 W7 欄標樣式建模＋個案中標移資訊區＋資訊區多欄位【標籤】佈局量測。
+- 續留 #13 其他剩項：旁注 9pt 變體＋Case 編號 15.9pt 變體（Sprint 34 Gate 3 掃出，未量測）、雙線菱形框（美術資產不生成）、B〜G 其他扉頁逐頁量測。
+
 ## v0.29.0（2026-07-12，Sprint 34）個案中標「12.9pt 變體」量測釐清否決（GAPS #13 剩項）
 
 ### 決策（honest-planning R1／R5 先量測再動工）

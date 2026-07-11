@@ -54,6 +54,26 @@ def test_case_info_size_single_and_distinct_from_preface(template):
     assert info.size_pt != preface.size_pt
 
 
+def test_case_info_distinct_from_slot0_hei_label_and_case_no(template):
+    """個案中標 vs slot 0 黑 W7 欄標／頁腳 Case 編號釐清（Sprint 35 量測，GAPS #13 剩項）：
+    模版原 note 與 C 主版 evidence 記「slot 0 資訊列＝個案中標 11.4pt 副標＋Case 編號黑 W5
+    13pt『01』雙元素」。量測參考書 33 個案扉頁交叉驗證（兩路探針）：slot 0（cx 354）實為
+    DFHeiStd-W7 11.5pt（26 頁）／10.5pt（7 頁）欄標「個案資料／廖心筠整理／鄧惠文醫師／心理師
+    訪談／理解與祝福」；黑體與大字數字編號「01」全書 0 命中，真書 Case 編號＝頁腳 PepitaMT
+    9pt「Case N」（top 508.3）；個案中標 NotoSans 11.4pt（【格局】【居住者】）cx 全落 93~231
+    資訊區，非 slot 0。故 slot 0 非個案中標、亦無 13pt Case 編號（守門防依誤導 note 把黑 W7
+    欄標字型或虛構 13pt Case 編號併入個案中標）。黑 W7 欄標樣式與個案中標移資訊區為後續專項。"""
+    info = template.paragraph_styles["個案中標-NotoSans"]
+    # 個案中標＝NotoSans Medium 11.4pt（資訊區欄位標籤），非 slot 0 黑 W7 欄標
+    assert info.source_font == "NotoSansCJKtc-Medium"
+    assert info.font_weight == "medium"
+    assert info.size_pt == pytest.approx(11.4)
+    # 非 slot 0 黑 W7 欄標級數（DFHeiStd-W7 11.5／10.5pt）、非虛構 Case 編號 13pt
+    assert info.size_pt != pytest.approx(11.5)
+    assert info.size_pt != pytest.approx(10.5)
+    assert info.size_pt != pytest.approx(13.0)
+
+
 def test_master_a_geometry_from_measurements(template):
     a = template.masters["A-內文版"]
     assert a.grid.chars_per_line == 32

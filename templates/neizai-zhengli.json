@@ -104,7 +104,7 @@
    "indent_chars": 0,
    "para_gap_slots": 0,
    "source_font": "NotoSansCJKtc-Medium",
-   "note": "個案扉頁資訊列（slot 0，p20/36/54 一手量測，Sprint 25）；para_gap 0＝資訊列 slot 0 與大標 slot 1 相鄰（實測 cx 354.24 vs 331.28 差 1 槽，同 Sprint 20 標籤勘誤）；slot 0 另含 Case 編號黑 W5 13pt「01」雙元素（v1 只建副標，GAPS #13）。Sprint 34 量測釐清：個案中標＝單一 11.4pt，掃描見的 12.9pt NotoSans 全 33 個案扉頁 0 命中、全書 81 span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半），屬 推薦序大標-黑體，非本樣式變體"
+   "note": "個案扉頁資訊區欄位標籤（【格局】【居住者】等，NotoSans Medium 11.4pt）。Sprint 35 量測勘正（兩路探針 33 頁交叉驗證，推翻 Sprint 25 誤讀）：本樣式 141 span cx 全落 93~231 資訊區、非 slot 0；Sprint 25 原記「slot 0、cx 354.24」係誤讀 slot 0 黑體欄標位置，slot 0（cx 354）實為 DFHeiStd-W7 欄標（11.5pt×26 頁「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談」、10.5pt×7 頁「理解與祝福」）非本樣式；原記「slot 0 另含 Case 編號黑 W5 13pt『01』雙元素」否決＝全書黑體與大字數字編號 0 命中、真書 Case 編號＝頁腳 PepitaMT 9pt「Case N」（top 508.3），掃描見的 13pt DFHeiStd 為資訊區內文中標（cx 117~240「父母的留戀…」）非 slot 0 編號；para_gap_slots 0 為 status-quo（Owner 定案 B：不依資訊區真實佈局重定；黑 W7 欄標樣式與個案中標移資訊區＋多欄位佈局為後續專項 GAPS #13）。Sprint 34 量測釐清：個案中標＝單一 11.4pt，掃描見的 12.9pt NotoSans 全 33 個案扉頁 0 命中、全書 81 span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半），屬 推薦序大標-黑體，非本樣式變體"
   },
   "部扉大標-明體W9": {
    "font_family": "思源宋體 TC",
@@ -316,7 +316,7 @@
     "base_size_pt": 11.5
    },
    "mirror": true,
-   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0 資訊列＝個案中標 11.4pt 副標＋Case 編號黑 W5 13pt「01」（雙元素，v1 只建副標）；Case 編號 PepitaMT 9pt 於頁腳左下三件組。已知差異（GAPS #13）：slot 0 Case 編號 13pt 元素、雙線菱形框（美術資產不生成，Sprint 15 決議）。扉頁大標與內文 gap 已修（Sprint 33：拆 個案扉頁大標-NotoSans para_gap 0，內文落 slot 2）、內頁大標 usage 分屬 個案大標-NotoSans（para_gap 1）"
+   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0＝黑 W7 欄標（DFHeiStd-W7 11.5pt×26 頁／10.5pt×7 頁「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談／理解與祝福」，Sprint 35 兩路探針 33 頁量測；非個案中標、非 Case 編號）；個案中標 11.4pt 副標（【格局】【居住者】）實在資訊區 cx 93~231（Sprint 35 勘正 Sprint 25「slot 0 cx 354.24」誤讀）；Case 編號＝頁腳 PepitaMT 9pt「Case N」左下三件組（原記「slot 0 Case 編號黑 W5 13pt『01』」否決＝黑體與大字數字編號全書 0 命中）。已知差異（GAPS #13）：slot 0 黑 W7 欄標樣式未建模、個案中標移資訊區＋多欄位佈局待後續專項（Owner 定案 B 不重定模型）、雙線菱形框（美術資產不生成，Sprint 15 決議）。扉頁大標與內文 gap 已修（Sprint 33：拆 個案扉頁大標-NotoSans para_gap 0，內文落 slot 2）、內頁大標 usage 分屬 個案大標-NotoSans（para_gap 1）"
   },
   "D-目錄": {
    "margins_mm": {
