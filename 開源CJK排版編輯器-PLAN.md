@@ -17,6 +17,7 @@
 > 修訂：2026-07-11 Sprint 14：CIP 細框向量原件（新 primitives 層 StrokeRect＋cip_frame_rect，兩後端同源；render PIL 描邊、pdf path ops re/S/K CMYK 描邊置於 BT 外）；F-版權頁主版加 cip-box 框（純黑 0.5pt，全自擬），preflight 仍 12/12、框座標兩後端同源；為後續部扉／目錄向量裝飾的地基（詳 devlog/2026-07-11-sprint14-cip-frame.md）。
 > 修訂：2026-07-11 Sprint 15：目錄水平虛線向量原件（StrokeLine＋toc_rule_line，PDF 原生 d dash 算符＋PIL 分段，兩後端同源）；D-目錄主版加 toc-rule（y 122.46pt、1.0pt、dash [3 2]、灰 K57，皆 p003 一手量測參數）、天頭修正 47.63mm（內容起點實測）；部扉框實測為手繪向量，規則化不做（美術資產），續留 GAPS #13（詳 devlog/2026-07-11-sprint15-toc-rule.md）。
 > 修訂：2026-07-11 Sprint 16：目錄條目頁碼＋引導線（document@2 相容擴充 page_no、layout TocEntryMark 幾何、兩後端同源：引導線 K92 實線＋頁碼 tcy 逐位直立底錨 490pt 對齊），目錄頁型設計語言貫通（標題／引導線／頁碼底對齊），關 GAPS #13 目錄頁碼部分（詳 devlog/2026-07-11-sprint16-toc-entry.md）。
+> 修訂：2026-07-11 Sprint 17：Owner 指示風險前置（先挑最複雜架構），Phase 2 最高風險架構件（WYSIWYG 畫布 ↔ 排版核心同步，§7 中高風險）先行 Spike 10：PySide6 offscreen 雙層畫布（底圖＝PNG 後端輸出＋互動層＝layout 幾何同源字格 item），編輯回路 37ms、hit-test 214/214、22 頁 5,361 格 52ms，五項標準全過；畫布 ↔ 文件 provenance 介面缺口顯式化為 Phase 2 首項工程（詳 devlog/2026-07-11-sprint17-canvas-spike.md）。
 
 ---
 
@@ -300,6 +301,7 @@ CJKFolio/
 ### Phase 2：WYSIWYG 編輯器（12〜16 週）[實作]
 
 - Qt＋Skia 畫布：文字框建立／串接、主版指派、樣式面板套用、圖片置入、即時預覽、IME 直排輸入、復原重做。
+- **前置 spike（2026-07-11 Sprint 17，Owner 指示風險前置）**：[Spike] Spike 10 通過（spikes/spike10-canvas-sync/report.md）：PySide6＋QGraphicsScene 雙層畫布（底圖＝PNG 後端輸出、互動層＝layout 幾何同源字格 item）可行性成立；編輯 → 全章重排 → 單頁重渲染 → 畫布更新全回路中位 37.2ms@150dpi（互動閾值 200ms 餘裕 5 倍）、hit-test 反查 214/214、22 頁 5,361 item 建立 52ms（hit 中位 0.90ms）。介面缺口顯式化：PlacedLine／Cell 無文件 provenance（para_idx／char offset），列 Phase 2 首項工程。未驗：IME 直排輸入／拖曳／選取 UI（offscreen 限制，GAPS #19）。
 - AI 設定面板：Base URL／API Key／Model 三欄位（OpenAI 相容），存本機設定檔；預設空值，金鑰不入程式碼（§4.4 紅線）。
 - 製作者標示「製作者：黃政文」置於關於視窗或 footer 灰色小字。
 
@@ -422,6 +424,8 @@ CJKFolio/
 | 2026-07-11（Sprint 15） | 補記 Sprint 13、14 漏更新的 CHANGELOG（v0.8.0、v0.9.0，內容取自 devlog 與 commit message，標明補記）；Sprint Runner 收尾清單此後以 CHANGELOG 為必查項 | R7：落差不沉默 |
 | 2026-07-11（Sprint 16） | 目錄條目形態定案：`page_no` 為 document@2 相容擴充選配欄位（僅數字字串）；頁碼掛段末行、直排逐位直立、底錨對齊（p003 實測 490pt）；引導線為行軸垂直實線（0.1pt、單 K92 同文字）自標題末＋2pt 至頁碼頂−2pt；標題頁碼重疊（線長 ≤0）列 violations 不畫線；帶 page_no 落在無 toc 配置主版快速失敗 | p003 條目量測（A 級）＋兩後端 parity 單元測試 |
 | 2026-07-11（Sprint 16） | 頁碼字距依 §10 既有換算規則（級數×12.08/11.5），字級由頁碼字元樣式決定（v1 用「頁碼數字-GillSans」8pt 粉圓）；與 p003 實測 Times 9pt 同構不同值，目錄「章名條目黑 W5」樣式層補充留 GAPS #13 | 換算規則一致性優先於逐點復刻 |
+| 2026-07-11（Sprint 17，Owner 指示風險前置） | Phase 2 畫布架構前置 spike 定案：PySide6＋QGraphicsScene 雙層畫布（底圖層＝既有 PNG 渲染後端、互動層＝layout 幾何同源透明字格 item）可行性成立；畫布語言候選 Python（PySide6，與 Phase 1 管線同語言）自此有一手數據，正式技術棧於 Phase 2 開工定案；spike 探針不入 pytest 基線（避免基線硬依賴 GUI 套件） | Spike 10（spikes/spike10-canvas-sync/，A 級一手數據：回路 37ms、hit 214/214、5,361 item 52ms） |
+| 2026-07-11（Sprint 17） | Phase 2 首項工程定：engine 流排時在 PlacedLine／Cell 掛文件 provenance（para_idx／char offset，與 page_no 同純載體模式），供畫布點選 → 文件游標映射；spike 現以 (page, placed_idx, cell_idx) 為 hit-test 身分屬幾何鍵，非文件鍵 | Spike 10 顯式暴露的介面缺口 |
 
 ## 11. 證據附錄（關鍵引用）
 
