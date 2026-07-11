@@ -22,8 +22,8 @@ def template():
 
 
 def test_template_three_layers_complete(template):
-    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＝16、9 字元樣式、7 主版
-    assert len(template.paragraph_styles) == 16
+    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＋個案扉頁大標（Sprint 33 拆分）＝17、9 字元樣式、7 主版
+    assert len(template.paragraph_styles) == 17
     assert len(template.character_styles) == 9
     assert len(template.masters) == 7
 

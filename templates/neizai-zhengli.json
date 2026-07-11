@@ -86,7 +86,16 @@
    "indent_chars": 0,
    "para_gap_slots": 1,
    "source_font": "NotoSansCJKtc-Medium",
-   "note": "個案扉與內頁大標（42 頁）；原書即用思源黑體 Medium（OFL）"
+   "note": "內頁個案大標／md h2（42 頁）；para_gap 1＝標題後內文留 1 槽。Sprint 33 自扉頁大標拆出（扉頁大標後內文相鄰 slot 2 改用 個案扉頁大標-NotoSans）；原書即用思源黑體 Medium（OFL）"
+  },
+  "個案扉頁大標-NotoSans": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "size_pt": 17.9,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "source_font": "NotoSansCJKtc-Medium",
+   "note": "個案扉頁大標（slot 1，p20/36/54 一手量測，Sprint 25）；para_gap 0＝大標後內文相鄰落 slot 2（扉頁三列 資訊列／大標／內文 相鄰）。Sprint 33 自 個案大標-NotoSans 拆出，與內頁 h2 用法（para_gap 1）分屬兩物件樣式"
   },
   "個案中標-NotoSans": {
    "font_family": "思源黑體 TC",
@@ -307,7 +316,7 @@
     "base_size_pt": 11.5
    },
    "mirror": true,
-   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0 資訊列＝個案中標 11.4pt 副標＋Case 編號黑 W5 13pt「01」（雙元素，v1 只建副標）；Case 編號 PepitaMT 9pt 於頁腳左下三件組。已知差異（GAPS #13）：slot 0 Case 編號 13pt 元素、扉頁大標與內文精確 gap（大標 para_gap 1 使樣張內文落 slot 3 vs 真書 slot 2）、內頁大標 usage、雙線菱形框（美術資產不生成，Sprint 15 決議）"
+   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0 資訊列＝個案中標 11.4pt 副標＋Case 編號黑 W5 13pt「01」（雙元素，v1 只建副標）；Case 編號 PepitaMT 9pt 於頁腳左下三件組。已知差異（GAPS #13）：slot 0 Case 編號 13pt 元素、雙線菱形框（美術資產不生成，Sprint 15 決議）。扉頁大標與內文 gap 已修（Sprint 33：拆 個案扉頁大標-NotoSans para_gap 0，內文落 slot 2）、內頁大標 usage 分屬 個案大標-NotoSans（para_gap 1）"
   },
   "D-目錄": {
    "margins_mm": {

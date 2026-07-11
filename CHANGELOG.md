@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.28.0（2026-07-12，Sprint 33）個案大標 para_gap 樣式拆分（個案扉頁 vs 內頁 h2）
+
+### 決策（GAPS #13 剩項，承 Sprint 31 診斷）
+
+- `個案大標-NotoSans`（para_gap 1）身兼 C 個案扉頁大標與 md h2／內頁大標（42 頁）兩用途；C 扉頁三列（資訊列 slot 0／大標 slot 1／內文 slot 2）相鄰為 Sprint 25 A 級量測，但 para_gap 1 使扉頁大標後內文落 slot 3。Sprint 31 已診斷此為整數槽差（非 sub-slot pt），正解拆樣式：新增 `個案扉頁大標-NotoSans`（para_gap 0）給 C 扉頁，原名 `個案大標-NotoSans`（para_gap 1）保留給 md h2／內頁大標（不改 md_mapping、churn 最小）。InDesign 慣例：同視覺角色不同段後距屬不同段落樣式。內頁 h2 para_gap 1 為 status-quo 保留（非新量測宣稱）。
+
+### 新增
+
+- [實作] templates/neizai-zhengli.json：段落樣式 `個案扉頁大標-NotoSans`（思源黑體 Medium 17.9pt、para_gap 0）；C 主版 evidence 移除已修的 para_gap「已知差異」子句、改記 Sprint 33 修正。段落樣式數 16 → 17。
+- [實作] samples/case-divider.doc.json：扉頁大標改用新樣式，加自擬內文段（紅線安全）忠實呈現扉頁三列。
+
+### 變更（測試）
+
+- test_layout_render.py：擴充 `test_case_master_and_title_placement` 覆蓋 body slot 2＋守門（扉頁大標 para_gap 0、內頁 個案大標 para_gap 1、h2 對映不動）。
+- test_pdf_writer.py：C 扉頁 ink-centering 測試大標樣式對齊為 個案扉頁大標。
+- test_styles.py：段落樣式數守門 16 → 17。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 214 passed / 0 failed；typecheck（py_compile 全部）EXIT=0。
+- 確定性 layout（committed 樣張 case-divider）：三段 slot ＝ [0,1,2]、0 禁則違規（修正前內文 slot 3）。
+- 真實素材驗收（R5）：目標 slot 2 ＝ Sprint 25 真書 A 級量測；紅線內容不入 repo，驗證用自擬扉頁 doc＋確定性 layout（同 Sprint 13〜16 慣例）。render PNG（150dpi、--first-page 2 偶＝右頁）Read 親驗：三直排列右至左相鄰、內文緊貼大標左側（slot 2 非 slot 3 空欄）、承 A 共頂邊、0 禁則違規。
+- 同類掃描（Gate 3）：tests/ 樣式數量斷言僅 test_styles 一處；個案大標 殘留引用皆為刻意 h2／內頁守門。tests/、devlog/、GAPS.md 無 em-dash。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 內頁 h2 para_gap 1 為 status-quo，未逐頁量測（誠實記錄）；個案中標 11.4/12.9pt 兩變體、slot 0 Case 編號 13pt 元素、雙線菱形框（美術資產不生成）仍為 #13 剩項。
+
 ## v0.27.0（2026-07-12，Sprint 32）替代軌 B：近 800 行測試檔依頁型分檔
 
 ### 變更（測試重組，行為零變更）

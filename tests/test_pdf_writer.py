@@ -143,7 +143,7 @@ def test_case_ttb_ink_centered_on_line_axis(template, tmp_path):
         "meta": {"title": "個案扉樣張", "template": "neizai-zhengli", "master": "C-個案扉頁"},
         "paragraphs": [
             {"text": "每個家都有自己的故事", "style": "個案中標-NotoSans"},
-            {"text": "重新安放生活的重量", "style": "個案大標-NotoSans"},
+            {"text": "重新安放生活的重量", "style": "個案扉頁大標-NotoSans"},
         ],
     })
     first_page = 2  # 偶＝右頁；單頁 → book_number = 版面頁號1 + first_page − 1 = first_page
