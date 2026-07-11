@@ -2,6 +2,24 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.27.0（2026-07-12，Sprint 32）替代軌 B：近 800 行測試檔依頁型分檔
+
+### 變更（測試重組，行為零變更）
+
+- test_layout_render.py（795→495 行）與 test_pdf_writer.py（791→469 行）近 800 行上限，各抽「主版向量裝飾與目錄頁型」連續塊（CIP 細框 Sprint 14、目錄天頭虛線 Sprint 15、條目頁碼引導線 Sprint 16、篇名嵌線斷開 Sprint 21，pdf 另含 G 圖文佔位框 Sprint 27）為新檔。
+- 循 tests/ 既有「各檔自帶 `template` fixture＋make_ helper」慣例（8 檔皆如此），新檔自帶 fixture／helper，不建共享 conftest（避免改動全檔共享模型＝逾分檔範圍）；測試本體以 sed 逐位元組搬移（零轉錄風險），header 手寫。
+- 核心 test_layout_render.py 補 `PT` 常數（章名條目 layout 測試留核心，其 PT 定義隨塊移出）；test_pdf_writer.py 移除抽出後未用的 `from cjkfolio.primitives import cip_frame_rect, toc_rule_line`。
+
+### 新增
+
+- [實作] tests/test_render_vectors.py：13 test（CIP 框＋目錄虛線／頁碼引導線／嵌線 的 layout＋render，自 test_layout_render.py）。
+- [實作] tests/test_pdf_vectors.py：14 test（同上＋G 圖文佔位 export，自 test_pdf_writer.py）。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 214 passed / 0 failed（總數不變：39＝26＋13、35＝21＋14，零 test 遺失或重複，分檔行為保持）；typecheck（py_compile 全部）EXIT=0。
+- import 潔淨：4 檔各 import 皆有 body 使用（grep 計數 ≥2）；兩核心檔無孤兒 import（pdf 核心 cip_frame_rect／toc_rule_line 抽出後 import 行已移除）。tests/ grep 無 em-dash。分檔後最大測試檔 495 行。
+
 ## v0.26.0（2026-07-12，Sprint 31）主軌否決（block 軸整數對齊無 pt 目標）＋轉替代軌 A：measure 工具共用模組
 
 ### 決策（主軌否決，honest-planning R1／R8）
