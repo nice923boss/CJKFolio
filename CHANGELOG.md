@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.29.0（2026-07-12，Sprint 34）個案中標「12.9pt 變體」量測釐清否決（GAPS #13 剩項）
+
+### 決策（honest-planning R1／R5 先量測再動工）
+
+- `個案中標-NotoSans`（size 11.4pt）模版 note 末記「另有 12.9pt 變體見掃描」為誤導待查標記。量測參考書確認 12.9pt 歸屬（避免如 Sprint 23 署名長橫、Sprint 24 摘要層字型、Sprint 30 出血座標框錯配之掃描誤植）。結論：個案中標＝單一 11.4pt，12.9pt 屬 Sprint 23 已定的「推薦序大標-黑體」（序文標題），非個案中標變體。無新 pt 目標，誠實否決造變體（同 Sprint 31 para_gap 否決精神）；不改 size／幾何（現狀正確，同 Sprint 26 勘正非修碼）。
+
+### 量測（A 級一手證據，本機紅線不入 repo）
+
+- 33 個案扉頁（右頁頂 17.9pt 大標）右半頁頂 NotoSans 級數分布：全數僅 11.4pt（資訊列副標「【格局】…」）＋17.9pt（大標），12.9pt 0 命中。
+- 全書跨頁 81 個 12.9pt NotoSans span：全落序文頁左半（PDF 3/6/8/12/14/16/174），文字為序文標題句（「把自己放回生命的正中央」等）。交叉檢查 12.9pt 與 33 個案扉頁交集＝空集（決定性反證）。
+
+### 變更
+
+- [實作] templates/neizai-zhengli.json：個案中標 note 末尾「另有 12.9pt 變體見掃描」勘正為量測釐清結論（33 扉頁 0 命中、81 span 全序文、屬推薦序大標）；size_pt 11.4 不動（現狀正確）。
+- [實作] tests/test_styles.py：新增 `test_case_info_size_single_and_distinct_from_preface` 守門（個案中標 11.4 不等於推薦序 12.9、同 source_font 但級數用途分離，防依誤導 note 把 12.9 併回個案中標）。測試 214 → 215。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 215 passed / 0 failed；typecheck（py_compile 全部）EXIT=0。
+- Gate 4 獨立驗證：量測（PyMuPDF get_text span）與守門測試（模版載入斷言）不同方法互證；交叉檢查空集為反證，非單點推論。
+- Gate 3 同類掃描：grep 模版 note「見掃描／變體／待查」，掃出同類「掃描見變體」待查標記兩條（旁注-手札圖注 9pt、Case編號-手寫拉丁 15.9pt），屬不同樣式不同級數，依 R1/R5 須各自量測，本 Sprint 未量測不動、登記後續。
+- 繁中標點：本 Sprint 改動檔（模版／GAPS／PLAN／devlog／CHANGELOG／test_styles）無破折號字元殘留。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 續留 #13 剩項：slot 0 Case 編號黑 W5 13pt 雙元素（v1 只建副標）、雙線菱形框（美術資產不生成）、旁注 9pt 變體＋Case 編號 15.9pt 變體（Gate 3 新掃出，未量測）、B〜G 其他扉頁逐頁量測。
+
 ## v0.28.0（2026-07-12，Sprint 33）個案大標 para_gap 樣式拆分（個案扉頁 vs 內頁 h2）
 
 ### 決策（GAPS #13 剩項，承 Sprint 31 診斷）

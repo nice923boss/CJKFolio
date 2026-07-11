@@ -38,6 +38,22 @@ def test_body_style_matches_measured_values(template):
     assert body.source_font == "DFMingStd-W3"
 
 
+def test_case_info_size_single_and_distinct_from_preface(template):
+    """個案中標 vs 推薦序大標級數釐清（Sprint 34 量測，GAPS #13 剩項）：模版原 note
+    記「個案中標另有 12.9pt 變體見掃描」為誤導待查標記。量測參考書 33 個案扉頁：
+    右半頁頂 NotoSans 僅 11.4pt（資訊列副標「【格局】…」）＋17.9pt（大標），12.9pt
+    0 命中；全書 81 個 12.9pt NotoSans span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半）。
+    故個案中標＝單一 11.4pt，12.9pt 專屬 推薦序大標-黑體，二者不共用（守門防依誤導 note
+    把 12.9 併回個案中標）。"""
+    info = template.paragraph_styles["個案中標-NotoSans"]
+    preface = template.paragraph_styles["推薦序大標-黑體"]
+    assert info.size_pt == pytest.approx(11.4)      # 個案扉頁資訊列副標，單一級數
+    assert preface.size_pt == pytest.approx(12.9)   # 序文標題，Sprint 23 勘誤定案
+    # 同 source_font（NotoSansCJKtc-Medium）但級數與用途分離：勿把 12.9 併入個案中標
+    assert info.source_font == preface.source_font == "NotoSansCJKtc-Medium"
+    assert info.size_pt != preface.size_pt
+
+
 def test_master_a_geometry_from_measurements(template):
     a = template.masters["A-內文版"]
     assert a.grid.chars_per_line == 32
