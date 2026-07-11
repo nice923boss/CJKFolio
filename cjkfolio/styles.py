@@ -102,6 +102,22 @@ class RuleSpec:
 
 
 @dataclass(frozen=True)
+class TocSpec:
+    """主版目錄條目配置（v1：直排數字頁碼底錨＋垂直引導線，PLAN §1）。
+
+    page_no_style 為頁碼字元樣式名（須存在於模版 character_styles）；
+    page_no_bottom_pt 為頁碼末位底錨（p003 實測 490pt，top-down）；引導線為
+    行軸上的垂直實線（寬 0.1pt 實測），與文字同單 K92（§9）。幾何由
+    layout.toc_marks 依段末行推導。
+    """
+    page_no_style: str
+    page_no_bottom_pt: float
+    leader_width_pt: float = 0.1
+    leader_gap_pt: float = 2.0
+    leader_cmyk: tuple = (0.0, 0.0, 0.0, 0.92)
+
+
+@dataclass(frozen=True)
 class MasterPage:
     name: str
     margins: Margins
@@ -110,6 +126,7 @@ class MasterPage:
     footer: dict = field(default_factory=dict)  # name → FooterItem
     frame: Optional[FrameSpec] = None  # 向量裝飾框（v1：CIP 細框；None＝不畫框）
     rule: Optional[RuleSpec] = None  # 向量裝飾線（v1：目錄天頭虛線；None＝不畫線）
+    toc: Optional[TocSpec] = None  # 目錄條目配置（頁碼底錨＋引導線；None＝非目錄頁）
     evidence: Optional[str] = None
     note: Optional[str] = None
 
@@ -205,6 +222,21 @@ def _rule_spec(d: dict, ctx: str) -> RuleSpec:
     )
 
 
+def _toc_spec(d: dict, ctx: str) -> TocSpec:
+    style = str(_require(d, "page_no_style", ctx))
+    bottom = _require(d, "page_no_bottom_pt", ctx)
+    cmyk = d.get("leader_cmyk", [0.0, 0.0, 0.0, 0.92])
+    if not (isinstance(cmyk, (list, tuple)) and len(cmyk) == 4):
+        raise TemplateError(f"{ctx}.leader_cmyk 須為 4 元素 [c,m,y,k]，得到 {cmyk!r}")
+    return TocSpec(
+        page_no_style=style,
+        page_no_bottom_pt=float(bottom),
+        leader_width_pt=float(d.get("leader_width_pt", 0.1)),
+        leader_gap_pt=float(d.get("leader_gap_pt", 2.0)),
+        leader_cmyk=tuple(float(v) for v in cmyk),
+    )
+
+
 def _master(name: str, d: dict) -> MasterPage:
     ctx = f"masters[{name}]"
     m = _require(d, "margins_mm", ctx)
@@ -231,6 +263,7 @@ def _master(name: str, d: dict) -> MasterPage:
         },
         frame=_frame_spec(d["frame"], f"{ctx}.frame") if d.get("frame") else None,
         rule=_rule_spec(d["rule"], f"{ctx}.rule") if d.get("rule") else None,
+        toc=_toc_spec(d["toc"], f"{ctx}.toc") if d.get("toc") else None,
         evidence=d.get("evidence"),
         note=d.get("note"),
     )
@@ -245,7 +278,7 @@ def template_from_dict(data) -> Template:
         if key not in data:
             raise TemplateError(f"模版缺 {key} 區塊")
     page = data["page"]
-    return Template(
+    template = Template(
         name=str(data["name"]),
         page_width_mm=float(_require(page, "width_mm", "page")),
         page_height_mm=float(_require(page, "height_mm", "page")),
@@ -260,6 +293,13 @@ def template_from_dict(data) -> Template:
         md_mapping=dict(data.get("md_mapping", {})),
         md_inline_mapping=dict(data.get("md_inline_mapping", {})),
     )
+    for mname, master in template.masters.items():
+        if master.toc and master.toc.page_no_style not in template.character_styles:
+            raise TemplateError(
+                f"masters[{mname}].toc 引用的頁碼字元樣式"
+                f"「{master.toc.page_no_style}」不存在於 character_styles"
+            )
+    return template
 
 
 def load_template(path) -> Template:

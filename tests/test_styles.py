@@ -8,6 +8,7 @@ from cjkfolio.styles import (
     FrameSpec,
     RuleSpec,
     TemplateError,
+    TocSpec,
     load_template,
     template_from_dict,
 )
@@ -170,3 +171,36 @@ def test_rule_defaults_when_optional_omitted():
     assert r.line_width_pt == 1.0
     assert r.dash_on_pt == 3.0 and r.dash_off_pt == 2.0
     assert r.bleed_extend_pt == pytest.approx(3.0 * 72.0 / 25.4)  # 預設出血 3mm
+
+
+# ---------- 目錄條目頁碼配置（Sprint 16） ----------
+
+def test_master_toc_parsing(template):
+    t = template.masters["D-目錄"].toc
+    assert isinstance(t, TocSpec)
+    assert t.page_no_style == "頁碼數字-GillSans"
+    assert t.page_no_bottom_pt == pytest.approx(490.0)  # p003 頁碼末位底實測
+    assert t.leader_width_pt == pytest.approx(0.1)      # 引導線寬實測
+    assert t.leader_gap_pt == pytest.approx(2.0)
+    assert t.leader_cmyk == (0.0, 0.0, 0.0, 0.92)       # 引導線同文字單 K92
+    # 非目錄主版無 toc 配置
+    assert template.masters["A-內文版"].toc is None
+
+
+def _template_with_toc(toc_dict):
+    data = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    data["masters"]["D-目錄"]["toc"] = toc_dict
+    return data
+
+
+def test_toc_missing_required_rejected():
+    with pytest.raises(TemplateError, match="page_no_style"):
+        template_from_dict(_template_with_toc({"page_no_bottom_pt": 490}))
+    with pytest.raises(TemplateError, match="page_no_bottom_pt"):
+        template_from_dict(_template_with_toc({"page_no_style": "頁碼數字-GillSans"}))
+
+
+def test_toc_unknown_page_no_style_rejected():
+    with pytest.raises(TemplateError, match="頁碼字元樣式"):
+        template_from_dict(_template_with_toc(
+            {"page_no_style": "不存在的樣式", "page_no_bottom_pt": 490}))

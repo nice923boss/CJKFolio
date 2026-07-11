@@ -269,7 +269,8 @@
    "grid": {"chars_per_line": 32, "lines_per_page": 13, "char_advance_pt": 12.08, "line_pitch_pt": 23.0, "base_size_pt": 11.5},
    "mirror": true,
    "rule": {"kind": "toc-rule", "cmyk": [0, 0, 0, 0.57], "line_width_pt": 1.0, "dash_on_pt": 3.0, "dash_off_pt": 2.0, "y_from_top_pt": 122.46},
-   "evidence": "天頭 47.63mm＝條目內容起點 135pt（p003 Case 標籤 y 實測，內容在虛線之下）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；虛線篇名斷開（部名嵌線）與條目縮退、直排數字頁碼佈局未實作（GAPS #13）"
+   "toc": {"page_no_style": "頁碼數字-GillSans", "page_no_bottom_pt": 490.0, "leader_width_pt": 0.1, "leader_gap_pt": 2.0, "leader_cmyk": [0, 0, 0, 0.92]},
+   "evidence": "天頭 47.63mm＝條目內容起點 135pt（p003 Case 標籤 y 實測，內容在虛線之下）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；條目頁碼底錨 490pt 與引導線 0.1pt 為 p003 實測、頁碼字型以頁碼數字樣式對映（原書 Times 9pt，Sprint 16）；虛線篇名斷開（部名嵌線）與條目縮退未實作（GAPS #13）"
   },
   "E-序文版": {
    "margins_mm": {"top": 32.49, "bottom": 41.13, "outer": 21.0, "inner": 25.58},

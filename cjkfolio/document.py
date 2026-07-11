@@ -28,10 +28,14 @@ class Run:
 
 @dataclass(frozen=True)
 class Paragraph:
-    """不變式：text ＝ 全段字面 ＝ runs 文字串接（__post_init__ 正規化）。"""
+    """不變式：text ＝ 全段字面 ＝ runs 文字串接（__post_init__ 正規化）。
+
+    page_no：目錄條目頁碼（選配，僅數字字串；@2 相容擴充，無欄位照載）。
+    """
     text: str = ""
     style: str = ""
     runs: tuple = ()
+    page_no: Optional[str] = None
 
     def __post_init__(self):
         if self.runs:
@@ -70,12 +74,16 @@ def document_from_dict(data) -> "Document":
     for i, p in enumerate(raw):
         if not isinstance(p, dict) or not isinstance(p.get("style"), str) or not p["style"]:
             raise DocumentError(f"paragraphs[{i}] 需含非空 style 字串")
+        page_no = p.get("page_no")
+        if page_no is not None and not (isinstance(page_no, str) and page_no.isdigit()):
+            raise DocumentError(f"paragraphs[{i}] page_no 需為數字字串，得到 {page_no!r}")
         if "runs" in p:
             if schema == SCHEMA_V1:
                 raise DocumentError(f"paragraphs[{i}] 使用 runs 需 schema document@2")
-            paragraphs.append(Paragraph(style=p["style"], runs=_runs_from_list(p["runs"], i)))
+            paragraphs.append(Paragraph(style=p["style"], runs=_runs_from_list(p["runs"], i),
+                                        page_no=page_no))
         elif isinstance(p.get("text"), str):
-            paragraphs.append(Paragraph(p["text"], p["style"]))
+            paragraphs.append(Paragraph(p["text"], p["style"], page_no=page_no))
         else:
             raise DocumentError(f"paragraphs[{i}] 需含 text 字串或 runs 陣列")
     return Document(
@@ -98,12 +106,16 @@ class Document:
 
 def _paragraph_to_dict(p: Paragraph) -> dict:
     if len(p.runs) == 1 and p.runs[0].char_style is None:
-        return {"text": p.text, "style": p.style}
-    runs = [
-        {"text": r.text, **({"char_style": r.char_style} if r.char_style else {})}
-        for r in p.runs
-    ]
-    return {"style": p.style, "runs": runs}
+        out = {"text": p.text, "style": p.style}
+    else:
+        runs = [
+            {"text": r.text, **({"char_style": r.char_style} if r.char_style else {})}
+            for r in p.runs
+        ]
+        out = {"style": p.style, "runs": runs}
+    if p.page_no is not None:
+        out["page_no"] = p.page_no
+    return out
 
 
 def document_to_dict(doc: Document) -> dict:

@@ -127,3 +127,31 @@ def test_unknown_char_style_refs_against_template():
     doc = document_from_dict(d)
     template = load_template(TEMPLATE)
     assert unknown_char_style_refs(doc, template) == ["不存在的字元樣式"]
+
+
+# ---------- 目錄條目頁碼（Sprint 16） ----------
+
+def test_document_page_no_optional_load_and_round_trip(tmp_path):
+    d = valid_dict()
+    d["paragraphs"][0] = {"text": "安放與整理的十個提問", "style": "目錄-篇章條目",
+                          "page_no": "169"}
+    doc = document_from_dict(d)
+    assert doc.paragraphs[0].page_no == "169"
+    assert doc.paragraphs[1].page_no is None  # 無欄位照載（@2 相容擴充）
+    # round-trip：有值才寫、無值不出現
+    out = document_to_dict(doc)
+    assert out["paragraphs"][0]["page_no"] == "169"
+    assert "page_no" not in out["paragraphs"][1]
+    path = tmp_path / "toc.json"
+    save_document(doc, path)
+    assert load_document(path) == doc
+
+
+def test_document_page_no_rejects_non_digit():
+    d = valid_dict()
+    d["paragraphs"][0] = {"text": "條目", "style": "目錄-篇章條目", "page_no": "十六"}
+    with pytest.raises(DocumentError, match="page_no"):
+        document_from_dict(d)
+    d["paragraphs"][0] = {"text": "條目", "style": "目錄-篇章條目", "page_no": 169}
+    with pytest.raises(DocumentError, match="page_no"):
+        document_from_dict(d)

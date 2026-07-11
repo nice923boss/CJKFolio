@@ -448,3 +448,128 @@ def test_render_no_rule_master_band_empty(template, tmp_path):
     y_px = round(122.46 * scale)
     row = [img.getpixel((x, y_px)) for x in range(round(10 * scale))]
     assert all(v >= 250 for v in row), "無 rule 主版的頁邊帶不應有虛線墨"
+
+
+# ---------- 目錄條目頁碼＋引導線（Sprint 16） ----------
+
+PT = 72.0 / 25.4
+
+
+def make_toc_doc_paged(entries_with_pages):
+    """自擬目錄文件：entries_with_pages＝[(標題, 頁碼|None), ...]。"""
+    paras = []
+    for text, page_no in entries_with_pages:
+        p = {"text": text, "style": "目錄-篇章條目"}
+        if page_no is not None:
+            p["page_no"] = page_no
+        paras.append(p)
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "目錄樣張", "template": "neizai-zhengli", "master": "D-目錄"},
+        "paragraphs": paras,
+    })
+
+
+def test_engine_page_no_rides_paragraph_end_line(template):
+    """ParagraphSpec.page_no 只掛到段末行的 PlacedLine（engine 純載體）。"""
+    from cjkfolio.engine import ParagraphSpec, flow_pages
+    long_title = "整" * 40  # 超過容量 34 → 折兩行
+    specs = [ParagraphSpec(text=long_title, style="目錄-篇章條目", indent=0,
+                           chars_per_line=34, page_no="169")]
+    pages = flow_pages(specs, 34, 13)
+    placed = [pl for page in pages for pl in page]
+    assert len(placed) == 2
+    assert placed[0].page_no is None       # 非段末行不帶
+    assert placed[1].page_no == "169"      # 段末行帶頁碼
+
+
+def test_layout_toc_marks_geometry(template):
+    doc = make_toc_doc_paged([
+        ("安放與整理的十個提問", "169"),
+        ("無頁碼的條目不產記號", None),
+    ])
+    layout = layout_document(doc, template)
+    assert layout.violations == []
+    marks = layout.toc_marks[1]
+    assert len(marks) == 1  # 只有帶 page_no 的條目
+    m = marks[0]
+    assert m.digits == "169"
+    assert m.char_style == "頁碼數字-GillSans"
+
+    master = template.masters["D-目錄"]
+    grid = master.grid
+    cstyle = template.character_styles["頁碼數字-GillSans"]
+    digit_adv = style_advance_pt(cstyle, grid)
+    assert m.digit_advance_pt == pytest.approx(digit_adv)
+    assert m.digit_size_pt == pytest.approx(cstyle.size_pt)
+    # 頁碼底錨實測 490pt：首位頂＝底−位數×字距
+    assert m.page_no_top_pt == pytest.approx(490.0 - 3 * digit_adv)
+    # 引導線：標題末＋gap 〜 頁碼頂−gap（標題 10 字、indent 0、slot 0）
+    entry_style = template.paragraph_styles["目錄-篇章條目"]
+    adv = style_advance_pt(entry_style, grid)
+    title_end = master.margins.top_mm * PT + 10 * adv
+    assert m.slot == 0
+    assert m.leader_y0_pt == pytest.approx(title_end + 2.0)
+    assert m.leader_y1_pt == pytest.approx(m.page_no_top_pt - 2.0)
+    assert m.leader_y0_pt < m.leader_y1_pt  # 正常條目線長為正
+
+
+def test_layout_page_no_without_master_toc_raises(template):
+    """帶 page_no 的段落落在無 toc 配置的主版 → 快速失敗。"""
+    doc = document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "誤用", "template": "neizai-zhengli", "master": "A-內文版"},
+        "paragraphs": [{"text": "字。", "style": "內文-明體直排", "page_no": "5"}],
+    })
+    with pytest.raises(ValueError, match="toc"):
+        layout_document(doc, template)
+
+
+@needs_fonts
+def test_render_toc_page_no_and_leader(template, tmp_path):
+    """條目頁碼（直排逐位、底錨）＋引導線（行軸垂直細線）著墨於推導幾何。"""
+    doc = make_toc_doc_paged([("安放與整理的十個提問", "169")])
+    result = render_document(doc, template, tmp_path, dpi=300, footer=False)
+    assert result.violations == []
+    master = template.masters["D-目錄"]
+    layout = layout_document(doc, template)
+    m = layout.toc_marks[1][0]
+    scale = 300 / 72.0
+    img = Image.open(result.paths[0]).convert("L")
+    axis = line_axis_x_pt(template, master, m.slot, 1, line_slots=m.line_slots)
+    ax_px = round(axis * scale)
+    # 引導線：行軸 x 上、(leader_y0, leader_y1) 區間內有墨且細（左右 3px 外無墨）
+    mid_y = round((m.leader_y0_pt + m.leader_y1_pt) / 2 * scale)
+    band = [img.getpixel((x, mid_y)) for x in range(ax_px - 8, ax_px + 9)]
+    assert min(band) < 200, "引導線中點無墨"
+    assert img.getpixel((ax_px - 8, mid_y)) >= 250 and img.getpixel((ax_px + 8, mid_y)) >= 250, \
+        "引導線過寬（應為 0.1pt 細線）"
+    # 引導線起點之上一小段（標題末字與線之間的 gap）無墨
+    assert img.getpixel((ax_px, round((m.leader_y0_pt - 1.0) * scale))) >= 250
+    # 頁碼：三位數字著墨於 [page_no_top, bottom] 帶、行軸置中
+    top_px = round(m.page_no_top_pt * scale)
+    bot_px = round(master.toc.page_no_bottom_pt * scale)
+    crop = img.crop((ax_px - round(m.digit_size_pt * scale), top_px,
+                     ax_px + round(m.digit_size_pt * scale), bot_px))
+    ink = ImageOps.invert(crop).getbbox()
+    assert ink is not None, "頁碼區無數字著墨"
+    # 頁碼底不越過底錨（bbox 底在 crop 內）
+    assert ink[3] <= crop.height
+
+
+@needs_fonts
+def test_render_toc_entry_without_page_no_has_no_leader(template, tmp_path):
+    """無 page_no 的條目不畫引導線與頁碼（標題以下至底錨帶無墨）。"""
+    doc = make_toc_doc_paged([("無頁碼的條目", None)])
+    result = render_document(doc, template, tmp_path, dpi=300, footer=False)
+    master = template.masters["D-目錄"]
+    scale = 300 / 72.0
+    img = Image.open(result.paths[0]).convert("L")
+    axis = line_axis_x_pt(template, master, 0, 1, line_slots=1)
+    ax_px = round(axis * scale)
+    entry_style = template.paragraph_styles["目錄-篇章條目"]
+    adv = style_advance_pt(entry_style, master.grid)
+    title_end_px = round((master.margins.top_mm * PT + 6 * adv + 2) * scale)
+    bot_px = round(master.toc.page_no_bottom_pt * scale)
+    col = [img.getpixel((ax_px, y)) for y in range(title_end_px, bot_px)]
+    assert all(v >= 250 for v in col), "無頁碼條目不應有引導線或頁碼墨"

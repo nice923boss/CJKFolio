@@ -5,10 +5,11 @@
 - 行容量 = floor(欄高 / 該樣式字距)，欄高 = 網格滿行字數 × 網格字距。
 - 行槽寬 = ceil(級數 / 行距)，級數不超過行距時仍佔 1 槽。
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import ceil, floor
 
 from .engine import ParagraphSpec, check_kinsoku, flow_pages
+from .primitives import PT_PER_MM
 from .styles import Grid, ParagraphStyle, Template
 
 _EPS = 1e-6
@@ -82,11 +83,77 @@ class LayoutPage:
 
 
 @dataclass(frozen=True)
+class TocEntryMark:
+    """目錄條目記號（頁碼＋引導線，top-down pt；x＝行軸由後端以 slot 求）。
+
+    幾何（PLAN §1、p003 一手量測）：頁碼直排逐位直立、底錨 toc.page_no_bottom_pt；
+    引導線為行軸垂直實線，自標題末＋gap 至頁碼頂−gap。leader_y1 ≤ leader_y0 時
+    後端不畫線（重疊守護，違規訊息由 layout 列入 violations 不沉默）。
+    """
+    slot: int              # 段末行行槽（行軸鍵）
+    line_slots: int        # 該行佔的行槽數（行軸置中用，同 body）
+    digits: str
+    digit_size_pt: float
+    digit_advance_pt: float
+    page_no_top_pt: float  # 首位數字槽頂
+    leader_y0_pt: float    # 引導線起（標題末＋gap）
+    leader_y1_pt: float    # 引導線終（頁碼頂−gap）
+    char_style: str        # 頁碼字元樣式名
+
+
+@dataclass(frozen=True)
 class LayoutResult:
     pages: tuple
     violations: list  # 禁則違規訊息（runtime 檢查，應為空）
     justify_stats: dict  # {"squeezed": n, "stretched": n, "beyond": n}
     vertical: bool = True  # 頁面書寫方向（False＝橫排 horizontal-tb）
+    toc_marks: dict = field(default_factory=dict)  # page number → (TocEntryMark, ...)
+
+
+def _toc_marks(pages, template: Template, master) -> tuple:
+    """依段末行的 page_no 產出 TocEntryMark（幾何確定性推導）。
+
+    回傳 ({page_number: (mark, ...)}, [違規訊息])；帶 page_no 但主版無 toc 配置
+    時快速失敗（系統邊界）。
+    """
+    marks: dict = {}
+    violations: list = []
+    grid = master.grid
+    top_pt = master.margins.top_mm * PT_PER_MM
+    for page in pages:
+        for pl in page.placed:
+            if not pl.page_no:
+                continue
+            toc = master.toc
+            if toc is None:
+                raise ValueError(
+                    f"段落帶 page_no（{pl.page_no}）但主版「{master.name}」無 toc 配置"
+                )
+            entry_style = template.paragraph_styles[pl.style]
+            cstyle = template.character_styles[toc.page_no_style]
+            adv = style_advance_pt(entry_style, grid)
+            digit_adv = style_advance_pt(cstyle, grid)
+            used = sum(c.width for c in pl.line.cells)
+            title_end = top_pt + (pl.line.start_slot + used) * adv
+            page_no_top = toc.page_no_bottom_pt - len(pl.page_no) * digit_adv
+            mark = TocEntryMark(
+                slot=pl.slot,
+                line_slots=style_line_slots(entry_style, grid),
+                digits=pl.page_no,
+                digit_size_pt=cstyle.size_pt,
+                digit_advance_pt=digit_adv,
+                page_no_top_pt=page_no_top,
+                leader_y0_pt=title_end + toc.leader_gap_pt,
+                leader_y1_pt=page_no_top - toc.leader_gap_pt,
+                char_style=toc.page_no_style,
+            )
+            if mark.leader_y1_pt <= mark.leader_y0_pt:
+                violations.append(
+                    f"目錄頁碼：頁 {page.number} 條目（…{pl.line.cells[-1].text}）標題"
+                    f"與頁碼區重疊（引導線長 ≤0，不畫線）"
+                )
+            marks.setdefault(page.number, []).append(mark)
+    return {n: tuple(ms) for n, ms in marks.items()}, violations
 
 
 def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
@@ -110,6 +177,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 chars_per_line=style_line_capacity(st, grid),
                 line_slots=style_line_slots(st, grid),
                 runs=tuple((r.text, r.char_style) for r in p.runs),
+                page_no=p.page_no,
             )
         )
     raw_pages = flow_pages(
@@ -118,6 +186,8 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
     )
     pages = tuple(LayoutPage(i + 1, tuple(page)) for i, page in enumerate(raw_pages))
     violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
+    toc_marks, toc_violations = _toc_marks(pages, template, master)
+    violations += toc_violations
     stats = {"squeezed": 0, "stretched": 0, "beyond": 0}
     if vertical:  # 齊行為直排內文特徵；橫排版權頁短行左齊、不字距縮放
         for page in pages:
@@ -126,4 +196,4 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                 if status in stats:
                     stats[status] += 1
     return LayoutResult(pages=pages, violations=violations, justify_stats=stats,
-                        vertical=vertical)
+                        vertical=vertical, toc_marks=toc_marks)

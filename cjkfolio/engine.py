@@ -67,6 +67,7 @@ class ParagraphSpec:
     chars_per_line: Optional[int] = None  # None → 用頁面預設
     line_slots: int = 1  # 每行佔的行槽數（特大級數標題 > 1）
     runs: Optional[tuple] = None  # ((text, char_style|None), ...)；None → 全段無字元樣式
+    page_no: Optional[str] = None  # 目錄條目頁碼（純載體，掛到段末行，不影響斷行禁則）
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ class PlacedLine:
     slot: int
     line: Line
     style: str
+    page_no: Optional[str] = None  # 目錄條目頁碼（僅段末行帶值）
 
 
 def normalize(text: str) -> str:
@@ -216,13 +218,13 @@ def flow_pages(
     cur: list = []
     slot = 0
 
-    def emit(line: Line, style: str, line_slots: int) -> None:
+    def emit(line: Line, style: str, line_slots: int, page_no=None) -> None:
         nonlocal slot, cur
         if slot + line_slots > slots_per_page:
             pages.append(cur)
             cur = []
             slot = 0
-        cur.append(PlacedLine(slot, line, style))
+        cur.append(PlacedLine(slot, line, style, page_no=page_no))
         slot += line_slots
 
     for pi, spec in enumerate(specs):
@@ -231,7 +233,8 @@ def flow_pages(
         cells = (cells_from_runs(spec.runs, vertical) if spec.runs
                  else tokenize(normalize(spec.text), vertical=vertical))
         for line in _break_cells(cells, cap, indent=indent):
-            emit(line, spec.style, spec.line_slots)
+            emit(line, spec.style, spec.line_slots,
+                 page_no=spec.page_no if line.para_end else None)
         if pi < len(specs) - 1:
             slot += spec.gap_after
             if slot >= slots_per_page:

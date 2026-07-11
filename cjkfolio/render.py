@@ -21,7 +21,7 @@ from .layout import (
     style_line_slots,
 )
 from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
-from .primitives import cip_frame_rect, toc_rule_line
+from .primitives import StrokeLine, cip_frame_rect, toc_rule_line
 from .styles import MasterPage, Template
 
 PT_PER_MM = 72.0 / 25.4
@@ -341,8 +341,28 @@ class PageRenderer:
         line = toc_rule_line(mm_to_pt(self.template.page_width_mm), self.master.rule)
         _draw_stroke_line(img, line, self.scale)
 
+    def _draw_toc_marks(self, img, marks, book_number: int) -> None:
+        """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
+        幾何取 layout.TocEntryMark，與 pdf_writer 同源。"""
+        toc = self.master.toc
+        for m in marks:
+            axis = line_axis_x_pt(self.template, self.master, m.slot, book_number,
+                                  line_slots=m.line_slots)
+            if m.leader_y1_pt > m.leader_y0_pt:  # 重疊守護（violations 已列不沉默）
+                _draw_stroke_line(img, StrokeLine(
+                    x0=axis, y0=m.leader_y0_pt, x1=axis, y1=m.leader_y1_pt,
+                    cmyk=toc.leader_cmyk, line_width_pt=toc.leader_width_pt,
+                ), self.scale)
+            cstyle = self.template.character_styles[m.char_style]
+            shaper = self._shaper_for(cstyle)
+            for i, digit in enumerate(m.digits):
+                cell_top = m.page_no_top_pt + i * m.digit_advance_pt
+                missing = _draw_tcy(img, shaper, digit, axis, cell_top,
+                                    m.digit_size_pt, m.digit_advance_pt, self.scale)
+                self._note_missing(shaper, missing)
+
     def render_page(self, page, footer_texts=None, book_number=None,
-                    vertical: bool = True) -> Image.Image:
+                    vertical: bool = True, toc_marks=()) -> Image.Image:
         template = self.template
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
@@ -361,6 +381,8 @@ class PageRenderer:
             self._draw_vertical_body(img, page, book_number)
         else:
             self._draw_horizontal_body(img, page, book_number)
+        if toc_marks:  # 目錄條目頁碼＋引導線（marks 僅目錄主版產生）
+            self._draw_toc_marks(img, toc_marks, book_number)
         if footer_texts:
             self._draw_footer(img, book_number, footer_texts)
         return img
@@ -392,7 +414,8 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
                 "title": doc.title,
             }
         img = renderer.render_page(page, footer_texts=texts, book_number=book_number,
-                                   vertical=layout.vertical)
+                                   vertical=layout.vertical,
+                                   toc_marks=layout.toc_marks.get(page.number, ()))
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)

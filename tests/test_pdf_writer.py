@@ -545,3 +545,89 @@ def test_export_toc_rule_preflight_green(template, tmp_path):
     ]), template, out, footer=False)
     report = check_pdfx1a(out)
     assert report.ok, [f for f in report.findings if not f.ok]
+
+
+# ---------- 目錄條目頁碼＋引導線（Sprint 16） ----------
+
+def make_toc_doc_paged(entries_with_pages):
+    paras = []
+    for text, page_no in entries_with_pages:
+        p = {"text": text, "style": "目錄-篇章條目"}
+        if page_no is not None:
+            p["page_no"] = page_no
+        paras.append(p)
+    return document_from_dict({
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "目錄樣張", "template": "neizai-zhengli", "master": "D-目錄"},
+        "paragraphs": paras,
+    })
+
+
+@needs_fonts
+def test_export_toc_leader_line_solid_k92_parity(template, tmp_path):
+    """引導線：垂直實線（該狀態塊無 d）、K92 描邊、座標＝mark 幾何＋行軸＋出血。"""
+    from cjkfolio.layout import layout_document
+    doc = make_toc_doc_paged([("安放與整理的十個提問", "169")])
+    out = tmp_path / "toc-entry.pdf"
+    export_pdf(doc, template, out, footer=False)
+    pdf = fitz.open(str(out))
+    content = b"".join(pdf.xref_stream(x) for x in pdf[0].get_contents()).decode("latin-1")
+    assert "0 0 0 0.92 K" in content, "引導線描邊非單 K92"
+    # 引導線的 q…Q 塊：0.1 w、無 d、垂直 m/l
+    blocks = re.findall(r"q\n(.*?)\nQ", content, re.S)
+    leader = [b for b in blocks if "0.1 w" in b]
+    assert leader, "缺引導線狀態塊（0.1 w）"
+    assert " d" not in leader[0], "引導線不應掛 dash"
+    lm = re.search(r"([\d.\-]+) ([\d.\-]+) m\n([\d.\-]+) ([\d.\-]+) l", leader[0])
+    x0, y0, x1, y1 = map(float, lm.groups())
+    assert x0 == pytest.approx(x1, abs=0.01), "引導線應為垂直線"
+
+    master = template.masters["D-目錄"]
+    m = layout_document(doc, template).toc_marks[1][0]
+    axis = line_axis_x_pt(template, master, m.slot, 1, line_slots=m.line_slots)
+    page_h = mm_to_pt(template.page_height_mm)
+    assert x0 == pytest.approx(BLEED_PT + axis, abs=0.3)
+    # top-down → y-up：兩端點集合比對（emit 順序不拘）
+    got = sorted([y0, y1])
+    want = sorted([page_h + BLEED_PT - m.leader_y0_pt, page_h + BLEED_PT - m.leader_y1_pt])
+    assert got[0] == pytest.approx(want[0], abs=0.3)
+    assert got[1] == pytest.approx(want[1], abs=0.3)
+
+
+@needs_fonts
+def test_export_toc_page_no_digits_positions(template, tmp_path):
+    """頁碼三位直排逐位：PyMuPDF 抽字座標與 mark 幾何一致（底錨 490pt）。"""
+    from cjkfolio.layout import layout_document
+    doc = make_toc_doc_paged([("安放與整理的十個提問", "169")])
+    out = tmp_path / "toc-digits.pdf"
+    export_pdf(doc, template, out, footer=False)
+    pdf = fitz.open(str(out))
+    words = [w for w in pdf[0].get_text("words") if w[4] in ("1", "6", "9")]
+    assert len(words) == 3, f"頁碼應為 3 個獨立直立數字，得到 {words}"
+
+    master = template.masters["D-目錄"]
+    m = layout_document(doc, template).toc_marks[1][0]
+    axis = line_axis_x_pt(template, master, m.slot, 1, line_slots=m.line_slots)
+    # 直排由上而下 1→6→9；PyMuPDF top-down 座標含出血（PDF 頁面原點含 bleed）
+    words.sort(key=lambda w: w[1])
+    assert [w[4] for w in words] == ["1", "6", "9"]
+    for i, w in enumerate(words):
+        cx = (w[0] + w[2]) / 2
+        assert cx == pytest.approx(BLEED_PT + axis, abs=1.5), f"第 {i} 位未行軸置中"
+        cell_top = m.page_no_top_pt + i * m.digit_advance_pt
+        assert w[1] >= BLEED_PT + cell_top - 1.5, f"第 {i} 位高於字槽頂"
+    # 末位底不越過底錨
+    assert words[-1][3] <= BLEED_PT + master.toc.page_no_bottom_pt + 1.5
+
+
+@needs_fonts
+def test_export_toc_entry_preflight_green(template, tmp_path):
+    """加頁碼與引導線後目錄 PDF 仍過全部 X-1a 機械規則。"""
+    from cjkfolio.preflight import check_pdfx1a
+    out = tmp_path / "toc-entryx.pdf"
+    export_pdf(make_toc_doc_paged([
+        ("安放與整理的十個提問", "169"),
+        ("把回憶放回原位的方法", "197"),
+    ]), template, out, footer=False)
+    report = check_pdfx1a(out)
+    assert report.ok, [f for f in report.findings if not f.ok]
