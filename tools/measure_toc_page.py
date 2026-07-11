@@ -6,17 +6,20 @@
 輸出：assets/reference/toc_measurements.json（本機，不入 repo）＋終端摘要。
 用法（自 repo 根）：python tools/measure_toc_page.py [PDF路徑]
 """
-import json
 import sys
 from collections import Counter, defaultdict
-from pathlib import Path
 
 import fitz
 
-ROOT = Path(__file__).resolve().parents[1]
+from _measure_common import (
+    HALF_W,
+    is_spread,
+    reference_pdf,
+    stdout_utf8,
+    write_measurements,
+)
+
 SCAN_PAGES = 6    # 目錄在書前，掃 PDF 索引 0〜5
-HALF_W = 419.53   # 148mm，跨頁半寬（pt）
-PT_PER_MM = 72.0 / 25.4
 
 
 def _dash_lines(page):
@@ -117,13 +120,12 @@ def measure_half(page, idx, left):
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
-    pdf = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "內在整理-20260312.pdf")
-    doc = fitz.open(pdf)
+    stdout_utf8()
+    doc = fitz.open(reference_pdf())
     results = []
     for idx in range(min(SCAN_PAGES, len(doc))):
         page = doc[idx]
-        halves = [True, False] if page.rect.width > HALF_W * 1.5 else [True]
+        halves = [True, False] if is_spread(page) else [True]
         for left in halves:
             r = measure_half(page, idx, left)
             if r:
@@ -131,8 +133,7 @@ def main() -> int:
     if not results:
         print("掃描頁內未找到 dash 虛線")
         return 1
-    out = ROOT / "assets" / "reference" / "toc_measurements.json"
-    out.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    out = write_measurements("toc_measurements.json", results)
     for r in results:
         print(f"== PDF 索引 {r['page_index']} {r['half']} 半頁：虛線 y={r['rule_y_pt']:.2f}pt、"
               f"{len(r['rule_segments'])} 段 ==")

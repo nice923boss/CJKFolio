@@ -13,16 +13,21 @@
 figure_measurements.json（本機不入 repo）＋終端摘要。
 用法（自 repo 根）：python tools/measure_figure_page.py [PDF路徑]
 """
-import json
 import sys
-from pathlib import Path
 
 import fitz
 
-ROOT = Path(__file__).resolve().parents[1]
-HALF_W = 419.53           # 148mm 半頁寬（pt）
+from _measure_common import (
+    HALF_W,
+    PT_PER_MM,
+    is_spread,
+    reference_pdf,
+    spans,
+    stdout_utf8,
+    write_measurements,
+)
+
 PAGE_H = 595.28           # 210mm（pt）
-PT_PER_MM = 72.0 / 25.4
 CAPTION_FONT = "ChenYuluoyan"   # 辰宇落雁體＝圖說標籤（§8 可散布 OFL）
 FULL_PAGE_FRAC = 0.20     # 圖面積占比≥此＝Type 1 全頁圖文版
 INLINE_BODY_MIN = 60      # 內文字數≥此且非全頁圖＝Type 2 內嵌小圖
@@ -31,13 +36,6 @@ INLINE_BODY_MIN = 60      # 內文字數≥此且非全頁圖＝Type 2 內嵌小
 def _half_local(bbox, side: str):
     dx = HALF_W if side == "R" else 0.0
     return (bbox[0] - dx, bbox[1], bbox[2] - dx, bbox[3])
-
-
-def _spans(page):
-    for b in page.get_text("dict")["blocks"]:
-        for ln in b.get("lines", []):
-            for s in ln["spans"]:
-                yield s
 
 
 def measure_page(page, idx: int):
@@ -68,7 +66,7 @@ def measure_page(page, idx: int):
     frame["h"] = round(frame["y1"] - frame["y0"], 2)
 
     caps, body_tops = [], []
-    for s in _spans(page):
+    for s in spans(page):
         cx = (s["bbox"][0] + s["bbox"][2]) / 2
         if ("R" if cx >= HALF_W else "L") != side:
             continue
@@ -110,13 +108,12 @@ def _report_frame(rows, label):
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
-    pdf = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "內在整理-20260312.pdf")
-    doc = fitz.open(pdf)
+    stdout_utf8()
+    doc = fitz.open(reference_pdf())
     results = []
     for idx in range(len(doc)):
         page = doc[idx]
-        if page.rect.width < HALF_W * 1.5:
+        if not is_spread(page):
             continue
         r = measure_page(page, idx)
         if r:
@@ -125,9 +122,7 @@ def main() -> int:
         print("未找到含圖頁")
         return 1
 
-    out = ROOT / "assets" / "reference" / "figure_measurements.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    out = write_measurements("figure_measurements.json", results)
 
     full = [r for r in results if r["kind"] == "full"]
     inline = [r for r in results if r["kind"] == "inline"]

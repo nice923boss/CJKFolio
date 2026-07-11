@@ -3,24 +3,20 @@
 輸出：assets/reference/cip_measurements.json（本機，不入 repo）＋終端摘要（數字）。
 用法（自 repo 根）：python tools/measure_cip_page.py [PDF路徑]
 """
-import json
 import statistics
 import sys
 from collections import Counter
-from pathlib import Path
 
 import fitz
 
-ROOT = Path(__file__).resolve().parents[1]
+from _measure_common import HALF_W, reference_pdf, stdout_utf8, write_measurements
+
 PAGE_INDEX = 177  # PDF 頁 178（跨頁對開：版權頁為其中一半）
-HALF_W = 419.53   # 148mm，跨頁半寬（pt）
-PT_PER_MM = 72.0 / 25.4
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
-    pdf = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "內在整理-20260312.pdf")
-    page = fitz.open(pdf)[PAGE_INDEX]
+    stdout_utf8()
+    page = fitz.open(reference_pdf())[PAGE_INDEX]
     page_h = page.rect.height
 
     # ---- CIP 細框（get_drawings 獨立解析；p178 實測為 5 段線折線閉合，非 re）----
@@ -110,8 +106,7 @@ def main() -> int:
                        "bbox": list(sp["bbox"]), "origin": list(sp["origin"])}
                       for sp in spans],
     }
-    out = ROOT / "assets" / "reference" / "cip_measurements.json"
-    out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    out = write_measurements("cip_measurements.json", result)
 
     print(f"半邊：{'左（偶數頁）' if left_half else '右（奇數頁）'}；框數 {len(frames)}、spans {len(spans)}、行 {len(rows)}")
     fp = result["frame_page_pt"]

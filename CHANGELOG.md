@@ -2,6 +2,30 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.26.0（2026-07-12，Sprint 31）主軌否決（block 軸整數對齊無 pt 目標）＋轉替代軌 A：measure 工具共用模組
+
+### 決策（主軌否決，honest-planning R1／R8）
+
+- para_gap block 軸 pt 精度主軌以 A 級量測否決：block 軸（段落堆疊＝水平欄位，`slot → line_axis`）本就整數槽對齊、無 sub-slot pt 目標，別於 Sprint 29/30 inline 軸（首字縱向 6.02/6.24pt 真實偏移）。三線證據：(1) C 主版 evidence 明載「大標 para_gap 1 使 body 落 slot 3 vs 真書 slot 2」為整數槽差非 pt；(2) 中標 cx 354.24 ＝ slot 0、大標 331.28 ＝ slot 1（Δ0.03）皆恰整數槽；(3) 本機 probe 量 33 頁內文欄 gap/pitch 4.2〜6.0 隨內容變動、無固定殘差。釐清 Sprint 30 交接「需 block 軸 pt 偏移」為前提誤讀；硬加無真實偏移的 para_gap_offset_pt 違反 R5，不建機制。依 Owner 預授權轉替代軌 A（順手移除噪音）。
+
+### 新增
+
+- [實作] tools/_measure_common.py：measure 工具共用層，抽 4 工具重複的 `HALF_W`（419.53 字面值免捨入漂移）、`PT_PER_MM`、`spans`（回傳 list 供同頁多次篩選）、`is_spread`（半頁判定）、`reference_pdf`、`write_measurements`（JSON 樣板＋mkdir）、`stdout_utf8`；加 `BLEED_PT`／`strip_bleed`（Gate-4 model media→trim 換算正典 helper，收斂 Sprint 24/25/30 出血口徑）。常數量測層自持（同 primitives.py 對 PT_PER_MM 的先例），不 import 產品層。
+
+### 變更（工具重構，行為零變更）
+
+- measure_cip／toc／case／figure_page.py 改 import 共用層；順手清 measure_toc／cip 未使用的 `PT_PER_MM` 死碼。4 檔淨減 15 行重複。
+
+### 驗證（Gate 4 獨立）
+
+- 行為保持：重構前跑現行 4 工具快照 JSON → 重構後刪輸出重跑 → 逐工具 diff 對照，cip／toc／case／figure 全 **IDENTICAL**（0 差異）、4 工具 run 皆 exit 0（先刪輸出避免失敗留舊檔造成假 identical）。
+- 全套 `pytest spikes tests` 214 passed / 0 failed（產品碼未動）；typecheck（py_compile 全部）EXIT=0；tools/ 無 em-dash、無遺留 `reconfigure`／`ROOT`／`_spans`／`json.dumps`。
+
+### 已知限制（詳 GAPS.md #13）
+
+- block 軸整數對齊為本書網格特性（sub-slot 藝術偏移只現於 inline 軸），故 para_gap 無 pt 精度需求；C 個案扉頁「大標 para_gap 1 使 body 落 slot 3 vs 真書 slot 2」為整數差，正解 para_gap 1→0，但 個案大標 同時用於內頁 h2（42 頁）須拆樣式，續留 GAPS #13。
+- `BLEED_PT`／`strip_bleed` 為量測工具箱之 Gate-4 換算正典（model↔trim 比對），本 sprint 量無出血真書故未觸發（工具箱基建非死碼）；測試側 test_pdf_writer.py／test_lead_offset.py 的 BLEED_PT 仍各自持有，跨 tools/tests 統一非本軌範圍。
+
 ## v0.25.0（2026-07-12，Sprint 30）目錄章名條目 inline 偏移＋Gate 4 出血座標框勘正
 
 ### 新增

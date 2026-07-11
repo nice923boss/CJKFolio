@@ -7,30 +7,26 @@
 ＋終端摘要，供 C 主版大標行軸推導（比照 Sprint 20 部扉）。
 用法（自 repo 根）：python tools/measure_case_page.py [PDF路徑]
 """
-import json
 import sys
-from pathlib import Path
 
 import fitz
 
-ROOT = Path(__file__).resolve().parents[1]
-HALF_W = 419.53          # 148mm，跨頁半寬（pt）
-PT_PER_MM = 72.0 / 25.4
+from _measure_common import (
+    HALF_W,
+    PT_PER_MM,
+    is_spread,
+    reference_pdf,
+    spans,
+    stdout_utf8,
+    write_measurements,
+)
+
 TITLE_SIZE = 17.9        # 個案大標 NotoSansCJKtc-Medium（§4.2）
 TITLE_TOP_MAX = 115.0    # 扉頁大標起於頁頂（濾除內頁中段大標）
 
 
-def _spans(page) -> list:
-    out = []
-    for b in page.get_text("dict")["blocks"]:
-        for ln in b.get("lines", []):
-            for s in ln["spans"]:
-                out.append(s)
-    return out
-
-
 def measure_case(page, idx: int) -> dict | None:
-    sp = _spans(page)
+    sp = spans(page)
     title = [s for s in sp if abs(s["size"] - TITLE_SIZE) < 0.5
              and not s["font"].startswith(("Times", "Pepita"))]
     if not title:
@@ -71,13 +67,12 @@ def measure_case(page, idx: int) -> dict | None:
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")
-    pdf = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "內在整理-20260312.pdf")
-    doc = fitz.open(pdf)
+    stdout_utf8()
+    doc = fitz.open(reference_pdf())
     results = []
     for idx in range(len(doc)):
         page = doc[idx]
-        if page.rect.width < HALF_W * 1.5:   # 單頁（首末）跳過
+        if not is_spread(page):   # 單頁（首末）跳過
             continue
         r = measure_case(page, idx)
         if r:
@@ -85,8 +80,7 @@ def main() -> int:
     if not results:
         print("未找到個案扉頁大標")
         return 1
-    out = ROOT / "assets" / "reference" / "case_measurements.json"
-    out.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    out = write_measurements("case_measurements.json", results)
     for r in results:
         top_mm = r["title_first_top"] / PT_PER_MM
         print(f"== PDF {r['page_index']}　大標「{r['title_text'][:14]}」"
