@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.35.0（2026-07-12，Sprint 40）Phase 2 開工：PySide6 真視窗畫布骨架（技術棧定案＋點字格反查文件游標）
+
+### 決策（Owner AskUserQuestion 定案「建 PySide6 真視窗 demo 骨架」）
+
+- Phase 1 收尾後 Owner 定案進 Phase 2，並於 Phase 2 開工方式三選項（建 PySide6 真視窗 demo 骨架／先做 Owner 抽檢／另定範圍）選**建 demo 骨架**。**技術棧正式定案 PySide6**（Qt 6 官方綁定、LGPL；Spike 10 A 級數據，§5.2「Phase 2 開工定案」條件成就）。
+
+### 變更（editor/ 新套件，不入 pytest 基線）
+
+- [實作] editor/canvas.py：雙層畫布核心。底圖層＝既有 PNG 渲染後端（QGraphicsPixmapItem z=0）；互動層＝layout 幾何直接生成透明字格（QGraphicsRectItem z=1，data=(placed_idx, cell_idx)）。iter_cell_rects 逐項對齊 render._draw_vertical_body（line_axis_x_pt／style_advance_pt／line_justified_advance／lead_offset_pt，兩後端同源）。resolve_hit 點字格 → 文件游標（para_idx／span／text，承 Sprint 18 provenance）。
+- [實作] editor/app.py：真視窗 QMainWindow demo（雙層畫布顯示＋點字格反查游標＋高亮＋IME 測試區＋Owner 實測說明對話框＋製作者標示）。
+- [實作] editor/smoke_check.py：離屏 Gate-5 驗證（可跑＋雙層建構＋hit-test 100%＋provenance 一致），不入 pytest 基線（Sprint 17：GUI 不綁核心），獨立跑。
+- [Doc] editor/README.md：執行方式＋誠實範圍表＋Owner IME 實測協議。
+
+### 驗證
+
+- 離屏 smoke_check（samples/case-divider 自擬 C 個案扉頁）：雙層畫布建構、hit-test **48/48** 全對、48 cjk 字格 provenance span 切片＝cell.text；樣本 段0 字(0,1)＝「案」。
+- app 離屏建構：EditorWindow 建構無誤，模擬點選 段5 字(12,13)＝「。」（provenance 讀出）＋IME 回呼＋高亮皆驗。
+- 核心基線 `pytest spikes tests` **218 passed**（editor/ 未被收集，守 Sprint 17）；typecheck EXIT=0。
+- 繁中標點：editor/ 與本 Sprint 改動檔 grep 無破折號殘留。
+
+### 誠實範圍（honest-planning R3；詳 editor/README.md）
+
+- [實作]（離屏驗）：雙層畫布顯示＋點字格反查文件游標。
+- [Shell]／待 Owner（GAPS #19，離屏測不了）：真視窗視覺對位＋IME 直排輸入鍵盤實測；直排畫布內嵌 IME 編輯（打字→插入→reflow）為 Phase 2 編輯引擎後續工程，本骨架僅示範「IME 組字 → 已知游標目標」不變更文件、不 reflow。
+
+### 下個 Sprint 預定範圍
+
+- 待 Owner `python editor/app.py` 真視窗鍵盤實測 IME 直排輸入與視覺對位（GAPS #19）。回報順暢後進 Phase 2 編輯引擎（游標插入→局部 reflow→畫布更新），或依 Owner 指示調整畫布架構。
+
 ## v0.34.0（2026-07-12，Sprint 39）Phase 1 骨架收尾定案（honest review＋Known Limitations 彙整，Owner 定案收尾轉 Phase 2）
 
 ### 決策（Owner AskUserQuestion 定案「收尾轉 Phase 2」；honest-planning R5／R7）
