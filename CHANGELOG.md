@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.39.0（2026-07-12，Sprint 44）Phase 2 編輯引擎 undo／redo 堆疊（EditSession 提交態歷史）
+
+### 新增
+
+- [實作] cjkfolio/editing.py `EditSession`（**入 pytest 基線**）＝編輯會談控制器，補齊 Phase 2「復原重做」核心：
+  - 現態＝(document, cursor, layout)＋undo／redo 兩 (document, cursor) 快照堆疊，採標準「回上一個提交態」模型：編輯把編輯前態推入 undo 並清 redo；undo 把現態推入 redo、彈回上一態並 layout_document 全文重排（Spike 3 認可 7.67ms/章，非增量），redo 對稱。
+  - 編輯方法 insert／delete／replace／split／merge 委派既有 apply_*（Sprint 41〜43），統一經 `_commit` 記錄歷史、回 EditResult；undo／redo 還原後 locate_cell 反查游標畫布落點、回 EditResult，無可回退／重做回 None（no-op）；can_undo／can_redo／document／cursor／layout 唯讀屬性。
+  - 初始游標＝段 0 caret 0（v1 undo 還原上一提交態游標，不追 UI 中途點選）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **284 passed / 0 failed**（273→284，+11：starts_clean／insert／undo／redo／clear_redo／empty no-op×2／多步反向／游標反查／split-merge 路由／delete-replace 路由）；typecheck EXIT=0。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加 EditSession、未改既有函式與 editor/）。
+- 真實素材驗收（R5，自擬 make_doc／_plain 樣張）：插入→undo 回編輯前文件、can_redo 真、undo 後重排 0 違規、游標反查落首字格「三」；redo 復原編輯；新編輯清空 redo；split／merge／delete／replace 皆經 session 記錄可反向 undo，皆基線斷言。
+- 獨立方法：核心走 pytest 狀態機斷言（堆疊深度／文件內容／游標反查），editor 走 smoke_check 離屏建構；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線驗）：undo／redo 提交態歷史、編輯方法路由、還原重排與游標反查。
+- [Shell]／待 Owner（GAPS #24／#25／#19，離屏測不了）：app.py 尚未接線 undo／redo（Ctrl+Z／Ctrl+Y 鍵盤與選單為真視窗工程）；undo 粒度為每次 apply 一步（未合併連續輸入為單一 undo 單元）為 v1 已知限制。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗 undo／redo 鍵盤操作與視覺回饋（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎：字元樣式套用到選取範圍（apply_char_style，純邏輯可離屏驗，承 run 模型與 DocRange），或編輯 UI 接線（app.py Enter／Backspace／刪除／undo／redo 真視窗工程，待 Owner 真視窗回報批次）。
+
 ## v0.38.0（2026-07-12，Sprint 43）Phase 2 編輯引擎跨段合併與分裂（para_idx 重編＋游標跨段映射）
 
 ### 新增

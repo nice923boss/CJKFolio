@@ -14,6 +14,7 @@ from cjkfolio.editing import (
     CellAddress,
     DocCursor,
     DocRange,
+    EditSession,
     apply_delete,
     apply_insert,
     apply_merge,
@@ -576,3 +577,108 @@ def test_apply_merge_both_empty_address_none(template):
     assert res.document.paragraphs[0].text == ""
     assert res.cursor == DocCursor(0, 0)
     assert res.address is None
+
+
+# ---------- EditSession：undo／redo 堆疊（Sprint 44；純邏輯離屏可驗）----------
+
+def test_session_starts_clean(template):
+    s = EditSession(_plain("三房兩廳"), template)
+    assert s.document.paragraphs[0].text == "三房兩廳"
+    assert s.can_undo() is False
+    assert s.can_redo() is False
+    assert s.layout.violations == []
+
+
+def test_session_insert_edits_and_enables_undo(template):
+    s = EditSession(_plain("房兩廳"), template)
+    res = s.insert(DocCursor(0, 0), "三")
+    assert s.document.paragraphs[0].text == "三房兩廳"
+    assert res.document is s.document  # 回傳 EditResult 反映當前態
+    assert s.can_undo() is True
+    assert s.can_redo() is False
+
+
+def test_session_undo_restores_previous_document(template):
+    s = EditSession(_plain("房兩廳"), template)
+    s.insert(DocCursor(0, 0), "三")
+    res = s.undo()
+    assert s.document.paragraphs[0].text == "房兩廳"  # 回復編輯前
+    assert s.can_undo() is False
+    assert s.can_redo() is True
+    assert res is not None and res.document is s.document
+    assert s.layout.violations == []  # undo 後重排乾淨
+
+
+def test_session_redo_reapplies_edit(template):
+    s = EditSession(_plain("房兩廳"), template)
+    s.insert(DocCursor(0, 0), "三")
+    s.undo()
+    s.redo()
+    assert s.document.paragraphs[0].text == "三房兩廳"
+    assert s.can_undo() is True
+    assert s.can_redo() is False
+
+
+def test_session_new_edit_clears_redo(template):
+    s = EditSession(_plain("房兩廳"), template)
+    s.insert(DocCursor(0, 0), "三")
+    s.undo()                         # redo 堆疊有一項
+    s.insert(DocCursor(0, 0), "新")  # 新編輯清空 redo
+    assert s.can_redo() is False
+    assert s.document.paragraphs[0].text == "新房兩廳"
+
+
+def test_session_undo_on_empty_returns_none(template):
+    s = EditSession(_plain("三房"), template)
+    assert s.undo() is None
+    assert s.document.paragraphs[0].text == "三房"  # 無變更
+
+
+def test_session_redo_on_empty_returns_none(template):
+    s = EditSession(_plain("三房"), template)
+    assert s.redo() is None
+
+
+def test_session_multiple_edits_undo_in_reverse(template):
+    s = EditSession(_plain("兩廳"), template)
+    s.insert(DocCursor(0, 0), "房")  # "房兩廳"
+    s.insert(DocCursor(0, 0), "三")  # "三房兩廳"
+    s.undo()
+    assert s.document.paragraphs[0].text == "房兩廳"  # 回退第二次編輯
+    s.undo()
+    assert s.document.paragraphs[0].text == "兩廳"  # 回退第一次編輯
+    assert s.can_undo() is False
+
+
+def test_session_undo_locates_restored_cursor(template):
+    # 初始游標＝(0,0)；插入後 undo 回初始態，address 反查落首字格
+    s = EditSession(make_doc([{"text": "三房兩廳", "style": "內文-明體直排"}]), template)
+    s.insert(DocCursor(0, 2), "大")
+    res = s.undo()
+    assert res.cursor == DocCursor(0, 0)
+    addr = res.address
+    assert addr is not None
+    cell = res.layout.pages[addr.page_number - 1].placed[addr.placed_idx].line.cells[addr.cell_idx]
+    assert cell.text == "三"
+
+
+def test_session_routes_split_and_merge(template):
+    # split／merge 亦經 session 記錄歷史、可反向 undo
+    s = EditSession(make_doc([{"text": "三房兩廳", "style": "內文-明體直排"}]), template)
+    s.split(DocCursor(0, 2))
+    assert len(s.document.paragraphs) == 2
+    s.merge(1)
+    assert len(s.document.paragraphs) == 1 and s.document.paragraphs[0].text == "三房兩廳"
+    s.undo()  # 回退 merge
+    assert len(s.document.paragraphs) == 2
+    s.undo()  # 回退 split
+    assert len(s.document.paragraphs) == 1 and s.document.paragraphs[0].text == "三房兩廳"
+
+
+def test_session_delete_and_replace_through_session(template):
+    s = EditSession(make_doc([{"text": "三房大兩廳", "style": "內文-明體直排"}]), template)
+    s.delete(DocRange(0, 2, 3))  # 刪 "大"
+    assert s.document.paragraphs[0].text == "三房兩廳"
+    s.replace(DocRange(0, 0, 2), "兩房")  # 替 "三房"→"兩房"
+    assert s.document.paragraphs[0].text == "兩房兩廳"
+    assert s.layout.violations == []

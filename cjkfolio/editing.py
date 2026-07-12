@@ -304,3 +304,92 @@ def apply_merge(doc: Document, template: Template, para_idx: int) -> EditResult:
     return EditResult(
         document=new_doc, layout=new_layout, cursor=new_cursor, address=address
     )
+
+
+class EditSession:
+    """編輯會談：文件＋游標的 undo／redo 歷史（可變控制器，純邏輯離屏可驗）。
+
+    現態＝(document, cursor, layout)；undo／redo 各持 (document, cursor) 快照堆疊，採
+    標準「回上一個提交態」模型：一次編輯把編輯前的 (document, cursor) 推入 undo 並清空
+    redo；undo 把現態推入 redo、彈回上一態並全文重排（Spike 3 認可 7.67ms/章，非增量），
+    redo 對稱。初始游標＝段 0 caret 0（UI 點選另覆寫；v1 undo 還原上一提交態游標，不追
+    UI 中途點選）。app.py 尚未接線 undo／redo（GAPS #24／#19 待 Owner 真視窗）。
+    """
+
+    def __init__(self, document: Document, template: Template):
+        self._template = template
+        self._document = document
+        self._cursor = DocCursor(0, 0)
+        self._layout = layout_document(document, template)
+        self._undo: list = []  # [(document, cursor)]，最舊→最新
+        self._redo: list = []
+
+    @property
+    def document(self) -> Document:
+        return self._document
+
+    @property
+    def cursor(self) -> DocCursor:
+        return self._cursor
+
+    @property
+    def layout(self) -> LayoutResult:
+        return self._layout
+
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    def can_redo(self) -> bool:
+        return bool(self._redo)
+
+    def _commit(self, result: EditResult) -> EditResult:
+        """把現態存入 undo、清 redo，切換至編輯結果（供各編輯方法共用）。"""
+        self._undo.append((self._document, self._cursor))
+        self._redo.clear()
+        self._document = result.document
+        self._cursor = result.cursor
+        self._layout = result.layout
+        return result
+
+    def insert(self, cursor: DocCursor, text: str) -> EditResult:
+        return self._commit(apply_insert(self._document, self._template, cursor, text))
+
+    def delete(self, drange: DocRange) -> EditResult:
+        return self._commit(apply_delete(self._document, self._template, drange))
+
+    def replace(self, drange: DocRange, text: str) -> EditResult:
+        return self._commit(apply_replace(self._document, self._template, drange, text))
+
+    def split(self, cursor: DocCursor) -> EditResult:
+        return self._commit(apply_split(self._document, self._template, cursor))
+
+    def merge(self, para_idx: int) -> EditResult:
+        return self._commit(apply_merge(self._document, self._template, para_idx))
+
+    def _restore(self, document: Document, cursor: DocCursor) -> EditResult:
+        """切換現態至還原的 (document, cursor)、全文重排、反查游標畫布落點。"""
+        self._document = document
+        self._cursor = cursor
+        self._layout = layout_document(document, self._template)
+        return EditResult(
+            document=document,
+            layout=self._layout,
+            cursor=cursor,
+            address=locate_cell(self._layout, cursor),
+        )
+
+    def undo(self) -> Optional[EditResult]:
+        """回退一步至上一提交態；無可回退回 None（no-op）。"""
+        if not self._undo:
+            return None
+        self._redo.append((self._document, self._cursor))
+        document, cursor = self._undo.pop()
+        return self._restore(document, cursor)
+
+    def redo(self) -> Optional[EditResult]:
+        """重做一步至下一提交態；無可重做回 None（no-op）。"""
+        if not self._redo:
+            return None
+        self._undo.append((self._document, self._cursor))
+        document, cursor = self._redo.pop()
+        return self._restore(document, cursor)
