@@ -2,6 +2,45 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.34.0（2026-07-12，Sprint 39）Phase 1 骨架收尾定案（honest review＋Known Limitations 彙整，Owner 定案收尾轉 Phase 2）
+
+### 決策（Owner AskUserQuestion 定案「收尾轉 Phase 2」；honest-planning R5／R7）
+
+- Sprint 38 完成 C 個案扉頁資訊區欄位卡片，「最複雜架構先做」線程收束，Phase 1 已無需新引擎機制的大型建模。Owner 經 AskUserQuestion 於三選項（收尾轉 Phase 2／續建小型變體／建目錄摘要層）定案**收尾轉 Phase 2**。本 Sprint [Doc] 無程式碼變更：honest review 確認 Phase 1 骨架完成、彙整 Known Limitations、正式關 Phase 1、標記 Owner-only sign-off 待辦，下個 Sprint 進 Phase 2 首項。
+
+### honest review（A 級實查，非橡皮圖章）
+
+- 模版 templates/neizai-zhengli.json 實查：**A〜G 七主版齊備**（grep 命中 7 master id）、段落樣式 18／字元樣式 9。
+- 引擎能力：直排版面（禁則／約物擠壓／齊行擠入／縱中橫／橫排／依書頁號鏡像）＋自寫 PDF/X-1a:2001 匯出（OutputIntent／XMP／GTS 兩鍵／子集嵌入）＋機械 preflight 12 規則＋txt／md 匯入＋兩後端（PNG／PDF）幾何同源。
+- 基線：`pytest spikes tests` **218 passed / 0 failed**、typecheck（py_compile 全部）EXIT=0。
+- 結論：**Phase 1 §6 骨架機制級 DoD 達成**。
+
+### 變更（[Doc]，無程式碼／測試變更）
+
+- [Doc] 開源CJK排版編輯器-PLAN.md：§6 新增「Phase 1 收尾判定（Sprint 39）」子節（鏡像 Phase 0 閘門判定體例）；§10 新增 Sprint 39 決議列。
+- [Doc] GAPS.md：新增 #22（Phase 1 收尾 Known Limitations 彙整，剩項分甲 細項延後／乙 需新機制／丙 §8 美術不生成／丁 後續 Phase 四類）、#23（斷行逐行一致率比對待 Owner sign-off，與 #10 同批）。
+- [Doc] devlog/2026-07-12-sprint39-phase1-closure.md：本 Sprint 記錄。
+- [Doc] CHANGELOG.md：本條。
+
+### 正式 sign-off 待 Owner（R5 人類抽檢，執行工程師不代行）
+
+- GAPS #10：Spike 1 對比圖 spikes/spike1-vertical-core/out/spread_comparison.png 抽檢（Phase 0 正式通過前提）。
+- GAPS #23：斷行逐行一致率比對（Phase 1 DoD 一致度抽檢的斷行維度）。
+- 二者為 Owner-hands-on；排版機制級品質已 A 級驗證且樣張 0 禁則違規，但「無重大排版瑕疵」與「逐行一致率」屬人類品質判斷。
+
+### 驗證
+
+- 測試數 218 不變（[Doc] Sprint 無程式碼變更）；typecheck EXIT=0。
+- 繁中標點：本 Sprint 改動檔（PLAN／GAPS／devlog／CHANGELOG）grep 確認無破折號殘留。
+
+### 已知限制（詳 GAPS.md #22）
+
+- Phase 1 剩項全數為 細項延後／需新機制（v1 不建模）／§8 美術不生成／後續 Phase，均不阻擋轉 Phase 2；開源釋出前以 Known Limitations 公開承認（R7）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 2 開工首項＝Qt 畫布 IME 直排輸入真視窗實測（GAPS #19）；§5.2 選 Qt 的關鍵理由（IME 一等公民）本機未實測，且 §7 Pre-mortem 未退場最大產品風險＝畫布與排版核心同步（僅 Spike 10 初驗）。GAPS #19 註明需真視窗 demo＋Owner 鍵盤實測，屬 Owner-hands-on，執行工程師先備 demo 骨架。
+
 ## v0.33.0（2026-07-12，Sprint 38）C 個案扉頁資訊區欄位卡片建模（否決「需新機制」前提，勘正 Sprint 25 第五例誤讀）
 
 ### 決策（honest-planning R1 先量測再動工；承 Sprint 37 交接「線性堆疊不可表達需新機制」）
