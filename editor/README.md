@@ -4,7 +4,9 @@ Phase 2 WYSIWYG 編輯器的真視窗畫布骨架，承 Spike 10（spikes/spike1
 
 ## 執行
 
-自 repo 根（需真視窗環境，有顯示器）：
+**最簡：雙擊 repo 根的 `啟動編輯器.bat`**（自動檢查 PySide6 後開視窗；關視窗即結束；可將 .doc.json 檔拖到 bat 上以開啟指定文件）。
+
+或自 repo 根手動執行（需真視窗環境，有顯示器）：
 
     python editor/app.py [文件路徑]
 
@@ -28,14 +30,16 @@ Phase 2 WYSIWYG 編輯器的真視窗畫布骨架，承 Spike 10（spikes/spike1
 | --- | --- | --- |
 | 雙層畫布顯示 | [實作] | smoke_check 離屏建構 |
 | 點字格 → 文件游標（段／字／樣式） | [實作] | smoke_check hit-test 100%＋provenance 切片一致 |
+| IME 輸入區提交插入 reflow（組字→Enter→於游標插入→全文重排→游標跟隨） | [實作] | Sprint 41，smoke_check C5 離屏驗（插「測試」→reflow 0 違規、游標跟到「試」）；真視窗手感待 Owner |
 | IME 直排輸入是否順暢、視覺對位 | 待 Owner | 真視窗鍵盤實測（離屏測不了，GAPS #19） |
-| 直排畫布內嵌 IME 編輯（打字→插入→reflow） | [Shell] | Phase 2 編輯引擎後續工程；本骨架僅示範「IME 組字 → 已知游標目標」，不變更文件、不 reflow |
+| 直排畫布內嵌 IME 即點即打、拖曳／範圍選取 | [Shell] | Phase 2 編輯 UI 後續工程；本 demo 以輸入區＋Enter 代替畫布內嵌 IME |
 
 ## Owner 實測協議（GAPS #19）
 
-1. `python editor/app.py` 開視窗。
-2. 目檢頁面直排字形正常、點字格看高亮框是否框住字（視覺對位）。
-3. 下方 IME 輸入區用注音／倉頡／拼音輸入中文，確認候選字窗與組字正常（§5.2 選 Qt 的關鍵理由＝IME 一等公民，本步為其實測）。
-4. 回報：IME 組字是否順、對位是否準。若挑出問題，回 Phase 2 畫布架構修正。
+1. 雙擊 repo 根的 `啟動編輯器.bat`（或 `python editor/app.py`）開視窗。
+2. 目檢頁面直排字形正常、點一個內文字格看高亮框是否框住字（視覺對位）。
+3. 下方 IME 輸入區用注音／倉頡／拼音組字，確認候選字窗與組字正常（§5.2 選 Qt 的關鍵理由＝IME 一等公民，本步為其實測）。
+4. 按 Enter 提交：確認頁面即時 reflow、游標跟到剛插入的字（Sprint 41 編輯回路的真視窗手感）。
+5. 回報：IME 組字是否順、對位是否準、reflow 是否即時。若挑出問題，回 Phase 2 畫布架構修正。
 
 製作者：黃政文
