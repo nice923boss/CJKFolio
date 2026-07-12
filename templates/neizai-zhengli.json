@@ -171,7 +171,7 @@
    "indent_chars": 0,
    "para_gap_slots": 0,
    "source_font": "HanziPenTC-W5",
-   "note": "圖注與旁注；另有 9pt 變體（掃描 4 頁）"
+   "note": "圖注與旁注，主體 8.0pt（與頁腳書眉副標同級，173 頁）；9pt 變體 Sprint 36 探針量測確認為真（非掃描誤植，對照 Sprint 34／35 誤植 0 命中）：HanziPenTC-W5 raw 8.955pt、4 頁（PDF 25/60/61/93）34 字、頁面中上部 top 82~338（非頁腳 508）＝圖注大一號；屬美術／自由佈局層（§8）Phase 1 無渲染用例不建獨立樣式，GAPS #13 後續"
   },
   "圖說-辰宇落雁": {
    "font_family": "辰宇落雁體",
@@ -217,7 +217,7 @@
    "font_weight": "regular",
    "size_pt": 9.0,
    "source_font": "PepitaMT",
-   "note": "個案頁 Case N 手寫編號；章扉大號 15.9pt 變體（掃描）"
+   "note": "個案頁 Case N 手寫編號，主體 9.0pt 頁腳（top 508.3、153 頁，Sprint 35 確認）；Sprint 36 探針證 Pepita 另兩級變體皆真（非掃描誤植）：15.9pt（raw 15.92，10 頁章扉大號 PDF 19/35/53/69/84/98/115/133/144/156、top 86.2 x0 192.7）＋10.4pt（raw 10.447，目錄 Case 編號 PDF 1/2、top~135）；15.9 章扉與辰宇落雁 15.9 圖說同級不同字型勿混淆。變體屬美術／自由佈局層 Phase 1 無渲染用例不建獨立樣式，GAPS #13 後續"
   },
   "書眉副標-手札體": {
    "font_family": "辰宇落雁體",

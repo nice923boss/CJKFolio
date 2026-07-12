@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.31.0（2026-07-12，Sprint 36）旁注 9pt／Case 編號 15.9pt 兩「掃描見變體」量測確認為真（GAPS #13 待查標記清查完畢）
+
+### 決策（honest-planning R1／R5 先量測再動工）
+
+- 候選 A（承 Sprint 34 Gate 3 待查標記清查收尾）＝`旁注-手札圖注` 9pt 與 `Case編號-手寫拉丁` 15.9pt 兩「掃描見變體」待查標記（templates note 記「（掃描）」未量測）。依 R1 先量測，確認真實變體或掃描誤植。**結論：與 Sprint 34（12.9pt）／35（slot 0 13pt）誤植 0 命中相反，兩變體皆真實存在**。處置（同 Sprint 34／35 勘正記錄型）：變體屬美術／自由佈局層（§8）Phase 1 無渲染用例，不建獨立樣式（建模會是 [Shell]，登記 GAPS #13 後續）；以勘正 note 升 A 級量測參數＋守門交付。不推翻核心決議，無須 Owner 定案。
+
+### 量測（A 級一手證據，本機紅線不入 repo）
+
+- A HanziPen（華康手札體）：8.0pt 主體 173 頁（頁腳書眉副標與旁注同級）；9.0pt（raw 8.955）變體 4 頁（PDF 25／60／61／93）34 字、頁面中上部 top 82~338（非頁腳 508）＝圖注大一號（note 原記「9pt 變體掃描 4 頁」頁數吻合）。
+- B Pepita（Case 編號拉丁）：9.0pt 頁腳主體 153 頁（top 508.3）；15.9pt（raw 15.92）章扉大號 10 頁（PDF 19／35／53／69／84／98／115／133／144／156）top 86.2；另揭 10.4pt（raw 10.447）目錄 Case 編號 2 頁（PDF 1／2）note 原漏。
+- C 全書 8.5~9.5pt 級數反查：HanziPen 9pt 獨立 34 字 4 頁，與 Pepita 9pt 頁腳、楷 W3 9.5 目錄各自分離（非捨入邊界）。
+- D 全書 15~17pt 級數反查：Pepita 15.9pt（61 字 10 頁）與辰宇落雁 15.9pt（186 字 31 頁圖說／裝飾大字）同級不同字型，不可混淆。
+
+### 變更
+
+- [實作] tests/test_styles.py：新增 `test_handwritten_variants_measured_not_conflated` 守門（旁注主體 8.0!=9.0、Case 編號主體 9.0!=15.9 與 source_font，且 Pepita 15.9 章扉與辰宇 15.9 圖說同級不同 source_font 防混淆）。測試 216 → 217。
+- [實作] templates/neizai-zhengli.json：`旁注-手札圖注`／`Case編號-手寫拉丁` 兩 note 勘正，「（掃描）」待查語氣升 A 級量測參數；Case 編號 note 補記原漏 10.4pt 目錄變體。size／source_font 不動（status-quo，不新增樣式）。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 217 passed / 0 failed；typecheck（py_compile 全部）EXIT=0。
+- Gate 4 獨立驗證：量測（PyMuPDF get_text span font／size／bbox）與守門測試（模版載入斷言 size_pt／source_font）不同方法互證；C／D 級數反查決定性交叉（各字型變體獨立命中，非單點推論）。
+- Gate 3 同類掃描：「掃描見變體」為 Sprint 34 Gate 3 待查類；本 Sprint 釐清最後兩個（旁注 9pt／Case 編號 15.9pt），grep 模版確認兩 note 均已勘正，該類全數清查完畢。
+- 繁中標點：本 Sprint 改動檔（模版／test_styles／GAPS／PLAN／devlog／CHANGELOG）無破折號字元殘留。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 兩變體真實存在但屬美術／自由佈局層（§8），Phase 1 無渲染用例，不建獨立樣式；變體建模（旁注 9pt 圖注、Case 編號 15.9pt 章扉大號、10.4pt 目錄）登記後續專項（需 Owner 決定投入，與 Phase 2〜4 圖片置入／圖文繞排相關）。
+- 續留 #13 其他剩項：黑 W7 欄標樣式建模＋個案中標移資訊區（Sprint 35 揭露，屬定案 C 需 Owner 確認）、F 版權頁真實版心 p178（待 Owner 本機量測）、目錄摘要層／【結語】變體、部扉裝飾框（美術資產待向量置入機制）、B〜G 其他扉頁逐頁量測。
+
 ## v0.30.0（2026-07-12，Sprint 35）個案扉頁 slot 0「Case 編號 13pt 雙元素」量測否決＋Sprint 25 誤讀勘正（GAPS #13）
 
 ### 決策（honest-planning R1／R5／R8 先量測再動工；Owner AskUserQuestion 定案 B）

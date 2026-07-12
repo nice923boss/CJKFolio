@@ -74,6 +74,32 @@ def test_case_info_distinct_from_slot0_hei_label_and_case_no(template):
     assert info.size_pt != pytest.approx(13.0)
 
 
+def test_handwritten_variants_measured_not_conflated(template):
+    """旁注 9pt／Case 編號 15.9pt 兩待查變體量測確認（Sprint 36，承 Sprint 34 Gate 3
+    「掃描見變體」待查標記清查收尾）：與 Sprint 34／35「掃描見變體＝誤植 0 命中」相反，
+    一手探針證兩變體真實存在。HanziPenTC-W5 除 8.0pt 主體另有 9.0pt（raw 8.955，4 頁
+    p25／60／61／93 圖注旁注大一號、非頁腳）；PepitaMT 除 9.0pt 頁腳主體（Case N，top
+    508.3）另有 15.9pt（raw 15.92，10 頁章扉大號 top 86.2）＋10.4pt（p1／p2 目錄 Case
+    編號）。模版建模主體級數（旁注 8pt、Case 編號頁腳 9pt），變體屬美術／自由佈局層
+    Phase 1 無渲染用例不建獨立樣式（GAPS #13 後續專項）。守門釘主體級數與 source_font，
+    防變體級數併入主體、防 Pepita 15.9 章扉大號與辰宇落雁 15.9 圖說混淆（同級不同字型）。"""
+    note = template.paragraph_styles["旁注-手札圖注"]
+    case_no = template.character_styles["Case編號-手寫拉丁"]
+    caption = template.paragraph_styles["圖說-辰宇落雁"]
+    # 旁注主體＝華康手札體 8pt（9pt 為量測記錄之圖注變體，不建獨立樣式）
+    assert note.source_font == "HanziPenTC-W5"
+    assert note.size_pt == pytest.approx(8.0)
+    assert note.size_pt != pytest.approx(9.0)
+    # Case 編號主體＝Pepita 9pt 頁腳（15.9 章扉、10.4 目錄為量測記錄變體，不建獨立樣式）
+    assert case_no.source_font == "PepitaMT"
+    assert case_no.size_pt == pytest.approx(9.0)
+    assert case_no.size_pt != pytest.approx(15.9)
+    # Pepita 15.9 章扉大號與辰宇落雁 15.9 圖說同級不同字型：勿混淆
+    assert caption.size_pt == pytest.approx(15.9)
+    assert caption.source_font == "ChenYuluoyan-Thin"
+    assert case_no.source_font != caption.source_font
+
+
 def test_master_a_geometry_from_measurements(template):
     a = template.masters["A-內文版"]
     assert a.grid.chars_per_line == 32
