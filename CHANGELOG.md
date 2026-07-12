@@ -82,7 +82,7 @@
 
 - [Doc] 開源CJK排版編輯器-PLAN.md：§6 新增「Phase 1 收尾判定（Sprint 39）」子節（鏡像 Phase 0 閘門判定體例）；§10 新增 Sprint 39 決議列。
 - [Doc] GAPS.md：新增 #22（Phase 1 收尾 Known Limitations 彙整，剩項分甲 細項延後／乙 需新機制／丙 §8 美術不生成／丁 後續 Phase 四類）、#23（斷行逐行一致率比對待 Owner sign-off，與 #10 同批）。
-- [Doc] devlog/2026-07-12-sprint39-phase1-closure.md：本 Sprint 記錄。
+- [Doc] devlog/archive/2026-07-12-sprint39-phase1-closure.md：本 Sprint 記錄。
 - [Doc] CHANGELOG.md：本條。
 
 ### 正式 sign-off 待 Owner（R5 人類抽檢，執行工程師不代行）
@@ -673,7 +673,7 @@
 
 ## v0.9.0（2026-07-11，Sprint 14）CIP 細框向量原件（補記）
 
-> 本段為 Sprint 15 收尾時補記（Sprint 14 commit fe525ee 漏更新 CHANGELOG，R7 落差不沉默；內容取自 devlog/2026-07-11-sprint14-cip-frame.md）。
+> 本段為 Sprint 15 收尾時補記（Sprint 14 commit fe525ee 漏更新 CHANGELOG，R7 落差不沉默；內容取自 devlog/archive/2026-07-11-sprint14-cip-frame.md）。
 
 ### 新增
 
@@ -688,7 +688,7 @@
 
 ## v0.8.0（2026-07-11，Sprint 13）橫排版面軸（補記）
 
-> 本段為 Sprint 15 收尾時補記（Sprint 13 commit 27e6829 漏更新 CHANGELOG，R7 落差不沉默；內容取自 devlog/2026-07-11-sprint13-horizontal.md）。
+> 本段為 Sprint 15 收尾時補記（Sprint 13 commit 27e6829 漏更新 CHANGELOG，R7 落差不沉默；內容取自 devlog/archive/2026-07-11-sprint13-horizontal.md）。
 
 ### 新增
 
