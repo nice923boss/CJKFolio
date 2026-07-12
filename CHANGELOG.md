@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.40.0（2026-07-12，Sprint 45）Phase 2 編輯引擎字元樣式套用到選取範圍（run 模型切割＋相鄰同樣式併合）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）字元樣式套用，續 Sprint 41〜44 編輯核心，補齊 Phase 2「選取範圍套字元樣式」（對標 InDesign 字元樣式，PLAN §4.1）：
+  - `apply_char_style`（純文件層，不碰 template）：對段內 DocRange [start, end) 逐字元改掛 char_style（None＝清除字元樣式、回段落樣式預設），範圍外字元保留原字元樣式；切割後連續同字元樣式的字元併為單一 run（避免碎片化，text 與視覺不變，同 InDesign 慣例）；空範圍 no-op 回原物件、不可變；para_idx 越界 IndexError、start／end 越界或 start＞end ValueError。
+  - `apply_style`（回路層，對稱 apply_insert／apply_delete）：apply_char_style → layout_document 全文重排 → locate_cell 反查新游標；新 caret＝drange.end（游標停選取尾）；套用不改 text 故 Cell.span 座標系不動、字格 char_style 隨 run 模型流入渲染層；未知字元樣式名由 layout_document 守門（raise KeyError，同既有 run 驗證慣例）。
+  - `EditSession.apply_style`：委派 apply_style 統一經 _commit 記錄 undo／redo 歷史（同 insert／delete／replace／split／merge）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **304 passed / 0 failed**（284→304，+20：apply_char_style 純文件層 12／apply_style 回路 4／EditSession.apply_style 3／R5 往返 1）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加新函式與 EditSession 方法、未改既有函式與 editor/）。
+- 真實素材驗收（R5，自擬 _plain 內文樣張）：內文「三房兩廳，約三十坪的老公寓。」對 [5,8)「約三十」套「內文強調-明體W9」→ run 切割為三段（三房兩廳，＝None／約三十＝強調／坪的老公寓。＝None）、reflow 0 違規、游標停 caret 8、layout 字格 span 5-7 char_style＝內文強調（端到端流入渲染層）；EditSession undo 字元樣式全清回原、redo 復原，皆基線斷言。
+- Gate 4 獨立驗證：pytest 走狀態機斷言（runs tuple／layout cell.char_style／堆疊深度），另寫獨立 probe 以「實際印出觀察」不同路徑互證（套用後三 run／reflow 0／游標 8／span 5-7 帶強調／undo-redo 往返），probe 跑完即刪（scratchpad 不入 repo）；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：字元樣式套用純文件層 run 切割與併合、回路 reflow 與游標反查、EditSession undo／redo 整合。
+- [Shell]／待 Owner（GAPS #26／#19，離屏測不了）：app.py 尚未接線樣式面板（選取範圍→套字元樣式 UI 為真視窗工程）；DocRange 限段內（跨段選取套樣式需跨段範圍機制）為 v1 已知限制。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗樣式面板套用字元樣式與視覺回饋（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎：段落樣式變更（change_paragraph_style，純邏輯可離屏驗，承段落樣式模型）、或連續輸入合併為單一 undo 單元（GAPS #25 剩項，需輸入序列邊界判定），或編輯 UI 接線（app.py 樣式面板／Enter／Backspace／undo／redo 真視窗工程，待 Owner 真視窗回報批次）。
+
 ## v0.39.0（2026-07-12，Sprint 44）Phase 2 編輯引擎 undo／redo 堆疊（EditSession 提交態歷史）
 
 ### 新增

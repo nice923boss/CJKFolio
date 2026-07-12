@@ -211,6 +211,65 @@ def apply_replace(
     )
 
 
+def apply_char_style(
+    doc: Document, drange: DocRange, char_style: Optional[str]
+) -> Document:
+    """對段內 [start, end) 範圍套（或清）字元樣式 char_style，回傳新 Document（不可變）。
+
+    範圍內每個字元改掛 char_style（None＝清除字元樣式、回段落樣式預設）；範圍外字元
+    保留原字元樣式。切割後連續同字元樣式的字元併為單一 run（避免碎片化，text 與視覺
+    不變，同 InDesign 套字元樣式慣例）。空範圍（start==end）no-op 回原物件。
+    系統邊界快速失敗：para_idx 越界 raise IndexError；start/end 越界或 start>end raise ValueError。
+    字元樣式名是否存在於模版不在此驗（純文件層），由 apply_style 的 layout_document 守門。
+    """
+    if not 0 <= drange.para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {drange.para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    para = doc.paragraphs[drange.para_idx]
+    n = len(para.text)
+    if not 0 <= drange.start <= n or not 0 <= drange.end <= n:
+        raise ValueError(f"範圍 [{drange.start}, {drange.end}) 超出段 text 範圍 0..{n}")
+    if drange.start > drange.end:
+        raise ValueError(f"範圍起點 {drange.start} 大於終點 {drange.end}")
+    if drange.start == drange.end:
+        return doc
+    new_runs = []
+    base = 0
+    for r in para.runs:
+        for j, ch in enumerate(r.text):
+            style = char_style if drange.start <= base + j < drange.end else r.char_style
+            if new_runs and new_runs[-1].char_style == style:  # 併入相鄰同樣式 run
+                new_runs[-1] = Run(new_runs[-1].text + ch, style)
+            else:
+                new_runs.append(Run(ch, style))
+        base += len(r.text)
+    new_para = Paragraph(style=para.style, runs=tuple(new_runs), page_no=para.page_no)
+    new_paras = (
+        doc.paragraphs[: drange.para_idx]
+        + (new_para,)
+        + doc.paragraphs[drange.para_idx + 1 :]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
+def apply_style(
+    doc: Document, template: Template, drange: DocRange, char_style: Optional[str]
+) -> EditResult:
+    """完整編輯回路：套字元樣式 → 全文 reflow → 反查新游標畫布落點。
+
+    新 caret＝drange.end（游標停在選取範圍尾）；套用不改 text，故 Cell.span 座標系不動、
+    字格 char_style 隨 run 模型流入渲染層。未知字元樣式名由 layout_document 守門（raise KeyError）。
+    """
+    new_doc = apply_char_style(doc, drange, char_style)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(drange.para_idx, drange.end)
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
+
+
 def split_paragraph(doc: Document, cursor: DocCursor) -> Document:
     """在 cursor 處把段落切成 head（caret 前）／tail（caret 後）兩段，回傳新 Document。
 
@@ -365,6 +424,11 @@ class EditSession:
 
     def merge(self, para_idx: int) -> EditResult:
         return self._commit(apply_merge(self._document, self._template, para_idx))
+
+    def apply_style(self, drange: DocRange, char_style: Optional[str]) -> EditResult:
+        return self._commit(
+            apply_style(self._document, self._template, drange, char_style)
+        )
 
     def _restore(self, document: Document, cursor: DocCursor) -> EditResult:
         """切換現態至還原的 (document, cursor)、全文重排、反查游標畫布落點。"""
