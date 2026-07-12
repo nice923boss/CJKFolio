@@ -134,9 +134,10 @@ def test_export_glyph_geometry_on_grid(template, tmp_path):
 def test_case_ttb_ink_centered_on_line_axis(template, tmp_path):
     """C 個案扉頁直排字墨在 PDF 內對準 line_axis（trim 空間置中，GAPS #21 勘正）。
 
-    Sprint 37 slot 0 改黑 W7 欄標（11.5pt，Owner 定案升級 C）：欄標與大標（17.9pt）字墨
-    扣 3mm 出血（BLEED_PT）後 cx＝各自 line_axis（欄標 slot 0＝354.25、大標 slot 1＝331.25）。
-    未扣出血恆偏 +BLEED_PT（框差、與字級無關，佐證非置中錯誤，Sprint 25 Gate 4 之覆轍）。
+    Sprint 38 資訊區欄位卡片：欄標 slot 0／大標 slot 1／欄位標籤 slot 5／欄位內文 slot 6
+    ／標籤 slot 8／內文 slot 9，各字墨扣 3mm 出血（BLEED_PT）後 cx＝各自 line_axis（欄標
+    與大標 Sprint 37 建模；欄位卡片 slot 5+ 為 Sprint 38 資訊區，兩後端同源）。未扣出血恆偏
+    +BLEED_PT（框差、與字級無關，佐證非置中錯誤，Sprint 25 Gate 4 之覆轍）。
     PNG 側置中見 test_layout_render::test_render_single_char_lands_in_first_cell。"""
     doc = document_from_dict({
         "schema": "cjkfolio/document@2",
@@ -144,6 +145,10 @@ def test_case_ttb_ink_centered_on_line_axis(template, tmp_path):
         "paragraphs": [
             {"text": "案例速寫", "style": "個案欄標-黑W7"},
             {"text": "重新安放生活的重量", "style": "個案扉頁大標-NotoSans"},
+            {"text": "【空間】", "style": "個案中標-NotoSans"},
+            {"text": "三房兩廳，約三十坪的老公寓。", "style": "內文-明體直排"},
+            {"text": "【成員】", "style": "個案中標-NotoSans"},
+            {"text": "夫妻與兩名子女，四人同住。", "style": "內文-明體直排"},
         ],
     })
     first_page = 2  # 偶＝右頁；單頁 → book_number = 版面頁號1 + first_page − 1 = first_page
@@ -163,9 +168,15 @@ def test_case_ttb_ink_centered_on_line_axis(template, tmp_path):
         return sum(cxs) / len(cxs)
 
     axis_title = line_axis_x_pt(template, master, 1, first_page)  # 大標 slot 1
-    axis_label = line_axis_x_pt(template, master, 0, first_page)  # 黑 W7 欄標 slot 0
-    assert trim_cx(lambda sz: sz > 15) == pytest.approx(axis_title, abs=0.3)       # 大標 17.9
-    assert trim_cx(lambda sz: 10 < sz < 13) == pytest.approx(axis_label, abs=0.3)  # 欄標 11.5
+    assert trim_cx(lambda sz: sz > 15) == pytest.approx(axis_title, abs=0.3)  # 大標 17.9
+    # 資訊區欄位卡片：欄標 slot 0／欄位標籤 slot 5／內文 slot 6／標籤 slot 8／內文 slot 9
+    # 皆 11~11.5pt，按 line_axis 鄰近分群，各群字墨扣出血＝該 slot line_axis（兩後端同源）
+    for slot in (0, 5, 6, 8, 9):
+        axis = line_axis_x_pt(template, master, slot, first_page)
+        near = [(bb[0] + bb[2]) / 2 - BLEED_PT for bb, sz in chars if 10 < sz < 13
+                and abs((bb[0] + bb[2]) / 2 - BLEED_PT - axis) < 10]
+        assert near, f"slot {slot} 無 11pt 級字墨"
+        assert sum(near) / len(near) == pytest.approx(axis, abs=0.5)
     # 反例保護：未扣出血恆偏 +BLEED_PT（框差為常數、與字級無關，佐證非置中錯誤）
     mb_title = [(bb[0] + bb[2]) / 2 for bb, sz in chars if sz > 15]
     assert sum(mb_title) / len(mb_title) - axis_title == pytest.approx(BLEED_PT, abs=0.3)

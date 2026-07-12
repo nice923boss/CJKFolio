@@ -93,9 +93,9 @@
    "font_weight": "medium",
    "size_pt": 17.9,
    "indent_chars": 0,
-   "para_gap_slots": 0,
+   "para_gap_slots": 3,
    "source_font": "NotoSansCJKtc-Medium",
-   "note": "個案扉頁大標（slot 1，p20/36/54 一手量測，Sprint 25）；para_gap 0＝大標後內文相鄰落 slot 2（扉頁三列 資訊列／大標／內文 相鄰）。Sprint 33 自 個案大標-NotoSans 拆出，與內頁 h2 用法（para_gap 1）分屬兩物件樣式"
+   "note": "個案扉頁大標（slot 1，p20/36/54 一手量測，Sprint 25）；para_gap 3＝大標後空 slot 2~4、內容自 slot 5（Sprint 38 全 33 個案扉頁探針量測：首內容 slot 5 分佈 33/33、空 2~4 為鐵律，勘正 Sprint 25「內文自 slot 2」誤讀，第五例 C 主版 slot 誤讀承 Sprint 34/35/36）。Sprint 33 自 個案大標-NotoSans 拆出，與內頁 h2 用法（para_gap 1）分屬兩物件樣式"
   },
   "個案中標-NotoSans": {
    "font_family": "思源黑體 TC",

@@ -2,6 +2,37 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.33.0（2026-07-12，Sprint 38）C 個案扉頁資訊區欄位卡片建模（否決「需新機制」前提，勘正 Sprint 25 第五例誤讀）
+
+### 決策（honest-planning R1 先量測再動工；承 Sprint 37 交接「線性堆疊不可表達需新機制」）
+
+- Sprint 37 交接資訊區「線性堆疊不可表達需新機制」為初步判斷。依 R1 先量測全 33 個案扉頁（scratchpad 探針跑完即刪），確認真實結構才定機制。**架構結論**：資訊區欄位卡片＝相鄰不同 slot 的線性段落（欄位標籤與內文非同 slot inline 分區），現有線性流排（engine.flow_pages）＋既有樣式＋indent／gap_after 即足表達，**無需新引擎機制**（同 Sprint 31/34/35 量測後否決「需新機制」前提）。R2 判定既有能力復用、無需新 spike（先例＝E 序文版 Sprint 23 推薦序大標 gap 4→內文 slot 5 同機制）。
+
+### 量測（A 級一手證據，本機紅線不入 repo）
+
+- 全 33 個案扉頁探針：**首內容 slot 分佈 33/33＝slot 5、空 slot 2~4 為鐵律**（大標 slot 1 後空 3 slot）。勘正 Sprint 25「內文自 slot 2（top 145.75）」誤讀＝第五例 C 主版 slot 誤讀（承 Sprint 34/35/36）。
+- 資訊頁 10（欄位卡片）／訪談頁 23（純內文流）；欄位標籤（NotoSans 11.4pt、top 92.3 頂格＝indent 0）＋欄位內文（DFMingStd 11.5pt、首列 top 116.5＝indent 2 縮排、續列 top 92.1），欄位間固定空 1 slot。13pt DFHeiStd 中標經量測屬訪談頁節標題（＝章節小標-黑體），不在資訊區（與資訊頁 0 重疊）。
+
+### 變更
+
+- [實作] templates/neizai-zhengli.json：個案扉頁大標-NotoSans para_gap 0→3（大標後空 slot 2~4、內容自 slot 5），note 記 Sprint 38 全 33 頁量測勘正 Sprint 25。資訊區欄位卡片復用既有樣式（欄位標籤＝個案中標-NotoSans indent 0/gap 0、欄位內文＝內文-明體直排 indent 2/gap 1），無新增樣式。
+- [實作] samples/case-divider.doc.json：升級為欄位卡片（自擬「【空間】／【成員】」兩欄位，欄標＋大標＋兩組標籤／內文），slot [0,1,5,6,8,9] 空 2~4／7。
+- [實作] tests/test_layout_render.py：C 測試充實欄位卡片守門（slot 佈局 [0,1,5,6,8,9]、大標 para_gap 3、欄位標籤 indent 0／內文 indent 2、空 slot 2~4/7）。
+- [實作] tests/test_pdf_writer.py：case 置中測試延伸欄位卡片（slot 0/5/6/8/9 字墨扣出血對準各自 line_axis，兩後端 parity）。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 218 passed / 0 failed（測試數不變＝勘誤＋既有機制建模型 Sprint，同 Sprint 26/31）；typecheck（py_compile 全部）EXIT=0。
+- 真實素材驗收（R5）：render case-divider PNG（first-page 20 偶＝右頁）三字型（SourceHanSansTC-Bold 欄標／Medium 大標＋欄位標籤／SerifTC 內文，欄標 Bold 不 fallback）、0 禁則；export PDF preflight 12/12。
+- Gate 4 獨立驗證：PNG 墨跡直列分析（程式化，視覺 Read 因 context limit elided）＝6 直列 cx 對準 slot 0/1/5/6/8/9 line_axis（354.1／331.3／239.3／216.2／170.4／147.4pt），列1→2＝4.00 slot（空 2~4）、列3→4＝1.99 slot（空 7）；三方同源＝layout slot [0,1,5,6,8,9]／PDF 字墨 cx／PNG 墨跡直列 cx 皆對準 line_axis。
+- 繁中標點：本 Sprint 改動檔（模版／樣張／二測試／PLAN／GAPS／devlog／CHANGELOG）無破折號字元殘留。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 10.5pt 訪談頁欄標變體（7 頁「理解與祝福」）以主流 11.5pt 建模、未建獨立樣式。
+- 資訊區多欄位動態列數以真書內容驅動；自擬 case-divider 示範兩欄位，機制不限欄位數。
+- 續留 #13 其他剩項：F 版權頁真實版心 p178、目錄摘要層／【結語】變體、部扉裝飾框（美術資產）、B~G 其他扉頁逐頁量測。
+
 ## v0.32.0（2026-07-12，Sprint 37）C 個案扉頁 slot 0 黑 W7 欄標樣式建模（Owner 定案升級 C）
 
 ### 決策（honest-planning R1／R5 先量測再動工；Owner AskUserQuestion 定案升級 C）

@@ -346,13 +346,15 @@ def test_toc_entry_black_w5_corrected(template):
 
 def test_case_master_and_title_placement(template):
     """C 個案扉頁（PDF 20/36/54… 數十頁一手互證）：版心承 A（內文天頭 92.09pt
-    ＝32.49mm）；slot 0 黑 W7 欄標、個案扉頁大標 slot 1、內文承 A 自 slot 2。欄標
-    （Sprint 37 建模，Owner 定案升級 C，33 頁量測）＝DFHeiStd-W7 → 思源黑體 Bold 11.5pt、
-    天頭起（indent 0、lead_offset 0，首字頂 92.1＝天頭）；大標＝思源黑體 Medium 17.9pt、
-    para_gap 0（Sprint 33 與 md h2 用的 個案大標-NotoSans para_gap 1 拆兩物件樣式）。右頁
-    行軸：欄標 slot 0＝354.25（真書墨 354.6 差 0.35 字型度量）、大標 slot 1＝331.25（真書墨
-    331.28 差 0.03，驗右頁 line_axis 公式）。個案中標移資訊區（cx 93~231）為 Sprint 38 專項，
-    本樣張 slot 0 不再放個案中標。"""
+    ＝32.49mm）；slot 0 黑 W7 欄標、個案扉頁大標 slot 1、大標後空 slot 2~4、資訊區
+    自 slot 5（Sprint 38 全 33 頁探針量測：首內容 slot 5 分佈 33/33，勘正 Sprint 25
+    「內文自 slot 2」誤讀＝第五例 C 主版 slot 誤讀，承 Sprint 34/35/36）。欄標＝
+    DFHeiStd-W7 → 思源黑體 Bold 11.5pt、天頭起（indent 0）；大標＝思源黑體 Medium
+    17.9pt、para_gap 3。資訊區欄位卡片：欄位標籤（個案中標-NotoSans 11.4pt、indent 0
+    ＝頂格 top 92.09）＋欄位內文（內文-明體直排、indent 2＝縮排 top 116.25），欄位間空
+    1 slot（真書 page 20：【格局】slot 5＋內文＋空＋【居住者】）。右頁行軸：欄標 slot 0
+    ＝354.25（真書墨 354.6）、大標 slot 1＝331.25（真書墨 331.28）；線性流排＋既有樣式
+    即足表達欄位卡片，無需新引擎機制。"""
     master = template.masters["C-個案扉頁"]
     assert master.margins.top_mm == pytest.approx(32.49)   # 承 A 內文天頭 92.09pt
     assert master.grid.char_advance_pt == pytest.approx(12.08)
@@ -364,7 +366,11 @@ def test_case_master_and_title_placement(template):
     title = template.paragraph_styles["個案扉頁大標-NotoSans"]
     assert title.font_family == "思源黑體 TC" and title.font_weight == "medium"
     assert title.size_pt == pytest.approx(17.9)
-    assert title.para_gap_slots == 0  # 扉頁大標後內文相鄰落 slot 2（Sprint 25 實測）
+    assert title.para_gap_slots == 3  # 大標後空 slot 2~4、內容自 slot 5（Sprint 38 勘正 Sprint 25）
+    field_label = template.paragraph_styles["個案中標-NotoSans"]  # 資訊區欄位標籤
+    assert field_label.indent_chars == 0 and field_label.para_gap_slots == 0  # 頂格、緊接內文
+    field_body = template.paragraph_styles["內文-明體直排"]  # 資訊區欄位內文
+    assert field_body.indent_chars == 2 and field_body.para_gap_slots == 1  # 縮排 2 字、欄位間空 1 slot
     # md h2／內頁大標仍用 個案大標-NotoSans para_gap 1（42 頁不動，Sprint 33 拆分保留）
     assert template.paragraph_styles["個案大標-NotoSans"].para_gap_slots == 1
     assert template.md_mapping["h2"] == "個案大標-NotoSans"
@@ -374,15 +380,24 @@ def test_case_master_and_title_placement(template):
         "paragraphs": [
             {"text": "案例速寫", "style": "個案欄標-黑W7"},
             {"text": "重新安放生活的重量", "style": "個案扉頁大標-NotoSans"},
-            {"text": "他們在拆解與重組之間，慢慢認回想要的生活。", "style": "內文-明體直排"},
+            {"text": "【空間】", "style": "個案中標-NotoSans"},
+            {"text": "三房兩廳，約三十坪的老公寓。", "style": "內文-明體直排"},
+            {"text": "【成員】", "style": "個案中標-NotoSans"},
+            {"text": "夫妻與兩名子女，四人同住。", "style": "內文-明體直排"},
         ],
     })
     layout = layout_document(doc, template)
     assert layout.violations == []
     placed = layout.pages[0].placed
-    assert placed[0].slot == 0 and placed[0].style == "個案欄標-黑W7"  # 黑 W7 欄標 slot 0
-    assert placed[1].slot == 1 and placed[1].style == "個案扉頁大標-NotoSans"  # 大標 slot 1
-    assert placed[2].slot == 2 and placed[2].style == "內文-明體直排"  # 內文 slot 2
+    # 欄位卡片 slot：欄標 0／大標 1／空 2~4／【空間】5／內文 6／空 7／【成員】8／內文 9
+    assert [(p.slot, p.style) for p in placed] == [
+        (0, "個案欄標-黑W7"), (1, "個案扉頁大標-NotoSans"),
+        (5, "個案中標-NotoSans"), (6, "內文-明體直排"),
+        (8, "個案中標-NotoSans"), (9, "內文-明體直排"),
+    ]
+    # 欄位標籤頂格（start_slot 0）、欄位內文縮排 2 字（start_slot 2＝真書 top 116.25）
+    assert placed[2].line.start_slot == 0 and placed[3].line.start_slot == 2
+    assert {p.slot for p in placed}.isdisjoint({2, 3, 4, 7})  # 大標後空 2~4、欄位間空 7
     axis_label = line_axis_x_pt(template, master, 0, 2, line_slots=1)  # 偶＝右頁，slot 0 欄標
     axis_title = line_axis_x_pt(template, master, 1, 2, line_slots=1)  # slot 1 大標
     assert axis_label == pytest.approx(354.25, abs=0.1)  # 欄標欄中心＝真書墨 cx 354.6
