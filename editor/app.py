@@ -1,14 +1,16 @@
-"""CJKFolio 編輯器 Phase 2 真視窗骨架 demo。
+"""CJKFolio 編輯器 Phase 2 真視窗 demo：雙層畫布＋點字格反查游標＋IME 提交插入 reflow。
 
-承 editor/canvas.py 雙層畫布，於真視窗展示：
+承 editor/canvas.py 雙層畫布與 cjkfolio/editing.py 編輯引擎，於真視窗展示：
   雙層畫布（底圖 PNG＋互動層字格）、點字格 → 反查文件游標（段／字／樣式）＋高亮、
-  IME 輸入測試區（驗證 Qt 直排 IME 管線，Owner 鍵盤實測，GAPS #19）。
+  IME 輸入區：組字後按 Enter 提交 → 於游標插入 → 全文 reflow → 畫布重繪 → 游標跟隨。
 
 誠實範圍（honest-planning R3）：
-  [實作] 雙層畫布顯示＋點字格反查文件游標（離屏 smoke_check.py 已驗）。
-  [Shell] 直排畫布內嵌 IME 編輯（打字→游標插入→reflow）為 Phase 2 編輯引擎後續工程；
-          本骨架僅示範「IME 組字 → 已知游標目標」，不變更文件、不 reflow。
-  IME 直排輸入是否順暢、視覺對位＝Owner 真視窗鍵盤實測（離屏測不了）。
+  [實作]（離屏 smoke_check.py 已驗）＝雙層畫布顯示＋點字格反查文件游標＋
+          IME 提交插入 reflow 回路（插字 → layout_document 全文重排 → 反查新游標畫布落點；
+          reflow 走全文重排，Spike 3 實測 7.67ms/章、互動級，非增量近似）。
+  [Shell]／待 Owner（離屏測不了，GAPS #19）＝IME 直排組字是否順、候選字窗、真視窗視覺對位。
+          本 demo 以「輸入區組字 → Enter 提交」代替直排畫布內嵌 IME 游標；畫布內嵌 IME
+          即點即打與拖曳／選取 UI 為 Phase 2 編輯 UI 後續工程。
 
 執行（自 repo 根，需真視窗環境）：
   python editor/app.py [文件路徑]   預設 samples/case-divider.doc.json
@@ -21,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtGui import QAction, QBrush, QColor, QPen, QTransform  # noqa: E402
+from PySide6.QtGui import QAction, QBrush, QColor, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QGraphicsRectItem,
@@ -36,6 +38,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from cjkfolio.document import load_document  # noqa: E402
+from cjkfolio.editing import DocCursor, apply_insert  # noqa: E402
 from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.canvas import build_page_scene, resolve_hit  # noqa: E402
@@ -73,17 +76,15 @@ class EditorWindow(QMainWindow):
         self.cursor = None  # 目前選取字格 (placed_idx, cell_idx)
         self._highlight = None
 
-        self.scene = QGraphicsScene()
-        build_page_scene(
-            self.scene, self.template, self.doc, self.layout_result, self.page, dpi=DPI
-        )
+        self.scene, self._item_by_key = self._make_scene()
         self.view = CanvasView(self.scene, self._on_pick)
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
-            "IME 輸入測試區（用注音／倉頡／拼音輸入中文，驗證 Qt 直排 IME 管線）"
+            "先點頁面字格選游標，再用注音／倉頡／拼音組字，按 Enter 於游標插入並 reflow"
         )
-        self._ime.textChanged.connect(self._on_ime)
+        self._ime.textChanged.connect(self._on_ime_preview)
+        self._ime.returnPressed.connect(self._on_ime_commit)
 
         central = QWidget()
         box = QVBoxLayout(central)
@@ -91,7 +92,9 @@ class EditorWindow(QMainWindow):
         box.addWidget(self._ime)
         self.setCentralWidget(central)
 
-        self.statusBar().showMessage("點頁面字格 → 反查文件游標；IME 測試見下方輸入區")
+        self.statusBar().showMessage(
+            "點頁面字格 → 反查文件游標；下方輸入區組字後按 Enter 插入並 reflow"
+        )
         credit = QLabel(AUTHOR)
         credit.setStyleSheet("color:#999; font-size:11px; padding:0 8px;")
         self.statusBar().addPermanentWidget(credit)
@@ -99,6 +102,20 @@ class EditorWindow(QMainWindow):
         help_action = QAction("Owner IME 實測說明", self)
         help_action.triggered.connect(self._show_help)
         self.menuBar().addMenu("說明").addAction(help_action)
+
+    def _make_scene(self):
+        """建雙層畫布 scene，回傳 (scene, {(placed_idx, cell_idx): item})。"""
+        scene = QGraphicsScene()
+        items = build_page_scene(
+            scene, self.template, self.doc, self.layout_result, self.page, dpi=DPI
+        )
+        return scene, {it.data(0): it for it in items}
+
+    def _rebuild(self) -> None:
+        """reflow 後重繪：換上新 scene，高亮清空（舊 scene 連同高亮一併丟棄）。"""
+        self.scene, self._item_by_key = self._make_scene()
+        self.view.setScene(self.scene)
+        self._highlight = None
 
     def _on_pick(self, item) -> None:
         pi, ci = item.data(0)
@@ -124,34 +141,67 @@ class EditorWindow(QMainWindow):
         self.scene.addItem(hl)
         self._highlight = hl
 
-    def _on_ime(self, text: str) -> None:
+    def _on_ime_preview(self, text: str) -> None:
+        """組字中預覽插入目標（不變更文件；提交在 Enter）。"""
         if not text:
             return
         if self.cursor is None:
-            self.statusBar().showMessage(
-                f"IME 組字：「{text}」→ 未選游標（先點一個字格）"
-            )
+            self.statusBar().showMessage(f"IME 組字：「{text}」→ 未選游標（先點一個字格）")
             return
         hit = resolve_hit(self.doc, self.page, *self.cursor)
         pos = hit.span[1] if hit.span else "?"
         self.statusBar().showMessage(
-            f"IME 組字：「{text}」→ 目標 段{hit.para_idx} 字位{pos}"
-            "（reflow 為後續工程，未套用）"
+            f"IME 組字：「{text}」→ 目標 段{hit.para_idx} 字位{pos}（按 Enter 插入並 reflow）"
+        )
+
+    def _on_ime_commit(self) -> None:
+        """Enter 提交：於游標插入組字文字 → 全文 reflow → 畫布重繪 → 游標跟隨新落點。"""
+        text = self._ime.text()
+        if not text:
+            return
+        if self.cursor is None:
+            self.statusBar().showMessage("先點一個字格選游標，再組字並按 Enter")
+            return
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None or hit.span is None:
+            self.statusBar().showMessage("此字格無文件游標（拉丁串／空格），無法定位插入")
+            return
+        res = apply_insert(
+            self.doc, self.template, DocCursor(hit.para_idx, hit.span[1]), text
+        )
+        self.doc = res.document
+        self.layout_result = res.layout
+        if res.address is not None:
+            self.page = self.layout_result.pages[res.address.page_number - 1]
+            self.cursor = (res.address.placed_idx, res.address.cell_idx)
+        else:
+            self.page = self.layout_result.pages[0]
+            self.cursor = None
+        self._rebuild()
+        self._ime.clear()
+        if self.cursor is not None and self.cursor in self._item_by_key:
+            self._draw_highlight(self._item_by_key[self.cursor].rect())
+        self.statusBar().showMessage(
+            f"已插入「{text}」→ reflow：{len(self.layout_result.pages)} 頁、"
+            f"{len(self.layout_result.violations)} 禁則違規；"
+            f"游標 段{res.cursor.para_idx} 字位{res.cursor.caret}"
         )
 
     def _show_help(self) -> None:
         QMessageBox.information(
             self,
             "Owner IME 實測說明",
-            "本視窗為 Phase 2 畫布骨架（GAPS #19）。\n\n"
+            "本視窗為 Phase 2 畫布骨架＋編輯引擎 demo（GAPS #19）。\n\n"
             "已實作（離屏 smoke_check 已驗）：\n"
-            "  雙層畫布顯示、點字格 → 反查文件游標（段／字／樣式）。\n\n"
+            "  雙層畫布顯示、點字格 → 反查文件游標（段／字／樣式）、\n"
+            "  IME 提交插入 reflow（組字後按 Enter → 於游標插入 → 全文重排 → 重繪 → 游標跟隨）。\n\n"
             "待您鍵盤實測：\n"
-            "  1. 在下方 IME 輸入區用注音／倉頡／拼音輸入中文，確認候選字窗與組字正常。\n"
-            "  2. 目檢頁面字形與互動層對位（點字格看高亮是否框住字）。\n\n"
+            "  1. 點一個內文字格選游標，在下方輸入區用注音／倉頡／拼音組字，按 Enter，\n"
+            "     確認頁面即時 reflow、游標跟到剛插入的字。\n"
+            "  2. 目檢頁面字形與互動層對位（點字格看高亮是否框住字）。\n"
+            "  3. 確認直排 IME 組字與候選字窗正常（此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
-            "  直排畫布內嵌 IME 編輯（打字直接插入頁面游標並 reflow）。\n"
-            "  本骨架僅示範「IME 組字 → 已知游標目標」，不變更文件、不 reflow。",
+            "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、拖曳與範圍選取 UI。",
         )
 
 

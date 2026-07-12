@@ -2,6 +2,40 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.36.0（2026-07-12，Sprint 41）Phase 2 編輯引擎 reflow 回路（游標插字→重排→反查新游標）
+
+### 決策（Owner「最複雜架構先做」常設定案下，承 Sprint 40 預告的 Phase 2 編輯引擎）
+
+- Phase 2 最複雜且可離屏驗證的架構核心＝編輯回路「寫」方向（Sprint 40 只有「讀」方向 resolve_hit），正對應 §7 Pre-mortem 未退場最大風險「畫布與排版核心同步／選取錯位」。核心置 cjkfolio/（非 editor/）並入 pytest 基線；游標座標系＝段 text 半開座標（與 Cell.span 同）；reflow 全文重排（Spike 3 認可 7.67ms/章，非增量）。
+
+### 變更
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**，純邏輯非 GUI，與 layout/engine 同層）：DocCursor／CellAddress／EditResult＋insert_text（不可變、run 邊界左偏承接字元樣式、越界快速失敗）／locate_cell（resolve_hit 的逆，Cell.span 反查、段內命中唯一、查無回 None）／apply_insert（插字→layout_document 全文重排→反查新游標畫布落點）。
+- [實作] tests/test_edit_engine.py：13 測試（插字 7／run 邊界 2／locate_cell 2／apply_insert 2），素材自擬（C 個案扉頁樣式）。
+- [實作] editor/app.py：IME 提交回路接線（returnPressed→_on_ime_commit→apply_insert→_rebuild 重繪→游標跟隨）；_on_ime 拆為 _on_ime_preview（組字預覽）＋_on_ime_commit（Enter 提交）；誠實範圍 docstring／說明對話框更新。**噪音清理**：移除未使用的 import QTransform。
+- [實作] editor/smoke_check.py：新增 C5 編輯回路離屏驗（選內文字格→提交→reflow→游標跟隨），升級 Sprint 40 一次性 app 探針為永久回歸。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **231 passed / 0 failed**（218→231，+13）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C4（48/48）＋**C5「段3內文插『測試』→reflow（1 頁 0 違規）游標跟隨到『試』」**。
+- 真實素材驗收（R5，自擬 samples/case-divider C 個案扉頁）：apply_insert 段 3 插「大大」→文件實變且原文件不變、reflow 0 禁則違規、新游標 cell.text＝「大」，皆基線 Read 斷言。
+- 獨立方法：核心走 pytest 座標／span 斷言，app 接線走 smoke_check QMainWindow 離屏建構，兩路互證；繁中標點 grep 全綠無破折號。
+
+### 誠實範圍（honest-planning R3；GAPS #19）
+
+- [實作]（離屏驗）：編輯回路「打字→插入→全文 reflow→畫布更新→游標跟隨」。
+- [Shell]／待 Owner（離屏測不了）：真視窗 IME 直排組字順暢度、提交後 reflow 視覺流暢與對位；直排畫布內嵌 IME 即點即打、拖曳／範圍選取、刪除編輯（v1 只插入）為後續 UI 工程。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗 `python editor/app.py`：點內文字格→輸入區組字→Enter，確認 reflow 即時、游標跟到插入字、直排 IME 候選字窗正常、字形與互動層對位（GAPS #19）。
+- 並行 Owner-hands-on：GAPS #10（Spike 1 對比圖抽檢）、#23（斷行逐行一致率）。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎：刪除與範圍編輯（delete_range，locate_cell 已備反查）、或畫布內嵌 IME 即點即打（editor/ UI 工程，待 Owner 真視窗 IME 回報）。
+
 ## v0.35.0（2026-07-12，Sprint 40）Phase 2 開工：PySide6 真視窗畫布骨架（技術棧定案＋點字格反查文件游標）
 
 ### 決策（Owner AskUserQuestion 定案「建 PySide6 真視窗 demo 骨架」）

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
+from editor.app import EditorWindow  # noqa: E402
 from editor.canvas import build_page_scene, iter_cell_rects, resolve_hit  # noqa: E402
 
 DOC = ROOT / "samples" / "case-divider.doc.json"
@@ -90,9 +91,40 @@ def main() -> int:
         f"樣本 段{sample.para_idx} 字{sample.span}＝「{sample.text}」樣式 {sample.style}"
     )
 
+    # C5 編輯引擎回路（app 接線離屏驗）：選內文字格 → IME 提交 → 插字 reflow 重繪、游標跟隨
+    win = EditorWindow(str(DOC))
+    cur = None
+    for pi, pl in enumerate(win.page.placed):
+        if pl.style != "內文-明體直排":
+            continue
+        for ci, cell in enumerate(pl.line.cells):
+            if cell.kind == "cjk" and cell.span is not None:
+                cur = (pi, ci)
+                break
+        if cur is not None:
+            break
+    assert cur is not None, "找不到內文 cjk 字格可測編輯回路"
+    para_idx = win.page.placed[cur[0]].para_idx
+    old_text = win.doc.paragraphs[para_idx].text
+    win.cursor = cur
+    win._ime.setText("測試")
+    win._on_ime_commit()
+    new_text = win.doc.paragraphs[para_idx].text
+    assert len(new_text) == len(old_text) + 2 and "測試" in new_text, \
+        f"插入未反映於文件：{old_text!r} → {new_text!r}"
+    assert win.layout_result.violations == [], f"reflow 有禁則違規：{win.layout_result.violations}"
+    assert win._highlight is not None, "reflow 後游標未重新高亮"
+    assert win.cursor is not None
+    landed = win.page.placed[win.cursor[0]].line.cells[win.cursor[1]]
+    assert landed.text == "試", f"游標未跟隨到最後插入字，落在 {landed.text!r}"
     print(
-        "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致"
-        "（視覺與 IME 待 Owner 真視窗）"
+        f"C5 編輯回路：段{para_idx}內文插入「測試」→ reflow"
+        f"（{len(win.layout_result.pages)} 頁、0 違規），游標跟隨到「{landed.text}」"
+    )
+
+    print(
+        "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
+        "（IME 直排組字與視覺對位待 Owner 真視窗）"
     )
     return 0
 
