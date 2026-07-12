@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.42.0（2026-07-12，Sprint 47）Phase 2 編輯引擎連續輸入合併為單一 undo 單元（EditSession 輸入序列邊界合併）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）EditSession 連續輸入合併，續 Sprint 41〜46 編輯核心，補齊 Phase 2「復原重做」的輸入序列合併（對標 InDesign／多數編輯器逐字輸入合併為單一 undo 單元，PLAN §6 Phase 2）：
+  - `EditSession.insert`（合併回路）：對前進打字（游標接續前一輸入 run 尾 caret＋兩次輸入間隔 `now − ts ≤ coalesce_window` 秒）併入同一 undo 單元（更新現態 document／cursor／layout，但不新增 undo 快照、不動 redo）；非合併路徑委派 `_commit` 起新 undo 單元（推編輯前態、清 redo）。每次輸入後記錄 `_pending_insert=(para_idx, run 尾 caret, 時戳)` 為序列新尾（含合併路徑刷新時戳為最近一次輸入）。
+  - `_can_coalesce`：判定連續輸入是否併入當前單元（承前一輸入、`cursor.para_idx／caret` 接續其尾、未逾時間窗）；`_pending_insert is None` 即不合併。
+  - 輸入序列邊界（皆令 `_pending_insert` 歸零、其後起新單元）：游標不連續、逾 coalesce_window、或任何非插入操作（delete／replace／split／merge／apply_style／apply_para_style 經 `_commit`；undo／redo 經 `_restore`）介入。
+  - EditSession 建構加 keyword-only 參數 `coalesce_window`（預設 2.0s）與 `clock`（預設 `time.monotonic`）；既有 `EditSession(doc, template)` 建構相容不變，測試注入可控假時鐘離屏確定性驗時間邊界。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **326 passed / 0 failed**（319→326，+7：連續合併一單元／redo 整串／游標不連續起新單元／逾時起新單元／恰達窗合併／刪除打斷／undo 重置序列）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅改 EditSession.insert／加 _can_coalesce／_commit 與 _restore 加序列重置、未改既有純函式與 editor/）。
+- 真實素材驗收（R5，自擬 _plain 內文樣張）：連續前進打「三」「房」「兩」（游標 0→1→2 接續、凍結時鐘不逾窗）→ undo 堆疊深度只 +1、一步 undo 還原整串回「的老公寓」、reflow 0 違規；逾 2.0s 窗或刪除介入則起新單元、一步 undo 只退最後一字，皆基線斷言。
+- Gate 4 獨立驗證：pytest 走狀態機斷言（can_undo／can_redo／document.text），另寫獨立 probe 以不同路徑（直接檢視 `session._undo` 堆疊深度＋逐步印出觀察）互證：連續三字深度只 +1、逾時／刪除打斷深度 +2／+3、redo 一步重做整串、預設真時鐘（time.monotonic）快速連打仍合併，probe 跑完即刪（scratchpad 不入 repo）；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：EditSession 連續輸入合併為單一 undo 單元、輸入序列邊界判定（游標連續性／時間窗／非插入操作打斷）、可注入時鐘離屏確定性驗時間邊界。
+- [Shell]／待 Owner（GAPS #25／#19，離屏測不了）：app.py 尚未接線 undo／redo（Ctrl+Z／Y 鍵盤與選單為真視窗工程）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗連續打字後 Ctrl+Z 一步撤整串輸入的手感（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎純邏輯離屏可驗項，或編輯 UI 接線（app.py 樣式面板／Enter／Backspace／undo／redo 真視窗工程，待 Owner 真視窗回報批次）。
+
 ## v0.41.0（2026-07-12，Sprint 46）Phase 2 編輯引擎段落樣式變更（Paragraph.style 換名＋游標保持 reflow 回路）
 
 ### 新增

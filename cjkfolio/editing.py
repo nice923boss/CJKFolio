@@ -10,8 +10,9 @@
 與 Cell.span（Sprint 18 provenance）同座標系；插字與反查全在此座標系閉環。
 v1 只做插入（IME 提交即插入）；刪除／選取範圍編輯為後續工程。
 """
+import time
 from dataclasses import dataclass, replace
-from typing import Optional
+from typing import Callable, Optional
 
 from .document import Document, Paragraph, Run
 from .layout import LayoutResult, layout_document
@@ -417,15 +418,31 @@ class EditSession:
     redo；undo 把現態推入 redo、彈回上一態並全文重排（Spike 3 認可 7.67ms/章，非增量），
     redo 對稱。初始游標＝段 0 caret 0（UI 點選另覆寫；v1 undo 還原上一提交態游標，不追
     UI 中途點選）。app.py 尚未接線 undo／redo（GAPS #24／#19 待 Owner 真視窗）。
+
+    Sprint 47：連續前進打字（游標接續前一輸入尾且兩次間隔未逾 coalesce_window 秒）併為
+    單一 undo 單元（對標 InDesign／多數編輯器逐字輸入不各成一步）；輸入序列邊界＝游標
+    不連續、逾時間窗、或任何非插入操作（含 undo／redo）介入。clock 預設 time.monotonic，
+    測試可注入可控假時鐘以離屏確定性驗證時間邊界。
     """
 
-    def __init__(self, document: Document, template: Template):
+    def __init__(
+        self,
+        document: Document,
+        template: Template,
+        *,
+        coalesce_window: float = 2.0,
+        clock: Callable[[], float] = time.monotonic,
+    ):
         self._template = template
         self._document = document
         self._cursor = DocCursor(0, 0)
         self._layout = layout_document(document, template)
         self._undo: list = []  # [(document, cursor)]，最舊→最新
         self._redo: list = []
+        self._coalesce_window = coalesce_window  # 連續輸入合併時間窗（秒）
+        self._clock = clock  # 單調時鐘（測試可注入可控假時鐘）
+        # 當前開放輸入序列的尾（para_idx, run 尾 caret, 時戳）；None＝無可併入的輸入
+        self._pending_insert: Optional[tuple[int, int, float]] = None
 
     @property
     def document(self) -> Document:
@@ -446,16 +463,49 @@ class EditSession:
         return bool(self._redo)
 
     def _commit(self, result: EditResult) -> EditResult:
-        """把現態存入 undo、清 redo，切換至編輯結果（供各編輯方法共用）。"""
+        """把現態存入 undo、清 redo，切換至編輯結果（供各編輯方法共用）。
+
+        記為一個新 undo 單元並重置輸入序列（_pending_insert 歸零，其後的連續輸入不與
+        此前輸入合併）。
+        """
         self._undo.append((self._document, self._cursor))
         self._redo.clear()
         self._document = result.document
         self._cursor = result.cursor
         self._layout = result.layout
+        self._pending_insert = None
         return result
 
     def insert(self, cursor: DocCursor, text: str) -> EditResult:
-        return self._commit(apply_insert(self._document, self._template, cursor, text))
+        """插入 text；連續前進打字（游標接續前一輸入且未逾時間窗）併入同一 undo 單元。
+
+        對標 InDesign／多數編輯器：逐字輸入合併為單一 undo 步。序列邊界＝游標不連續、
+        兩次輸入間隔逾 coalesce_window、或任何非插入操作（含 undo／redo）介入（皆令
+        _pending_insert 歸零，其後起新 undo 單元）。
+        """
+        result = apply_insert(self._document, self._template, cursor, text)
+        now = self._clock()
+        if self._can_coalesce(cursor, now):
+            # 併入當前 undo 單元：更新現態但不新增 undo 快照、不動 redo
+            self._document = result.document
+            self._cursor = result.cursor
+            self._layout = result.layout
+        else:
+            self._commit(result)  # 起新 undo 單元（推編輯前態、清 redo、重置序列）
+        # 記錄本次輸入尾為序列新尾（含合併路徑：時戳刷新為最近一次輸入）
+        self._pending_insert = (cursor.para_idx, result.cursor.caret, now)
+        return result
+
+    def _can_coalesce(self, cursor: DocCursor, now: float) -> bool:
+        """連續輸入是否併入當前 undo 單元：承前一輸入、游標接續其尾、未逾時間窗。"""
+        if self._pending_insert is None:
+            return False
+        para_idx, end_caret, ts = self._pending_insert
+        return (
+            cursor.para_idx == para_idx
+            and cursor.caret == end_caret
+            and now - ts <= self._coalesce_window
+        )
 
     def delete(self, drange: DocRange) -> EditResult:
         return self._commit(apply_delete(self._document, self._template, drange))
@@ -480,10 +530,15 @@ class EditSession:
         )
 
     def _restore(self, document: Document, cursor: DocCursor) -> EditResult:
-        """切換現態至還原的 (document, cursor)、全文重排、反查游標畫布落點。"""
+        """切換現態至還原的 (document, cursor)、全文重排、反查游標畫布落點。
+
+        undo／redo 均重置輸入序列（_pending_insert 歸零，還原後重新打字不與被還原的
+        輸入合併）。
+        """
         self._document = document
         self._cursor = cursor
         self._layout = layout_document(document, self._template)
+        self._pending_insert = None
         return EditResult(
             document=document,
             layout=self._layout,

@@ -682,3 +682,113 @@ def test_session_delete_and_replace_through_session(template):
     s.replace(DocRange(0, 0, 2), "兩房")  # 替 "三房"→"兩房"
     assert s.document.paragraphs[0].text == "兩房兩廳"
     assert s.layout.violations == []
+
+
+# ---------- EditSession：連續輸入合併為單一 undo 單元（Sprint 47；對標 InDesign）----------
+
+class _FakeClock:
+    """可控時鐘：預設凍結（now 不動），advance() 手動推進，隔離時間邊界於個別測試。"""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, dt: float) -> None:
+        self.now += dt
+
+
+def test_session_coalesces_contiguous_typing(template):
+    # 前進打字（游標連續、時間凍結不逾窗）併為單一 undo 單元，一步 undo 還原整串
+    s = EditSession(_plain("的老公寓"), template, clock=_FakeClock())
+    s.insert(DocCursor(0, 0), "三")  # "三的老公寓"，run 尾 caret 1
+    s.insert(DocCursor(0, 1), "房")  # 游標連續 → 併入
+    s.insert(DocCursor(0, 2), "兩")  # 併入
+    assert s.document.paragraphs[0].text == "三房兩的老公寓"
+    assert s.can_undo() is True
+    res = s.undo()
+    assert s.document.paragraphs[0].text == "的老公寓"  # 三字一步退
+    assert s.can_undo() is False  # 連續三字僅一 undo 單元
+    assert res.layout.violations == []
+
+
+def test_session_redo_restores_whole_coalesced_run(template):
+    # 合併單元的 redo 一步重做整串（對稱 undo）
+    s = EditSession(_plain("老公寓"), template, clock=_FakeClock())
+    s.insert(DocCursor(0, 0), "三")
+    s.insert(DocCursor(0, 1), "房")
+    s.insert(DocCursor(0, 2), "兩")  # 併為 "三房兩老公寓"
+    s.undo()
+    assert s.document.paragraphs[0].text == "老公寓"
+    res = s.redo()
+    assert s.document.paragraphs[0].text == "三房兩老公寓"  # 一步重做整串
+    assert s.can_redo() is False
+    assert res.layout.violations == []
+
+
+def test_session_non_contiguous_insert_starts_new_unit(template):
+    # 游標不連續（第二字插在前一 run 尾之前）不合併，各成一 undo 單元
+    s = EditSession(_plain("兩廳"), template, clock=_FakeClock())
+    s.insert(DocCursor(0, 0), "房")  # "房兩廳"，run 尾 caret 1
+    s.insert(DocCursor(0, 0), "三")  # caret 0 ≠ 前 run 尾 1 → 新單元
+    assert s.document.paragraphs[0].text == "三房兩廳"
+    s.undo()
+    assert s.document.paragraphs[0].text == "房兩廳"  # 只退第二次
+    assert s.can_undo() is True
+
+
+def test_session_time_gap_starts_new_unit(template):
+    # 游標連續但兩次輸入間隔逾時間窗，不合併（對標 InDesign 停頓起新單元）
+    clk = _FakeClock()
+    s = EditSession(_plain("的老公寓"), template, coalesce_window=2.0, clock=clk)
+    s.insert(DocCursor(0, 0), "三")  # t=0
+    clk.advance(2.5)  # 逾 2.0s 窗
+    s.insert(DocCursor(0, 1), "房")  # 游標連續但逾時 → 新單元
+    assert s.document.paragraphs[0].text == "三房的老公寓"
+    s.undo()
+    assert s.document.paragraphs[0].text == "三的老公寓"  # 只退 "房"
+    assert s.can_undo() is True
+
+
+def test_session_within_window_coalesces(template):
+    # 間隔恰達窗（<= 併入）：游標連續且未逾時 → 合併
+    clk = _FakeClock()
+    s = EditSession(_plain("的老公寓"), template, coalesce_window=2.0, clock=clk)
+    s.insert(DocCursor(0, 0), "三")  # t=0
+    clk.advance(2.0)  # 恰達窗邊界
+    s.insert(DocCursor(0, 1), "房")  # 併入
+    s.undo()
+    assert s.document.paragraphs[0].text == "的老公寓"  # 兩字一步退
+    assert s.can_undo() is False
+
+
+def test_session_delete_breaks_insert_run(template):
+    # 非插入操作（刪除）打斷輸入序列：其後即使游標連續亦不與刪除前的輸入合併
+    s = EditSession(_plain("房兩廳"), template, clock=_FakeClock())
+    s.insert(DocCursor(0, 0), "三")  # "三房兩廳"，run 尾 caret 1
+    s.delete(DocRange(0, 3, 4))  # 刪 "廳" → "三房兩"（打斷輸入序列）
+    s.insert(DocCursor(0, 1), "大")  # caret 1＝原 run 尾，但已被 delete 打斷 → 新單元
+    assert s.document.paragraphs[0].text == "三大房兩"
+    s.undo()  # 退 "大"
+    assert s.document.paragraphs[0].text == "三房兩"
+    s.undo()  # 退 delete（復原 "廳"）
+    assert s.document.paragraphs[0].text == "三房兩廳"
+    s.undo()  # 退 "三"
+    assert s.document.paragraphs[0].text == "房兩廳"
+    assert s.can_undo() is False
+
+
+def test_session_undo_resets_coalesce_run(template):
+    # undo 後重新打字不與已還原的舊 run 合併；新 run 自身仍連續合併
+    s = EditSession(_plain("老公寓"), template, clock=_FakeClock())
+    s.insert(DocCursor(0, 0), "三")
+    s.insert(DocCursor(0, 1), "房")  # 併為 "三房老公寓"
+    s.undo()  # 一步退整串 → "老公寓"，輸入序列重置
+    s.insert(DocCursor(0, 0), "新")  # 新編輯（不與已 undo 的 run 合併，清 redo）
+    s.insert(DocCursor(0, 1), "屋")  # 連續 → 併入新 run
+    assert s.document.paragraphs[0].text == "新屋老公寓"
+    assert s.can_redo() is False
+    s.undo()  # 退整個新 run
+    assert s.document.paragraphs[0].text == "老公寓"
+    assert s.can_undo() is False  # 舊 run 已 undo、無殘留單元
