@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.41.0（2026-07-12，Sprint 46）Phase 2 編輯引擎段落樣式變更（Paragraph.style 換名＋游標保持 reflow 回路）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）段落樣式變更，續 Sprint 41〜45 編輯核心，補齊 Phase 2「段落樣式套用」（對標 InDesign 段落樣式，PLAN §4.1）：
+  - `change_paragraph_style`（純文件層，不碰 template）：把段 para_idx 的 Paragraph.style 換為 style，runs（含字元樣式）與 page_no 完全不變；樣式相同為 no-op 回原物件、不可變；para_idx 越界 IndexError；style 空字串 ValueError（守 document@2「段落需非空 style」不變式）。段落樣式名有效性不在此層驗，由 apply_para_style 的 layout_document 守門（同 apply_char_style／insert_text 慣例）。
+  - `apply_para_style`（回路層，對稱 apply_insert／apply_style）：change_paragraph_style（改 cursor.para_idx 段）→ layout_document 全文重排 → locate_cell 反查；段落樣式變更不改 text，故游標（para_idx／caret）保持不變，reflow 後畫布落點隨版面更新、文件座標不動；未知段落樣式名由 layout_document raise KeyError（同 apply_style 字元樣式守門）。
+  - `EditSession.apply_para_style`：委派 apply_para_style 統一經 _commit 記錄 undo／redo（同 insert／delete／replace／split／merge／apply_style）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **319 passed / 0 failed**（304→319，+15：change_paragraph_style 純文件層 8／apply_para_style 回路 3／EditSession 3／R5 往返 1）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加新函式與 EditSession 方法、未改既有函式與 editor/）。
+- 真實素材驗收（R5，自擬 _plain 內文樣張）：內文「三房兩廳，約三十坪的老公寓。」段落樣式「內文-明體直排」→「引文-仿宋語錄」→ placed line.style 換名、reflow 0 違規、游標保持 caret 4、原文件不變；EditSession undo 回原段落樣式、redo 復原，皆基線斷言。
+- Gate 4 獨立驗證：pytest 走狀態機斷言（Paragraph.style／layout placed line.style／堆疊深度），另寫獨立 probe 以「實際印出觀察」不同路徑互證（純函式換名／no-op／空字串守門、回路 placed line.style＝引文／violations 0／游標保持／undo-redo 往返、未知樣式 KeyError），probe 跑完即刪（scratchpad 不入 repo）；繁中標點 grep 無破折號。
+- 誠實記錄（幾何 nuance）：測試用「內文→引文」兩樣式版面幾何參數相同（advance 12.08／cap 32／indent 2，差異僅字型明體 vs 仿宋於渲染層選字），故證的是「段落樣式參照流入 layout（placed line.style 換名）＋reflow 乾淨」，非斷行幾何改變；layout 由樣式推導幾何為結構保證（layout.py 依 p.style 取 ParagraphStyle）。改「內文→題詞-楷書」（indent 0 vs 2）則首行起點位移，機制不限樣式對。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：段落樣式換名純文件層、回路 reflow 與游標保持反查、EditSession undo／redo 整合。
+- [Shell]／待 Owner（GAPS #27／#19，離屏測不了）：app.py 尚未接線段落樣式面板（游標所在段→套段落樣式 UI 為真視窗工程）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗段落樣式面板套用與視覺回饋（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎：連續輸入合併為單一 undo 單元（GAPS #25 剩項，需輸入序列邊界判定），或編輯 UI 接線（app.py 樣式面板／Enter／Backspace／undo／redo 真視窗工程，待 Owner 真視窗回報批次）。
+
 ## v0.40.0（2026-07-12，Sprint 45）Phase 2 編輯引擎字元樣式套用到選取範圍（run 模型切割＋相鄰同樣式併合）
 
 ### 新增

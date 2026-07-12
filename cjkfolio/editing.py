@@ -270,6 +270,50 @@ def apply_style(
     )
 
 
+def change_paragraph_style(doc: Document, para_idx: int, style: str) -> Document:
+    """把段 para_idx 的段落樣式改為 style，回傳新 Document（不可變）。
+
+    只換 Paragraph.style，其餘（runs 與字元樣式、page_no）不變；樣式相同為 no-op 回原
+    物件。系統邊界快速失敗：para_idx 越界 raise IndexError；style 空字串 raise ValueError
+    （守 document@2「段落需非空 style」不變式）。段落樣式名是否存在於模版不在此驗（純文件
+    層），由 apply_para_style 的 layout_document 守門（raise KeyError，同 apply_char_style
+    ／apply_style 慣例）。
+    """
+    if not 0 <= para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    if not style:
+        raise ValueError("段落樣式名不得為空字串")
+    para = doc.paragraphs[para_idx]
+    if para.style == style:  # 樣式無變化 no-op
+        return doc
+    new_para = Paragraph(style=style, runs=para.runs, page_no=para.page_no)
+    new_paras = (
+        doc.paragraphs[:para_idx]
+        + (new_para,)
+        + doc.paragraphs[para_idx + 1 :]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
+def apply_para_style(
+    doc: Document, template: Template, cursor: DocCursor, style: str
+) -> EditResult:
+    """完整編輯回路：改游標所在段的段落樣式 → 全文 reflow → 反查游標畫布落點。
+
+    改 cursor.para_idx 段的段落樣式為 style；段落樣式變更不改 text，故游標（para_idx／
+    caret）保持不變，reflow 後 locate_cell 反查該游標的新畫布落點（換行／換頁時畫布落點
+    隨版面更新，文件座標不動）。未知段落樣式名由 layout_document 守門（raise KeyError）。
+    """
+    new_doc = change_paragraph_style(doc, cursor.para_idx, style)
+    new_layout = layout_document(new_doc, template)
+    address = locate_cell(new_layout, cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=cursor, address=address
+    )
+
+
 def split_paragraph(doc: Document, cursor: DocCursor) -> Document:
     """在 cursor 處把段落切成 head（caret 前）／tail（caret 後）兩段，回傳新 Document。
 
@@ -428,6 +472,11 @@ class EditSession:
     def apply_style(self, drange: DocRange, char_style: Optional[str]) -> EditResult:
         return self._commit(
             apply_style(self._document, self._template, drange, char_style)
+        )
+
+    def apply_para_style(self, cursor: DocCursor, style: str) -> EditResult:
+        return self._commit(
+            apply_para_style(self._document, self._template, cursor, style)
         )
 
     def _restore(self, document: Document, cursor: DocCursor) -> EditResult:
