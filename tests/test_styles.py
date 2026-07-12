@@ -22,8 +22,8 @@ def template():
 
 
 def test_template_three_layers_complete(template):
-    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＋個案扉頁大標（Sprint 33 拆分）＝17、9 字元樣式、7 主版
-    assert len(template.paragraph_styles) == 17
+    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＋個案扉頁大標（Sprint 33 拆分）＋個案欄標-黑W7（Sprint 37，slot 0 建模）＝18、9 字元樣式、7 主版
+    assert len(template.paragraph_styles) == 18
     assert len(template.character_styles) == 9
     assert len(template.masters) == 7
 
@@ -72,6 +72,28 @@ def test_case_info_distinct_from_slot0_hei_label_and_case_no(template):
     assert info.size_pt != pytest.approx(11.5)
     assert info.size_pt != pytest.approx(10.5)
     assert info.size_pt != pytest.approx(13.0)
+
+
+def test_case_hei_label_style_modeled(template):
+    """個案欄標-黑W7（Sprint 37，slot 0 一手量測 33 個案扉頁，Owner 定案升級 C）：
+    Sprint 35 揭露 slot 0（cx 354）＝DFHeiStd-W7 欄標非個案中標，本 Sprint 建模。量測
+    （33 頁聚合）：欄標首字頂 92.1＝天頭 92.09（承 A、lead_offset 0，墨頂差為字型 bearing）、
+    縱向 4~6 字佔 block slot 0 一行；11.5pt×26 頁（「個案資料／廖心筠整理師」等）為主流，
+    10.5pt×7 頁（「理解與祝福」訪談頁）為變體（note 記錄，主流建模）。DFHeiStd-W7 對映
+    思源黑體 Bold（§8 可散布，W7＝Bold；別於章名明 W7 用 heavy＝思源宋體無 Bold 檔）。
+    para_gap 0（欄標 slot 0 與大標 slot 1 相鄰）。資訊區個案中標移入為 Sprint 38 專項。"""
+    label = template.paragraph_styles["個案欄標-黑W7"]
+    assert label.font_family == "思源黑體 TC"
+    assert label.font_weight == "bold"            # W7＝Bold（思源黑體有 Bold 檔，不 fallback）
+    assert label.size_pt == pytest.approx(11.5)   # 主流 26 頁（10.5pt 訪談頁變體記 note）
+    assert label.indent_chars == 0                # 欄標無縮排（天頭 92.09 起）
+    assert label.para_gap_slots == 0              # slot 0 與大標 slot 1 相鄰
+    assert label.lead_offset_pt == 0.0            # 首字框頂＝天頭（墨頂 92.1 差為字型 bearing）
+    assert label.source_font == "DFHeiStd-W7"
+    # 與個案中標分離：欄標＝黑 W7 Bold 11.5pt slot 0；個案中標＝Noto Medium 11.4pt 資訊區
+    info = template.paragraph_styles["個案中標-NotoSans"]
+    assert label.source_font != info.source_font
+    assert label.font_weight != info.font_weight
 
 
 def test_handwritten_variants_measured_not_conflated(template):

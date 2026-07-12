@@ -346,20 +346,25 @@ def test_toc_entry_black_w5_corrected(template):
 
 def test_case_master_and_title_placement(template):
     """C 個案扉頁（PDF 20/36/54… 數十頁一手互證）：版心承 A（內文天頭 92.09pt
-    ＝32.49mm、扉頁內文縮排 116.47＝92.09＋2×12.08）；資訊列 slot 0、個案扉頁大標
-    slot 1、內文承 A 自 slot 2（Sprint 25 A 級三列相鄰）。扉頁大標＝思源黑體 Medium
-    17.9pt、para_gap 0（Sprint 33 與 md h2 用的 個案大標-NotoSans para_gap 1 拆為兩
-    物件樣式）；右頁行軸 331.25 貼真書實測 331.28（差 0.03pt，驗右頁 line_axis 公式）。"""
+    ＝32.49mm）；slot 0 黑 W7 欄標、個案扉頁大標 slot 1、內文承 A 自 slot 2。欄標
+    （Sprint 37 建模，Owner 定案升級 C，33 頁量測）＝DFHeiStd-W7 → 思源黑體 Bold 11.5pt、
+    天頭起（indent 0、lead_offset 0，首字頂 92.1＝天頭）；大標＝思源黑體 Medium 17.9pt、
+    para_gap 0（Sprint 33 與 md h2 用的 個案大標-NotoSans para_gap 1 拆兩物件樣式）。右頁
+    行軸：欄標 slot 0＝354.25（真書墨 354.6 差 0.35 字型度量）、大標 slot 1＝331.25（真書墨
+    331.28 差 0.03，驗右頁 line_axis 公式）。個案中標移資訊區（cx 93~231）為 Sprint 38 專項，
+    本樣張 slot 0 不再放個案中標。"""
     master = template.masters["C-個案扉頁"]
     assert master.margins.top_mm == pytest.approx(32.49)   # 承 A 內文天頭 92.09pt
     assert master.grid.char_advance_pt == pytest.approx(12.08)
     assert master.mirror is True
+    label = template.paragraph_styles["個案欄標-黑W7"]  # slot 0（Sprint 37 建模）
+    assert label.font_family == "思源黑體 TC" and label.font_weight == "bold"
+    assert label.size_pt == pytest.approx(11.5)
+    assert label.indent_chars == 0 and label.para_gap_slots == 0  # 天頭起、與大標 slot 1 相鄰
     title = template.paragraph_styles["個案扉頁大標-NotoSans"]
     assert title.font_family == "思源黑體 TC" and title.font_weight == "medium"
     assert title.size_pt == pytest.approx(17.9)
     assert title.para_gap_slots == 0  # 扉頁大標後內文相鄰落 slot 2（Sprint 25 實測）
-    info = template.paragraph_styles["個案中標-NotoSans"]
-    assert info.para_gap_slots == 0  # 資訊列 slot 0 與大標 slot 1 相鄰（實測，Sprint 25 勘誤）
     # md h2／內頁大標仍用 個案大標-NotoSans para_gap 1（42 頁不動，Sprint 33 拆分保留）
     assert template.paragraph_styles["個案大標-NotoSans"].para_gap_slots == 1
     assert template.md_mapping["h2"] == "個案大標-NotoSans"
@@ -367,7 +372,7 @@ def test_case_master_and_title_placement(template):
         "schema": "cjkfolio/document@2",
         "meta": {"title": "個案扉樣張", "template": "neizai-zhengli", "master": "C-個案扉頁"},
         "paragraphs": [
-            {"text": "每個家都有自己的故事", "style": "個案中標-NotoSans"},
+            {"text": "案例速寫", "style": "個案欄標-黑W7"},
             {"text": "重新安放生活的重量", "style": "個案扉頁大標-NotoSans"},
             {"text": "他們在拆解與重組之間，慢慢認回想要的生活。", "style": "內文-明體直排"},
         ],
@@ -375,11 +380,13 @@ def test_case_master_and_title_placement(template):
     layout = layout_document(doc, template)
     assert layout.violations == []
     placed = layout.pages[0].placed
-    assert placed[0].slot == 0 and placed[0].style == "個案中標-NotoSans"
+    assert placed[0].slot == 0 and placed[0].style == "個案欄標-黑W7"  # 黑 W7 欄標 slot 0
     assert placed[1].slot == 1 and placed[1].style == "個案扉頁大標-NotoSans"  # 大標 slot 1
-    assert placed[2].slot == 2 and placed[2].style == "內文-明體直排"  # 內文 slot 2（修正前 slot 3）
-    axis = line_axis_x_pt(template, master, 1, 2, line_slots=1)  # 偶＝右頁
-    assert axis == pytest.approx(331.25, abs=0.1)  # layout 欄中心＝真書墨 cx 331.28
+    assert placed[2].slot == 2 and placed[2].style == "內文-明體直排"  # 內文 slot 2
+    axis_label = line_axis_x_pt(template, master, 0, 2, line_slots=1)  # 偶＝右頁，slot 0 欄標
+    axis_title = line_axis_x_pt(template, master, 1, 2, line_slots=1)  # slot 1 大標
+    assert axis_label == pytest.approx(354.25, abs=0.1)  # 欄標欄中心＝真書墨 cx 354.6
+    assert axis_title == pytest.approx(331.25, abs=0.1)  # 大標欄中心＝真書墨 cx 331.28
     # 字墨 cx 對準此軸（trim 空間置中）；PDF MediaBox 另加 3mm 出血＝+8.5pt（框差，非
     # 置中錯誤），PDF 側置中見 test_pdf_writer::test_case_ttb_ink_centered_on_line_axis。
 

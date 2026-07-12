@@ -2,6 +2,38 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.32.0（2026-07-12，Sprint 37）C 個案扉頁 slot 0 黑 W7 欄標樣式建模（Owner 定案升級 C）
+
+### 決策（honest-planning R1／R5 先量測再動工；Owner AskUserQuestion 定案升級 C）
+
+- Owner 於 Sprint 36 收尾定案「升級定案 C」（完整重定 C 主版，推翻 Sprint 35「選 B 不重定模型」），啟動 GAPS #13 黑 W7 欄標專項。依 R1 先量測 33 個案扉頁完整幾何，找到真實目標才建模。**架構判定**：slot 0 欄標與 slot 1 大標自 inline 天頭起、block 軸相鄰堆疊，現有單欄線性流排（engine.flow_pages）可表達，本 Sprint 建模；資訊區（slot 5+ 欄位標籤／內文交替、slot 2~4 空欄）為空間分區超出線性堆疊，拆 Sprint 38（與 Owner 建議吻合）。
+
+### 量測（A 級一手證據，本機紅線不入 repo）
+
+- slot 0 欄標（cx 354.6）：DFHeiStd-W7、首字頂 92.1＝天頭 92.09（承 A）、縱向 4~6 字佔 block slot 0 一行；11.5pt×26 頁（資訊頁「個案資料」等）主流、10.5pt×7 頁（訪談頁「理解與祝福」）變體。字框頂天頭、墨頂差為字型 bearing（lead_offset 0，同部扉／大標先例）。
+- slot 1 大標（cx 331.6）：NotoSans 17.9pt、首字頂 98.0（33 頁齊一）＝天頭＋bearing 5.9pt。
+- 資訊區（cx 93~231＝slot 5~11）：欄位標籤 NotoSans 11.4pt（「【格局】【居住者】」天頭 92.3）＋內文 DFMingStd 11.5pt（縮排 top 116.5）＋13pt DFHeiStd 中標交替；slot 2~4 空欄；列數 4~7（衆數 6）。
+
+### 變更
+
+- [實作] templates/neizai-zhengli.json：新增段落樣式 `個案欄標-黑W7`（思源黑體 Bold 11.5pt、indent 0、para_gap 0、lead_offset 0、source_font DFHeiStd-W7），note 記 A 級量測參數（cx 354、天頭 92.09、11.5×26／10.5×7 變體、W7＝Bold 不 fallback）；C 主版 evidence 更新「slot 0 已建模」。段落樣式 17 → 18。
+- [實作] samples/case-divider.doc.json：slot 0 `個案中標-NotoSans` → `個案欄標-黑W7`（自擬「案例速寫」），個案中標移出（真實位置＝資訊區，Sprint 38）。
+- [實作] tests/test_styles.py：新增 `test_case_hei_label_style_modeled` 守門（font bold／11.5pt／indent 0／para_gap 0／lead_offset 0／source_font DFHeiStd-W7、與個案中標分離）。
+- [實作] tests/test_layout_render.py／test_pdf_writer.py：case-divider slot 0 測試改欄標（layout slot [0,1,2] 欄標／大標／內文、line_axis 欄標 354.25＋大標 331.25；PDF 字墨扣出血＝各自 line_axis）。
+
+### 驗證
+
+- 全套 `pytest spikes tests` 218 passed / 0 failed（217 → 218）；typecheck（py_compile 全部）EXIT=0。
+- 真實素材驗收（R5 建模 Sprint 非純守門）：render case-divider PNG（first-page 20 偶＝右頁）欄標用 SourceHanSansTC-Bold（W7→Bold 不 fallback，字型使用訊息證）、0 禁則違規；export PDF preflight 12/12。
+- Gate 4 獨立驗證：render PNG 墨跡三直行 trim_cx（程式化墨跡分析，視覺 Read 因 context limit elided）＝欄標 354.2／大標 331.2／內文 308.2 吻合 line_axis 354.25／331.25／308.25（slot 0/1/2，差 0.05pt）；欄標 y頂 32.68mm＝天頭、4 字縱向 y底 48.94mm＝4×11.5pt 佔 block slot 0 一行；3 直行無 notdef 爆量。兩後端 parity：PDF 側 `test_case_ttb_ink_centered_on_line_axis` 欄標 slot 0 字墨扣出血＝axis_label 354.25，與 PNG 側 354.2 同源。
+- 繁中標點：本 Sprint 改動檔（模版／樣張／三測試／PLAN／GAPS／devlog／CHANGELOG）無破折號字元殘留。
+
+### 已知限制（詳 GAPS.md #13）
+
+- 資訊區多欄位佈局（slot 2~4 空欄＋slot 5~11 欄位標籤／內文／13pt 中標交替，線性堆疊不可表達需新機制）＋個案中標移資訊區為 Sprint 38 專項。
+- 10.5pt 訪談頁欄標變體（7 頁「理解與祝福」）以主流 11.5pt 建模、變體 note 記錄，未建獨立樣式。
+- 續留 #13 其他剩項：F 版權頁真實版心 p178（待 Owner 本機量測）、目錄摘要層／【結語】變體、部扉裝飾框（美術資產待向量置入機制）、B〜G 其他扉頁逐頁量測。
+
 ## v0.31.0（2026-07-12，Sprint 36）旁注 9pt／Case 編號 15.9pt 兩「掃描見變體」量測確認為真（GAPS #13 待查標記清查完畢）
 
 ### 決策（honest-planning R1／R5 先量測再動工）
