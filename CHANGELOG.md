@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.37.0（2026-07-12，Sprint 42）Phase 2 編輯引擎段內刪除與範圍替換（多 run 切割＋reflow 回路）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）段內刪除與範圍編輯，續 Sprint 41 插入回路：
+  - `DocRange`（段索引＋段 text 半開區間 [start, end)，與 DocCursor caret 同座標系；start==end 為空範圍）。
+  - `delete_range`：段內範圍刪除，橫跨多 run 逐 run 切除交集、保留兩端 run 及字元樣式，整個 run 落範圍內則連樣式一併消失；全段刪空回合法空段（text 為空，Paragraph 正規化為單一空 run，守 document@2 不變式）；不可變。
+  - `replace_range`：delete_range 後於 start 插入，新字承接 start 左側 run 字元樣式（復用 insert_text 慣例）；text 空＝退化為純刪除。全刪再插無需改 insert_text（空段正規化為單一空 run，既有 for 迴圈於該空 run 邊界插入）。
+  - `apply_delete`／`apply_replace`：對稱 apply_insert 的完整回路（編輯→layout_document 全文重排→locate_cell 反查新游標畫布落點）；全段刪空 address=None。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **250 passed / 0 failed**（231→250，+19：delete_range 11／replace_range 4／apply_delete／apply_replace 4）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加新函式、未改 insert_text／apply_insert，C5 插入回路不受影響）。
+- 真實素材驗收（R5，自擬 samples/case-divider 與 make_doc 樣張）：段內 [4,6) 刪「，約」→reflow 0 違規、游標反查 cell.text＝「廳」；範圍 [0,4) 替換「兩房」→reflow 0 違規、游標跟隨「房」；跨 run 刪除保留兩端字元樣式、全刪成空段 address=None，皆基線斷言。
+- 獨立方法：核心走 pytest 座標／span 斷言，editor 走 smoke_check 離屏建構；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：段內刪除、範圍替換的核心邏輯與 reflow 回路。
+- [Shell]／待 Owner（GAPS #19／#24，離屏測不了）：刪除／範圍選取的鍵盤與拖曳畫布 UI 接線（app.py 未接線）、跨段合併／分裂（Backspace 段首併前段、Enter 分段，改 para_idx 語意需新機制）為後續。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗 IME 直排輸入與刪除／選取鍵盤操作（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎：直排畫布內嵌 IME 即點即打與刪除／選取 UI 接線（editor/ UI 工程，待 Owner 真視窗回報），或跨段合併／分裂機制（需 R1 設計 para_idx 重編與游標跨段映射）。
+
 ## v0.36.0（2026-07-12，Sprint 41）Phase 2 編輯引擎 reflow 回路（游標插字→重排→反查新游標）
 
 ### 決策（Owner「最複雜架構先做」常設定案下，承 Sprint 40 預告的 Phase 2 編輯引擎）

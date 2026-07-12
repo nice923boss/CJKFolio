@@ -117,3 +117,95 @@ def apply_insert(
     return EditResult(
         document=new_doc, layout=new_layout, cursor=new_cursor, address=address
     )
+
+
+@dataclass(frozen=True)
+class DocRange:
+    """段內文字範圍：段索引＋段 text 半開區間 [start, end)（同 DocCursor caret 座標系）。
+
+    v1 為段內範圍（不跨段）；start==end 為空範圍（刪除 no-op、替換退化為純插入）。
+    """
+
+    para_idx: int
+    start: int
+    end: int
+
+
+def delete_range(doc: Document, drange: DocRange) -> Document:
+    """刪除段內 [start, end) 範圍文字，回傳新 Document（不可變；空範圍 no-op 回原物件）。
+
+    範圍橫跨多 run 時逐 run 切除交集、保留兩端 run 及其字元樣式；整個 run 落在範圍
+    內則該 run 連同樣式一併消失。全段刪空回合法空段（text 為空，Paragraph 正規化為單一空 run）。
+    系統邊界快速失敗：para_idx 越界 raise IndexError；start/end 越界或 start>end raise ValueError。
+    """
+    if not 0 <= drange.para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {drange.para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    para = doc.paragraphs[drange.para_idx]
+    n = len(para.text)
+    if not 0 <= drange.start <= n or not 0 <= drange.end <= n:
+        raise ValueError(f"範圍 [{drange.start}, {drange.end}) 超出段 text 範圍 0..{n}")
+    if drange.start > drange.end:
+        raise ValueError(f"範圍起點 {drange.start} 大於終點 {drange.end}")
+    if drange.start == drange.end:
+        return doc
+    new_runs = []
+    base = 0
+    for r in para.runs:
+        kept = "".join(
+            ch
+            for j, ch in enumerate(r.text)
+            if not (drange.start <= base + j < drange.end)
+        )
+        if kept:
+            new_runs.append(Run(kept, r.char_style))
+        base += len(r.text)
+    new_para = Paragraph(style=para.style, runs=tuple(new_runs), page_no=para.page_no)
+    new_paras = (
+        doc.paragraphs[: drange.para_idx]
+        + (new_para,)
+        + doc.paragraphs[drange.para_idx + 1 :]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
+def replace_range(doc: Document, drange: DocRange, text: str) -> Document:
+    """以 text 替換段內 [start, end) 範圍，回傳新 Document（不可變）。
+
+    等價於刪除範圍後於 start 插入 text；新字承接 start 左側 run 的字元樣式（同
+    insert_text「新字繼承游標前樣式」慣例）。text 為空＝退化為純刪除。
+    """
+    deleted = delete_range(doc, drange)
+    return insert_text(deleted, DocCursor(drange.para_idx, drange.start), text)
+
+
+def apply_delete(doc: Document, template: Template, drange: DocRange) -> EditResult:
+    """完整編輯回路：刪範圍 → 全文 reflow → 反查新游標畫布落點。
+
+    新 caret＝drange.start（刪除點，落在殘存文字之間）；全段刪空時該段無可見字格，
+    locate_cell 回 None（address=None，合法）。
+    """
+    new_doc = delete_range(doc, drange)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(drange.para_idx, drange.start)
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
+
+
+def apply_replace(
+    doc: Document, template: Template, drange: DocRange, text: str
+) -> EditResult:
+    """完整編輯回路：替換範圍 → 全文 reflow → 反查新游標畫布落點。
+
+    新 caret＝drange.start＋len(text)（落在最後一個新字之後）。
+    """
+    new_doc = replace_range(doc, drange, text)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(drange.para_idx, drange.start + len(text))
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
