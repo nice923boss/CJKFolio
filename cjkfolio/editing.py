@@ -212,6 +212,113 @@ def apply_replace(
     )
 
 
+@dataclass(frozen=True)
+class DocSpan:
+    """跨段選取範圍：起訖兩個 DocCursor 界定（start ≤ end，段索引優先再比 caret）。
+
+    DocRange 為段內範圍（單一 para_idx＋caret 區間）；DocSpan 一般化為可跨段選取，
+    同段（start.para_idx==end.para_idx）退化為段內範圍。start==end 為空範圍（刪除
+    no-op、替換退化為純插入）。座標系同 DocCursor.caret（段 text 半開座標）。
+    """
+
+    start: DocCursor
+    end: DocCursor
+
+
+def _slice_runs(runs: tuple, start: int, end: int) -> list:
+    """runs 串接文字 [start, end) 對應的 run 序列（邊界 run 切割、保字元樣式、濾空段）。"""
+    out = []
+    base = 0
+    for r in runs:
+        rend = base + len(r.text)
+        lo, hi = max(start, base), min(end, rend)
+        if lo < hi:
+            out.append(Run(r.text[lo - base : hi - base], r.char_style))
+        base = rend
+    return out
+
+
+def _validate_span(doc: Document, span: DocSpan) -> None:
+    """DocSpan 系統邊界檢查：para_idx 越界 IndexError、caret 越界或起點晚於終點 ValueError。"""
+    n_para = len(doc.paragraphs)
+    for c in (span.start, span.end):
+        if not 0 <= c.para_idx < n_para:
+            raise IndexError(f"para_idx {c.para_idx} 超出段落範圍 0..{n_para - 1}")
+    if not 0 <= span.start.caret <= len(doc.paragraphs[span.start.para_idx].text):
+        raise ValueError(f"起點 caret {span.start.caret} 超出段 {span.start.para_idx} text 範圍")
+    if not 0 <= span.end.caret <= len(doc.paragraphs[span.end.para_idx].text):
+        raise ValueError(f"終點 caret {span.end.caret} 超出段 {span.end.para_idx} text 範圍")
+    if (span.start.para_idx, span.start.caret) > (span.end.para_idx, span.end.caret):
+        raise ValueError(
+            f"範圍起點（段 {span.start.para_idx} caret {span.start.caret}）"
+            f"晚於終點（段 {span.end.para_idx} caret {span.end.caret}）"
+        )
+
+
+def delete_span(doc: Document, span: DocSpan) -> Document:
+    """刪除跨段選取範圍 [start, end)，回傳新 Document（不可變；空範圍 no-op 回原物件）。
+
+    同段退化為段內範圍刪除（委派 delete_range）。跨段時：頭段保留 start 之前、尾段保留
+    end 之後，兩者併為一段承頭段樣式與 page_no（頭段存活，同 merge_paragraph 慣例），
+    中間整段一併移除；兩端 run 各保字元樣式，全刪空則正規化為單一空 run（守 document@2）。
+    系統邊界快速失敗：para_idx 越界 IndexError、caret 越界或起點晚於終點 ValueError。
+    """
+    _validate_span(doc, span)
+    if span.start == span.end:  # 空範圍 no-op
+        return doc
+    a, b = span.start.para_idx, span.end.para_idx
+    if a == b:  # 同段退化＝段內範圍刪除
+        return delete_range(doc, DocRange(a, span.start.caret, span.end.caret))
+    para_a = doc.paragraphs[a]
+    para_b = doc.paragraphs[b]
+    merged_runs = _slice_runs(para_a.runs, 0, span.start.caret) + _slice_runs(
+        para_b.runs, span.end.caret, len(para_b.text)
+    )
+    merged = Paragraph(style=para_a.style, runs=tuple(merged_runs), page_no=para_a.page_no)
+    new_paras = doc.paragraphs[:a] + (merged,) + doc.paragraphs[b + 1 :]
+    return replace(doc, paragraphs=new_paras)
+
+
+def replace_span(doc: Document, span: DocSpan, text: str) -> Document:
+    """以 text 替換跨段選取範圍 [start, end)，回傳新 Document（不可變）。
+
+    等價於 delete_span 後於縫（start.para_idx, start.caret）插入 text；新字承接縫左側 run
+    的字元樣式（同 insert_text 慣例）。text 為空＝退化為純刪除。
+    """
+    deleted = delete_span(doc, span)
+    return insert_text(deleted, DocCursor(span.start.para_idx, span.start.caret), text)
+
+
+def apply_delete_span(doc: Document, template: Template, span: DocSpan) -> EditResult:
+    """完整編輯回路：跨段刪除 → 全文 reflow → 反查新游標畫布落點。
+
+    新 caret＝縫（start.para_idx, start.caret）；全刪空時該段無可見字格，address None。
+    """
+    new_doc = delete_span(doc, span)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(span.start.para_idx, span.start.caret)
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
+
+
+def apply_replace_span(
+    doc: Document, template: Template, span: DocSpan, text: str
+) -> EditResult:
+    """完整編輯回路：跨段替換 → 全文 reflow → 反查新游標畫布落點。
+
+    新 caret＝start.caret＋len(text)（落在最後一個新字之後、同一頭段內）。
+    """
+    new_doc = replace_span(doc, span, text)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(span.start.para_idx, span.start.caret + len(text))
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
+
+
 def apply_char_style(
     doc: Document, drange: DocRange, char_style: Optional[str]
 ) -> Document:
@@ -512,6 +619,14 @@ class EditSession:
 
     def replace(self, drange: DocRange, text: str) -> EditResult:
         return self._commit(apply_replace(self._document, self._template, drange, text))
+
+    def delete_span(self, span: DocSpan) -> EditResult:
+        return self._commit(apply_delete_span(self._document, self._template, span))
+
+    def replace_span(self, span: DocSpan, text: str) -> EditResult:
+        return self._commit(
+            apply_replace_span(self._document, self._template, span, text)
+        )
 
     def split(self, cursor: DocCursor) -> EditResult:
         return self._commit(apply_split(self._document, self._template, cursor))

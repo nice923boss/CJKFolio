@@ -2,6 +2,39 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.43.0（2026-07-12，Sprint 48）Phase 2 編輯引擎跨段選取範圍（DocSpan 跨段刪除／替換）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）跨段選取範圍 DocSpan＋跨段刪除／替換，續 Sprint 41〜47 編輯核心，補齊改變段落邊界的範圍編輯（PLAN §6 Phase 2「選取」編輯；為 GAPS #26 跨段字元樣式所需的跨段範圍機制地基）：
+  - `DocSpan`（凍結資料類）：起訖兩個 DocCursor 界定的跨段選取（start ≤ end，段索引優先再比 caret）；DocRange 為段內範圍，DocSpan 一般化為可跨段，同段（start.para_idx==end.para_idx）退化為段內範圍，start==end 為空範圍（刪除 no-op、替換退化純插入）。
+  - `delete_span`（純文件層）：同段委派 delete_range；跨段時頭段保留 start 之前、尾段保留 end 之後併為一段承頭段樣式與 page_no（頭段存活，同 merge_paragraph 慣例），中間整段移除、兩端 run 各保字元樣式，全刪空正規化為單一空 run（守 document@2）；空範圍 no-op 回原物件。內部 `_slice_runs`（邊界 run 切割、保字元樣式、濾空段）與 `_validate_span`（para_idx 越界 IndexError、caret 越界或起點晚於終點 ValueError）。
+  - `replace_span`（純文件層）：delete_span 後於縫（start.para_idx, start.caret）插入 text，新字承接縫左側 run 字元樣式（同 insert_text 慣例）；text 空＝退化純刪除。
+  - `apply_delete_span`／`apply_replace_span`（回路層，對稱 apply_delete／apply_replace）：跨段編輯 → layout_document 全文重排 → locate_cell 反查；delete 新 caret＝縫、replace 新 caret＝縫＋len(text)；全刪空段 address=None。
+  - `EditSession.delete_span`／`replace_span`：委派統一經 _commit 記錄 undo／redo（同 delete／replace／split／merge），非插入操作重置連續輸入序列（打斷 coalesce）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **346 passed / 0 failed**（326→346，+20，新檔 tests/test_edit_span.py：delete_span 11／replace_span 3／apply 4／EditSession 2）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 循 tests/ 分檔慣例（test_edit_style／test_edit_para_style 先例）：跨段編輯測試獨立為 tests/test_edit_span.py（自帶 fixture／helper／_FakeClock，不建共享 conftest），test_edit_engine.py 維持 794 行不撐破 800 上限。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加新函式與 EditSession 方法、未改既有函式與 editor/）。
+- 真實素材驗收（R5，自擬多段內文樣張）：段 0「三房兩廳」到段 1「採光良好」跨段刪 → 頭「三房」＋尾「良好」併為單段「三房良好」reflow 0 違規、游標落縫左鄰「廳」；跨段替換「格局」→「三房格局良好」；併段承頭段樣式與 page_no、兩端 run 字元樣式各保，皆基線斷言。
+- Gate 4 獨立驗證：pytest 走狀態機斷言（段數／text／run 樣式／堆疊），另寫獨立 probe 以不同路徑（直接印出觀察＋直接檢視 session._undo 深度）互證：跨段刪除段數 3→1、頭段存活承 style／page_no、兩端 run 樣式各保、同段退化＝delete_range 等價、替換於縫插入、apply reflow violations 空、session undo 深度 0→1→2 兩步歸零 can_redo=True、三守門（逆序／段越界／caret 越界）全擋，probe 跑完即刪（scratchpad 不入 repo）；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：DocSpan 跨段選取範圍、跨段刪除（頭尾併段承頭段樣式）／替換（於縫插入）、apply_* 回路 reflow 與游標反查、EditSession undo／redo 整合。
+- [Shell]／待 Owner（GAPS #28／#19，離屏測不了）：app.py 尚未接線選取拖曳與跨段刪除／替換（滑鼠框選→跨段刪除為真視窗工程）。
+- 尚未做（下一 Sprint 剩項）：跨段「字元樣式套用」（apply_char_style over DocSpan，GAPS #26）本 Sprint 只建範圍機制、未套字元樣式。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗滑鼠跨段框選後刪除／替換的手感與視覺對位（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 跨段字元樣式套用（apply_char_style over DocSpan，關 GAPS #26 跨段字元樣式子項），或其他編輯引擎純邏輯離屏可驗項；編輯 UI 接線（選取／Enter／Backspace／undo／redo app.py 真視窗工程）待 Owner 真視窗回報批次。
+
 ## v0.42.0（2026-07-12，Sprint 47）Phase 2 編輯引擎連續輸入合併為單一 undo 單元（EditSession 輸入序列邊界合併）
 
 ### 新增
