@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.44.0（2026-07-12，Sprint 49）Phase 2 編輯引擎跨段字元樣式套用（apply_char_style over DocSpan）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）跨段字元樣式套用，承 Sprint 45 段內 apply_char_style 與 Sprint 48 DocSpan 跨段範圍機制，關 GAPS #26「跨段選取套字元樣式」子項（對標 InDesign 跨段選取套字元樣式，PLAN §4.1）：
+  - `apply_char_style_span`（純文件層）：對跨段選取 [start, end) 逐段套（或清 None）字元樣式，段界不併（字元樣式不改段落數量，別於 delete_span）；頭段套 [start, len)、中間段整段、尾段套 [0, end)，各段委派段內 apply_char_style（逐 run 切割＋相鄰同樣式併合）；同段退化為段內 apply_char_style；空範圍 no-op；越界／逆序快速失敗（復用 _validate_span）。
+  - `apply_style_span`（回路層，對稱 apply_style）：apply_char_style_span → layout_document 全文重排 → locate_cell 反查；新 caret＝span.end（游標停選取尾）；未知字元樣式名由 layout_document 守門（raise KeyError）。
+  - `EditSession.apply_style_span`：委派統一經 _commit 入 undo／redo（同 delete_span／replace_span／apply_style）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **359 passed / 0 failed**（346→359，+13，新檔 tests/test_edit_style_span.py：apply_char_style_span 10／apply_style_span 2／EditSession 1）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 循 tests/ 分檔慣例（test_edit_style／test_edit_span 先例）：跨段字元樣式測試獨立為 tests/test_edit_style_span.py（自帶 fixture／helper，不建共享 conftest）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加新函式與 EditSession 方法、未改既有函式與 editor/）。
+- 真實素材驗收（R5，自擬多段內文樣張）：段 0「三房兩廳」到段 1「採光良好」跨段套「內文強調-明體W9」→ 段 0「兩廳」＋段 1「採光」掛強調、段界不併（仍 2 段）、範圍外保留原樣式；reflow 0 違規、游標停選取尾、端到端字格 char_style 流入渲染層（強調字＝「約三十坪採光」）、undo 清回原、redo 復原，皆基線斷言。
+- Gate 4 獨立驗證：pytest 走狀態機斷言（runs／char_style／段數／堆疊），另寫獨立 probe 以不同路徑（直接印出觀察＋直接檢視 session._undo 深度）互證：跨段套樣式段界不併、中間段整段、同段退化＝段內 apply_char_style 等價、None 跨段清除、相鄰同樣式併合、apply reflow violations 空＋端到端強調字、session undo 清回 redo 復原、逆序 ValueError／未知樣式 KeyError 守門，probe 跑完即刪（scratchpad 不入 repo）；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：跨段字元樣式套用（逐段套段界不併＋相鄰同樣式併合）、apply_style_span 回路 reflow 與游標反查、EditSession undo／redo 整合。
+- [Shell]／待 Owner（GAPS #28／#26／#19，離屏測不了）：app.py 尚未接線樣式面板（選取範圍→套字元樣式 UI，含跨段選取拖曳為真視窗工程）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗滑鼠跨段框選後套字元樣式的手感與視覺回饋（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- Phase 2 核心編輯 API（插入／刪除／替換／分裂／合併／undo-redo／字元樣式／段落樣式，段內與跨段）至此完備；後續為編輯 UI 接線（選取拖曳／樣式面板／Enter／Backspace／undo／redo app.py 真視窗工程，待 Owner 真視窗回報批次），或其他純邏輯離屏可驗項（如選取複製／貼上片段模型）。
+
 ## v0.43.0（2026-07-12，Sprint 48）Phase 2 編輯引擎跨段選取範圍（DocSpan 跨段刪除／替換）
 
 ### 新增

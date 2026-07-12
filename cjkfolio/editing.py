@@ -378,6 +378,51 @@ def apply_style(
     )
 
 
+def apply_char_style_span(
+    doc: Document, span: DocSpan, char_style: Optional[str]
+) -> Document:
+    """對跨段選取範圍 [start, end) 逐段套（或清）字元樣式 char_style，回傳新 Document（不可變）。
+
+    段界不併（字元樣式不改變段落數量，別於 delete_span）：頭段套 [start, len)、中間段整段、
+    尾段套 [0, end)，各段委派段內 apply_char_style（逐 run 切割＋相鄰同樣式併合）。同段
+    （start.para_idx==end.para_idx）退化為段內 apply_char_style。空範圍 no-op 回原物件。
+    系統邊界快速失敗同 delete_span（para_idx 越界 IndexError、caret 越界或起點晚於終點
+    ValueError）；字元樣式名有效性不在此驗（純文件層），由 apply_style_span 的 layout_document 守門。
+    """
+    _validate_span(doc, span)
+    if span.start == span.end:  # 空範圍 no-op
+        return doc
+    a, b = span.start.para_idx, span.end.para_idx
+    if a == b:  # 同段退化＝段內套字元樣式
+        return apply_char_style(doc, DocRange(a, span.start.caret, span.end.caret), char_style)
+    # 跨段：逐段套各自子範圍（段界不併，各段保身分；套字元樣式不改 text，段長不變）
+    result = apply_char_style(
+        doc, DocRange(a, span.start.caret, len(doc.paragraphs[a].text)), char_style
+    )
+    for idx in range(a + 1, b):
+        result = apply_char_style(
+            result, DocRange(idx, 0, len(doc.paragraphs[idx].text)), char_style
+        )
+    return apply_char_style(result, DocRange(b, 0, span.end.caret), char_style)
+
+
+def apply_style_span(
+    doc: Document, template: Template, span: DocSpan, char_style: Optional[str]
+) -> EditResult:
+    """完整編輯回路：跨段套字元樣式 → 全文 reflow → 反查游標畫布落點。
+
+    新 caret＝span.end（游標停在選取範圍尾）；套用不改 text，故 Cell.span 座標系不動、
+    字格 char_style 隨 run 模型流入渲染層。未知字元樣式名由 layout_document 守門（raise KeyError）。
+    """
+    new_doc = apply_char_style_span(doc, span, char_style)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(span.end.para_idx, span.end.caret)
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
+
+
 def change_paragraph_style(doc: Document, para_idx: int, style: str) -> Document:
     """把段 para_idx 的段落樣式改為 style，回傳新 Document（不可變）。
 
@@ -637,6 +682,11 @@ class EditSession:
     def apply_style(self, drange: DocRange, char_style: Optional[str]) -> EditResult:
         return self._commit(
             apply_style(self._document, self._template, drange, char_style)
+        )
+
+    def apply_style_span(self, span: DocSpan, char_style: Optional[str]) -> EditResult:
+        return self._commit(
+            apply_style_span(self._document, self._template, span, char_style)
         )
 
     def apply_para_style(self, cursor: DocCursor, style: str) -> EditResult:
