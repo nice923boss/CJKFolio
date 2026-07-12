@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.38.0（2026-07-12，Sprint 43）Phase 2 編輯引擎跨段合併與分裂（para_idx 重編＋游標跨段映射）
+
+### 新增
+
+- [實作] cjkfolio/editing.py（**入 pytest 基線**）跨段合併與分裂，續 Sprint 41 插入／42 段內刪除，補齊改變段落數量的編輯：
+  - `split_paragraph`（Enter 於段中分段）：於 cursor 把段切成 head（caret 前）／tail（caret 後）兩段，兩段同承原段落樣式；page_no 留於 head（保有原段身分）、tail 為 None；跨 run 切割時 caret 所在 run 一分為二、兩側各保字元樣式；空側正規化為單一空 run（守 document@2 不變式）；不可變、越界快速失敗。
+  - `merge_paragraph`（Backspace 於段首併前段）：段 para_idx 併入前段 para_idx−1，合併段承前段樣式與 page_no（前段存活，InDesign 慣例）；runs＝前段＋本段串接、濾除空 run、全空正規化為單一空 run；para_idx 0 無前段可併 raise IndexError。
+  - `apply_split`／`apply_merge`：對稱 apply_insert 的完整回路（編輯→layout_document 全文重排→locate_cell 反查新游標）；split 新游標＝tail 起點（para_idx+1, 0）、merge 新游標＝合併縫（para_idx−1, 前段原長）；tail 空段或合併全空段 address=None。para_idx 重編由 layout_document 依 enumerate 位置自動指派，cursor 指向新位置（split→idx+1、merge→idx−1）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **273 passed / 0 failed**（250→273，+23：split 10／merge 9／apply_split 2／apply_merge 2）；typecheck EXIT=0（含 cjkfolio/editing.py）。
+- 離屏 smoke_check（`QT_QPA_PLATFORM=offscreen`）EXIT=0：C1-C5 全過（editing.py 僅追加新函式、未改既有函式與 editor/，插入回路不受影響）。
+- 真實素材驗收（R5，自擬 make_doc C 個案扉頁樣張）：段 1 於 caret 4 分段→原段 2 順移段 3（para_idx 重編正確）、reflow 0 違規、tail 首字反查 cell.text＝「約」；段 2 併入段 1→原段 3 順移段 2、reflow 0 違規、合併縫反查前段末字 cell.text＝「廳」；跨 run 分裂／合併保兩側字元樣式、空段 address=None，皆基線斷言。
+- 獨立方法：核心走 pytest 座標／span／para_idx 斷言，editor 走 smoke_check 離屏建構；繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3）
+
+- [實作]（基線＋離屏驗）：跨段合併／分裂的核心邏輯、para_idx 重編、游標跨段映射與 reflow 回路。
+- [Shell]／待 Owner（GAPS #19／#24，離屏測不了）：Enter／Backspace／刪除／範圍選取的鍵盤與拖曳畫布 UI 接線（app.py 未接線）為後續真視窗工程。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗 IME 直排輸入與 Enter／Backspace／刪除／選取鍵盤操作（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 續 Phase 2 編輯引擎：直排畫布內嵌 IME 即點即打與 Enter／Backspace／刪除／選取 UI 接線（editor/ app.py 真視窗工程，待 Owner 真視窗回報批次），或編輯回路 undo／redo 堆疊（純邏輯可離屏驗，承編輯引擎核心）。
+
 ## v0.37.0（2026-07-12，Sprint 42）Phase 2 編輯引擎段內刪除與範圍替換（多 run 切割＋reflow 回路）
 
 ### 新增

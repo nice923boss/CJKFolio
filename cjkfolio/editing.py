@@ -209,3 +209,98 @@ def apply_replace(
     return EditResult(
         document=new_doc, layout=new_layout, cursor=new_cursor, address=address
     )
+
+
+def split_paragraph(doc: Document, cursor: DocCursor) -> Document:
+    """在 cursor 處把段落切成 head（caret 前）／tail（caret 後）兩段，回傳新 Document。
+
+    兩段同承原段落樣式；page_no 留於 head（保有原段身分），tail 為 None。跨 run 切割
+    時 caret 所在 run 一分為二、兩側各保字元樣式；空側正規化為單一空 run（守 document@2
+    不變式）。系統邊界快速失敗：para_idx 越界 raise IndexError、caret 越界 raise ValueError。
+    """
+    if not 0 <= cursor.para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {cursor.para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    para = doc.paragraphs[cursor.para_idx]
+    if not 0 <= cursor.caret <= len(para.text):
+        raise ValueError(f"caret {cursor.caret} 超出段 text 範圍 0..{len(para.text)}")
+    head_runs = []
+    tail_runs = []
+    base = 0
+    for r in para.runs:
+        end = base + len(r.text)
+        if end <= cursor.caret:  # 整個 run 在 caret 前
+            if r.text:
+                head_runs.append(r)
+        elif base >= cursor.caret:  # 整個 run 在 caret 後
+            if r.text:
+                tail_runs.append(r)
+        else:  # run 跨越 caret，一分為二（兩側各保 char_style）
+            local = cursor.caret - base
+            if r.text[:local]:
+                head_runs.append(Run(r.text[:local], r.char_style))
+            if r.text[local:]:
+                tail_runs.append(Run(r.text[local:], r.char_style))
+        base = end
+    head = Paragraph(style=para.style, runs=tuple(head_runs), page_no=para.page_no)
+    tail = Paragraph(style=para.style, runs=tuple(tail_runs), page_no=None)
+    new_paras = (
+        doc.paragraphs[: cursor.para_idx]
+        + (head, tail)
+        + doc.paragraphs[cursor.para_idx + 1 :]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
+def merge_paragraph(doc: Document, para_idx: int) -> Document:
+    """把段 para_idx 併入前段 para_idx−1，回傳新 Document（Backspace 於段首）。
+
+    合併段承前段樣式與 page_no（前段存活，InDesign 慣例：併入前段承其樣式）；runs＝
+    前段 runs＋本段 runs、濾除空 run，全空則正規化為單一空 run（守 document@2 不變式）。
+    系統邊界快速失敗：para_idx < 1 或越界 raise IndexError（para_idx 0 無前段可併）。
+    """
+    if not 1 <= para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {para_idx} 無前段可併（合法範圍 1..{len(doc.paragraphs) - 1}）"
+        )
+    prev = doc.paragraphs[para_idx - 1]
+    cur = doc.paragraphs[para_idx]
+    merged_runs = tuple(r for r in (prev.runs + cur.runs) if r.text)
+    merged = Paragraph(style=prev.style, runs=merged_runs, page_no=prev.page_no)
+    new_paras = (
+        doc.paragraphs[: para_idx - 1]
+        + (merged,)
+        + doc.paragraphs[para_idx + 1 :]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
+def apply_split(doc: Document, template: Template, cursor: DocCursor) -> EditResult:
+    """完整編輯回路：分段 → 全文 reflow → 反查新游標畫布落點。
+
+    新游標＝tail 段起點（para_idx+1, caret 0）；tail 為空段時無可見字格，address None。
+    """
+    new_doc = split_paragraph(doc, cursor)
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(cursor.para_idx + 1, 0)
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
+
+
+def apply_merge(doc: Document, template: Template, para_idx: int) -> EditResult:
+    """完整編輯回路：併段 → 全文 reflow → 反查新游標畫布落點。
+
+    新游標＝合併縫（para_idx−1, 前段原長）＝前段末字與併入內容之間；合併段全空時
+    無可見字格，address None。
+    """
+    new_doc = merge_paragraph(doc, para_idx)
+    seam = len(doc.paragraphs[para_idx - 1].text)  # 前段原長（para_idx 已由 merge 驗證合法）
+    new_layout = layout_document(new_doc, template)
+    new_cursor = DocCursor(para_idx - 1, seam)
+    address = locate_cell(new_layout, new_cursor)
+    return EditResult(
+        document=new_doc, layout=new_layout, cursor=new_cursor, address=address
+    )
