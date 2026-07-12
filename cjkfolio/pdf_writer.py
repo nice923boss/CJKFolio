@@ -12,6 +12,8 @@
   OutputIntent（預設 JC200103 registry 識別，依 ISO 15930-1 免嵌描述檔；
   自訂識別須以 icc_profile 嵌 DestOutputProfile）、XMP metadata stream。
   機械 preflight 見 preflight.py（獨立解析驗證）。
+- 圖片置入（Sprint 50）：DeviceGray 影像 XObject（§9 灰階單 K），置入主版 figure
+  保留區、contain 等比置中，幾何與 render 同源（figure_slot_rect＋fit_image_rect）。
 """
 import hashlib
 import zlib
@@ -24,6 +26,7 @@ from fontTools import subset as ft_subset
 from fontTools.ttLib import TTFont
 
 from .fonts import DEFAULT_FONT_DIR, FontError, FontRegistry
+from .images import EmbeddedImage, resolve_placed_images
 from .layout import (
     layout_document,
     line_justified_advance,
@@ -42,6 +45,7 @@ from .primitives import (
     cip_frame_rect,
     figure_slot_edges,
     figure_slot_rect,
+    fit_image_rect,
     toc_rule_segments,
 )
 from .render import (
@@ -351,7 +355,7 @@ class _EmbeddedFont:
 
 class _Content:
     def __init__(self):
-        self.prologue: list = []  # 圖形（path）算符，置於文字塊（BT／ET）之前
+        self.prologue: list = []  # 圖形（path／影像）算符，置於文字塊（BT／ET）之前
         self.ops = ["q", f"0 0 0 {_fmt(TEXT_K)} k", "BT"]
         self._cur = None
 
@@ -389,6 +393,17 @@ class _Content:
         ]
         self.prologue += ops
 
+    def draw_image(self, res_name: str, w: float, h: float,
+                   x_ll: float, y_ll: float) -> None:
+        """置入影像 XObject（獨立 q…Q，置文字塊 BT／ET 前）：cm 縮放單位方陣至 w×h、
+        平移到左下角 (x_ll, y_ll)。影像首列在上（PIL tobytes 語意），cm h>0 使影像正立。"""
+        self.prologue += [
+            "q",
+            f"{_fmt(w)} 0 0 {_fmt(h)} {x_ll:.3f} {y_ll:.3f} cm",
+            f"/{res_name} Do",
+            "Q",
+        ]
+
     def show(self, res_name: str, code: int, x: float, y: float,
              size_pt: float, rotated: bool) -> None:
         key = (res_name, round(size_pt, 4))
@@ -413,6 +428,7 @@ class _PdfPageWriter:
         self.registry = FontRegistry(font_dir or DEFAULT_FONT_DIR)
         self._shapers: dict = {}
         self._fonts: dict = {}
+        self._images: dict = {}  # 解析後路徑 → EmbeddedImage（跨頁去重）
         self.fonts_used: set = set()
         self.notdef_warnings: list = []
         self.bleed_pt = mm_to_pt(BLEED_MM)
@@ -555,7 +571,7 @@ class _PdfPageWriter:
     def _figure(self, content: _Content, book_number: int) -> None:
         """主版圖框保留區佔位框（v1 G 圖文版照片區）：承版心四邊淡虛線，與
         render._draw_figure 幾何同源（figure_slot_rect＋edges），CMYK 描邊；
-        top-down → y-up 逐端點加出血偏移。Phase 2 圖片置入後由實際照片取代。"""
+        top-down → y-up 逐端點加出血偏移。有置入圖時改由 _image 畫實際照片取代。"""
         page_w = mm_to_pt(self.template.page_width_mm)
         rect = figure_slot_rect(page_w, self.master, is_right_page(book_number),
                                 self.master.figure)
@@ -565,6 +581,23 @@ class _PdfPageWriter:
                 self.bleed_pt + edge.x0, self.page_h_pt + self.bleed_pt - edge.y0,
                 self.bleed_pt + edge.x1, self.page_h_pt + self.bleed_pt - edge.y1,
                 edge.dash_on_pt, edge.dash_off_pt)
+
+    def _image(self, content: _Content, image, book_number: int) -> None:
+        """置入圖到主版 figure 保留區（v1 G 圖文版照片）：等比縮放置中（contain）
+        DeviceGray 影像，與 render._draw_image 幾何同源（figure_slot_rect＋fit_image_rect）；
+        top-down 下緣 → y-up 左下角。image＝(解析後路徑, PIL "L" 影像)，同路徑跨頁共用
+        單一 XObject。"""
+        path, gray = image
+        if path not in self._images:
+            self._images[path] = EmbeddedImage(gray, f"Im{len(self._images) + 1}")
+        emb = self._images[path]
+        page_w = mm_to_pt(self.template.page_width_mm)
+        slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+                                self.master.figure)
+        box = fit_image_rect(slot.x0, slot.y0, slot.x1, slot.y1, emb.width, emb.height)
+        content.draw_image(
+            emb.res_name, box.x1 - box.x0, box.y1 - box.y0,
+            self.bleed_pt + box.x0, self.page_h_pt + self.bleed_pt - box.y1)
 
     def _toc_marks(self, content: _Content, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
@@ -587,7 +620,8 @@ class _PdfPageWriter:
                     shaper, digit, axis, cell_top, m.digit_size_pt, m.digit_advance_pt))
 
     def build_page(self, page, footer_texts=None, book_number=None,
-                   vertical: bool = True, toc_marks=(), rule_breaks=()) -> bytes:
+                   vertical: bool = True, toc_marks=(), rule_breaks=(),
+                   image=None) -> bytes:
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
         content = _Content()
@@ -597,8 +631,10 @@ class _PdfPageWriter:
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先 emit）
         if vertical and self.master.rule and page.placed:
             self._rule(content, rule_breaks, book_number)
-        # 主版圖框保留區（v1 photo-slot 為 G 圖文版照片區佔位；淡虛線骨架，Phase 2 圖片取代）
-        if vertical and self.master.figure and page.placed:
+        # 主版圖框保留區（v1 photo-slot）：有置入圖畫實際照片取代佔位框，否則畫淡虛線骨架
+        if image is not None:
+            self._image(content, image, book_number)
+        elif vertical and self.master.figure and page.placed:
             self._figure(content, book_number)
         if vertical:
             self._vertical_body(content, page, book_number)
@@ -624,17 +660,19 @@ class PdfResult:
     output_condition_identifier: str
     icc_embedded: bool
     justify_stats: dict
+    images_placed: int = 0  # 置入 figure 保留區的 DeviceGray 影像數（v1 灰階單 K）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                first_page: int = 1, font_dir=None, compress: bool = True,
                output_condition_identifier: str = "JC200103",
                output_condition: str = "Japan Color 2001 Coated",
-               icc_profile=None) -> PdfResult:
+               icc_profile=None, image_base_dir=None) -> PdfResult:
     """文件＋模版 → PDF/X-1a:2001。pages=None 全頁；否則為版面頁號清單（1 起算）。
 
     output_condition_identifier 命中 KNOWN_PRINT_CONDITIONS（ICC registry 名）時
     免嵌描述檔；自訂識別必須以 icc_profile 提供 CMYK 輸出 ICC。
+    置入圖（doc.images）以 DeviceGray XObject 嵌入，路徑相對 image_base_dir 解析。
     """
     if not doc.title:
         raise ValueError("PDF/X-1a 要求 Info /Title：文件 meta.title 不可為空")
@@ -649,6 +687,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         )
     layout = layout_document(doc, template)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir)
+    images_by_page = resolve_placed_images(
+        doc, writer.master, len(layout.pages), base_dir=image_base_dir)
     selected = list(layout.pages)
     if pages is not None:
         wanted = set(pages)
@@ -665,7 +705,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         contents.append(writer.build_page(
             page, footer_texts=texts, book_number=book_number, vertical=layout.vertical,
             toc_marks=layout.toc_marks.get(page.number, ()),
-            rule_breaks=layout.rule_breaks.get(page.number, ())))
+            rule_breaks=layout.rule_breaks.get(page.number, ()),
+            image=images_by_page.get(page.number)))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []
@@ -675,7 +716,14 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         num, stats = emb.emit(pdf)
         font_refs.append(f"/{emb.res_name} {num} 0 R")
         embedded.append(stats)
-    resources_num = pdf.add(f"<< /Font << {' '.join(font_refs)} >> >>")
+    image_refs = []
+    for path in sorted(writer._images, key=lambda p: int(writer._images[p].res_name[2:])):
+        img_num = writer._images[path].emit(pdf)
+        image_refs.append(f"/{writer._images[path].res_name} {img_num} 0 R")
+    res_parts = [f"/Font << {' '.join(font_refs)} >>"]
+    if image_refs:
+        res_parts.append(f"/XObject << {' '.join(image_refs)} >>")
+    resources_num = pdf.add(f"<< {' '.join(res_parts)} >>")
     media, trim = page_boxes_pt(template)
     box = lambda b: f"[{_fmt(b[0])} {_fmt(b[1])} {_fmt(b[2])} {_fmt(b[3])}]"  # noqa: E731
     pages_num = pdf.reserve()
@@ -735,4 +783,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         output_condition_identifier=output_condition_identifier,
         icc_embedded=icc_bytes is not None,
         justify_stats=dict(layout.justify_stats),
+        images_placed=len(writer._images),
     )

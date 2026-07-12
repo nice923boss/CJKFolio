@@ -149,3 +149,36 @@ def figure_slot_edges(rect: StrokeRect, figure) -> tuple:
                    dash_on_pt=figure.dash_on_pt, dash_off_pt=figure.dash_off_pt)
         for x0, y0, x1, y1 in edges
     )
+
+
+@dataclass(frozen=True)
+class ImageBox:
+    """圖片實繪矩形（top-down pt，x0<x1、y0<y1）：contain-fit 後的置入座標。
+
+    非描邊原件（無 cmyk／line_width）；兩後端（render PIL paste／pdf `cm`＋`Do`）
+    以此同一矩形放置影像，構成兩後端幾何同源。
+    """
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+def fit_image_rect(slot_x0: float, slot_y0: float, slot_x1: float, slot_y1: float,
+                   img_w_px: int, img_h_px: int) -> ImageBox:
+    """把 img_w_px×img_h_px 的影像等比縮放（contain）置入保留區並置中（top-down pt）。
+
+    contain＝縮放係數取兩軸較小者（min(sw/w, sh/h)），影像完整落入保留區內、不裁切、
+    不變形，四周留白置中（InDesign「按比例調整內容」預設）。真書照片略溢版心屬美術
+    自由佈局（§8，GAPS #13），v1 不做溢出。像素尺寸非正快速失敗（系統邊界）。
+    """
+    if img_w_px <= 0 or img_h_px <= 0:
+        raise ValueError(f"影像像素尺寸須為正，得到 {img_w_px}×{img_h_px}")
+    sw = slot_x1 - slot_x0
+    sh = slot_y1 - slot_y0
+    scale = min(sw / img_w_px, sh / img_h_px)
+    draw_w = img_w_px * scale
+    draw_h = img_h_px * scale
+    x0 = slot_x0 + (sw - draw_w) / 2
+    y0 = slot_y0 + (sh - draw_h) / 2
+    return ImageBox(x0=x0, y0=y0, x1=x0 + draw_w, y1=y0 + draw_h)

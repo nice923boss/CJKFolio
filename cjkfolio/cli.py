@@ -79,8 +79,11 @@ def cmd_render(args) -> int:
     result = render_document(
         doc, template, args.output, dpi=args.dpi, basename=args.basename,
         footer=not args.no_footer, first_page=args.first_page,
+        image_base_dir=Path(args.document).parent,
     )
     print(f"渲染完成：{len(result.paths)} 頁 → {args.output}")
+    if result.images_placed:
+        print(f"置入圖：{result.images_placed} 張（灰階單 K，取代 figure 佔位框）")
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     print(_justify_line(result.justify_stats))
     for warning in result.font_warnings:
@@ -103,11 +106,13 @@ def cmd_export_pdf(args) -> int:
         footer=not args.no_footer, first_page=args.first_page,
         output_condition_identifier=args.output_condition_identifier,
         output_condition=args.output_condition,
-        icc_profile=args.icc,
+        icc_profile=args.icc, image_base_dir=Path(args.document).parent,
     )
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
     print(f"PDF/X-1a:2001 識別：OutputIntent {result.output_condition_identifier}"
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
+    if result.images_placed:
+        print(f"置入圖：{result.images_placed} 張（DeviceGray 影像 XObject，灰階單 K）")
     print(_justify_line(result.justify_stats))
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:

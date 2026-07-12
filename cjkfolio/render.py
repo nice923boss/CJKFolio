@@ -14,6 +14,7 @@ import uharfbuzz as hb
 from PIL import Image, ImageDraw
 
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
+from .images import resolve_placed_images
 from .layout import (
     layout_document,
     line_justified_advance,
@@ -26,6 +27,7 @@ from .primitives import (
     cip_frame_rect,
     figure_slot_edges,
     figure_slot_rect,
+    fit_image_rect,
     toc_rule_segments,
 )
 from .styles import MasterPage, Template
@@ -385,12 +387,25 @@ class PageRenderer:
 
     def _draw_figure(self, img, book_number: int) -> None:
         """主版圖框保留區佔位框（v1：G 圖文版照片區）：承版心的淡虛線四邊，與
-        pdf_writer._figure 幾何同源；Phase 2 圖片置入後由實際照片取代、不留框線。"""
+        pdf_writer._figure 幾何同源；有置入圖時改由 _draw_image 畫實際照片取代。"""
         page_w = mm_to_pt(self.template.page_width_mm)
         rect = figure_slot_rect(page_w, self.master, is_right_page(book_number),
                                 self.master.figure)
         for edge in figure_slot_edges(rect, self.master.figure):
             _draw_stroke_line(img, edge, self.scale)
+
+    def _draw_image(self, img, gray, book_number: int) -> None:
+        """置入圖到主版 figure 保留區（v1：G 圖文版照片）：等比縮放置中（contain），
+        以灰階（§9 單 K）貼入畫布、取代佔位框。幾何與 pdf_writer._image 同源
+        （figure_slot_rect＋fit_image_rect）；gray 為 PIL "L" 影像。"""
+        page_w = mm_to_pt(self.template.page_width_mm)
+        slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+                                self.master.figure)
+        box = fit_image_rect(slot.x0, slot.y0, slot.x1, slot.y1, gray.width, gray.height)
+        w_px = max(1, round((box.x1 - box.x0) * self.scale))
+        h_px = max(1, round((box.y1 - box.y0) * self.scale))
+        resized = gray.resize((w_px, h_px))
+        img.paste(resized, (round(box.x0 * self.scale), round(box.y0 * self.scale)))
 
     def _draw_toc_marks(self, img, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
@@ -414,7 +429,7 @@ class PageRenderer:
 
     def render_page(self, page, footer_texts=None, book_number=None,
                     vertical: bool = True, toc_marks=(),
-                    rule_breaks=()) -> Image.Image:
+                    rule_breaks=(), image=None) -> Image.Image:
         template = self.template
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
@@ -429,8 +444,11 @@ class PageRenderer:
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先畫）
         if vertical and self.master.rule and page.placed:
             self._draw_rule(img, rule_breaks, book_number)
-        # 主版圖框保留區（v1 photo-slot 為 G 圖文版照片區佔位；淡虛線骨架，Phase 2 圖片取代）
-        if vertical and self.master.figure and page.placed:
+        # 主版圖框保留區（v1 photo-slot）：有置入圖畫實際照片取代佔位框，否則畫淡虛線骨架
+        if image is not None:
+            _path, gray = image
+            self._draw_image(img, gray, book_number)
+        elif vertical and self.master.figure and page.placed:
             self._draw_figure(img, book_number)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
@@ -450,13 +468,17 @@ class RenderResult:
     fonts_used: list
     font_warnings: list
     justify_stats: dict
+    images_placed: int = 0  # 置入 figure 保留區的照片數（v1 灰階單 K）
 
 
 def render_document(doc, template: Template, out_dir, dpi: int = 150,
                     basename: str = "page", font_dir=None,
-                    footer: bool = True, first_page: int = 1) -> RenderResult:
+                    footer: bool = True, first_page: int = 1,
+                    image_base_dir=None) -> RenderResult:
     layout = layout_document(doc, template)
     renderer = PageRenderer(template, doc.master, dpi=dpi, font_dir=font_dir)
+    images_by_page = resolve_placed_images(
+        doc, renderer.master, len(layout.pages), base_dir=image_base_dir)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -471,7 +493,8 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
         img = renderer.render_page(page, footer_texts=texts, book_number=book_number,
                                    vertical=layout.vertical,
                                    toc_marks=layout.toc_marks.get(page.number, ()),
-                                   rule_breaks=layout.rule_breaks.get(page.number, ()))
+                                   rule_breaks=layout.rule_breaks.get(page.number, ()),
+                                   image=images_by_page.get(page.number))
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)
@@ -481,4 +504,5 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
         fonts_used=sorted(renderer.fonts_used),
         font_warnings=list(renderer.registry.warnings) + list(renderer.notdef_warnings),
         justify_stats=dict(layout.justify_stats),
+        images_placed=len(images_by_page),
     )

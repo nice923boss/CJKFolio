@@ -30,7 +30,8 @@ RULE_IDS = (
 
 NOT_COVERED = (
     "疊印與 ExtGState 細節",
-    "影像色彩空間與解析度（v1 尚無影像置入）",
+    "影像解析度 PPI（Sprint 50 置入嵌原生解析度、未重採樣至 §9 300-350ppi；"
+    "影像色彩空間由 color-cmyk-only 涵蓋，DeviceGray 合法、DeviceRGB 判失敗）",
     "油墨總量 TAC",
     "字型授權嵌入旗標",
     "視覺內容正確性（人工抽檢）",

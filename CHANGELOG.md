@@ -2,6 +2,44 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.45.0（2026-07-12，Sprint 50）Phase 2 圖片置入（灰階照片置入 G 圖文版 figure 保留區，兩後端 DeviceGray）
+
+### 新增
+
+- [實作] 圖片置入核心（Owner「最複雜架構先做」下編輯引擎完備後轉 §6 Phase 2「圖片置入」，承 Sprint 27 G-圖文版 photo-slot 保留區地基，PLAN §4.2／§9 灰階單 K）：
+  - `cjkfolio/images.py`（影像領域單一事實來源）：`open_grayscale`（開圖轉 8-bit 灰階「L」＝§9 灰階單 K，缺檔／非影像快速失敗）、`resolve_placed_images`（doc.images → {版面頁號: (解析路徑, PIL)}，兩後端共用；主版無 figure／page 越界快速失敗；同路徑只載一次＝XObject 去重鍵）、`EmbeddedImage`（DeviceGray 影像 XObject 形態，emit 經 pdf builder duck-type stream 壓縮）。
+  - `cjkfolio/primitives.py`：`fit_image_rect`／`ImageBox`（contain 等比縮放置中純幾何，scale=min(sw/w, sh/h)、四周留白置中、像素非正快速失敗）。
+  - `cjkfolio/document.py`：document@2 相容擴充 `PlacedImage`（path＋版面頁號 1 起算）＋`Document.images`（序列化選配、同 page_no 慣例；path 空／page 非 ≥1 整數／page 重複快速失敗）。
+  - render PNG `_draw_image`（figure_slot_rect＋fit_image_rect → 灰階 resize＋paste，取代 photo-slot 佔位框）＋`RenderResult.images_placed`＋`render_document(image_base_dir=)`。
+  - pdf_writer `_image`＋`_Content.draw_image`（DeviceGray 影像 XObject：`cm` 縮放單位方陣＋`Do`，置 BT／ET 前獨立 q…Q 不觸文字塊；`/XObject` 進 Resources；同路徑跨頁去重單一 XObject）＋`PdfResult.images_placed`＋`export_pdf(image_base_dir=)`。
+  - CLI render／export 加 `image_base_dir`（相對 doc 目錄解析）＋印置入圖數。
+
+### 變更
+
+- pdf_writer 逾 800 行上限（file-organization），`EmbeddedImage` 移入 `cjkfolio/images.py`（影像領域，emit duck-type `pdf.stream` 無循環 import），pdf_writer 787 行。
+- preflight NOT_COVERED 同類更新（Gate 3，與 render／pdf 的「尚無影像置入」同步）：「影像色彩空間與解析度（v1 尚無影像置入）」→「影像解析度 PPI（Sprint 50 置入嵌原生解析度、未重採樣至 §9 300-350ppi；色彩空間由 color-cmyk-only 涵蓋，DeviceGray 合法、DeviceRGB 判失敗）」。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **393 passed / 0 failed**（359→393，+34，新檔 tests/test_images.py：fit 幾何／灰階載入／document round-trip 與守門／resolve／EmbeddedImage／PNG 置入與方向／PDF XObject 去重 preflight bbox pixmap 方向）；typecheck EXIT=0（含 cjkfolio/images.py）；editor 離屏 smoke_check EXIT=0（render.py 僅追加、未改既有）。
+- preflight 12/12 全綠不退步：DeviceGray 非 color-cmyk-only 禁列（DeviceRGB／CalRGB／CalGray／Lab／ICCBased 才禁）、灰階無 alpha 不觸 no-transparency。
+- 真實素材驗收（R5，自擬灰階「照片」TOP/BOT 標記＋外框＋左上黑角，非參考書內容）：G 圖文版單頁置入 → PNG（render）與 PDF 獨立渲染（PyMuPDF，Gate 4 不同實作）兩後端目視完全一致、方向未翻轉（TOP 在上、黑角左上、漸層上暗下亮）、contain 等比置中、0 違規、preflight 12/12；執行工程師親 Read 兩渲染確認。
+- Gate 4 獨立驗證：tests/test_images.py 以 PyMuPDF 獨立解析 XObject（/DeviceGray /Width /Height）、get_image_bbox 幾何≈fit_image_rect、get_pixmap 方向（上暗下亮）；PNG getpixel 影像中心值＋letterbox 背景白；兩後端置入矩形皆源自 fit_image_rect（同源）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋離屏＋R5 驗）：灰階影像置入 figure 保留區、contain 置中、兩後端 DeviceGray 同源、跨頁去重、preflight 不退步。
+- [Shell]／待 Owner（GAPS #29／#19，離屏測不了）：畫布拖放／縮放置入 UI 未接線（app.py 真視窗工程）。
+- v1 已知限制（GAPS #29）：只置入主版 figure 保留區、每頁一張（任意矩形／多圖屬畫布 UI）；PPI 未強制重採樣（嵌原生解析度，§9 300-350ppi 未檢核，Phase 4／#18）；只灰階 DeviceGray（彩色 CMYK Phase 4）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗畫布拖放／縮放置入圖片的手感與視覺對位（GAPS #19，離屏測不了）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 其他純邏輯離屏可驗項：圖說（辰宇落雁體）與照片相對位置的樣式化置放、或多圖／任意矩形置入模型；或 §6 Phase 2「主版指派」（per-page master）核心。app.py 真視窗 UI 接線（含圖片置入拖放）待 Owner 真視窗回報批次。
+
 ## v0.44.0（2026-07-12，Sprint 49）Phase 2 編輯引擎跨段字元樣式套用（apply_char_style over DocSpan）
 
 ### 新增

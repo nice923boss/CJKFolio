@@ -6,6 +6,8 @@
 
 相容性：@1（純 text 段落）照載；@2 段落可用 text 捷徑或 runs 陣列。
 save 一律寫 @2；單一無字元樣式 run 以 text 捷徑序列化（可讀性）。
+圖片置入（images，@2 相容擴充選配欄位，同 page_no 慣例）：置入主版 figure
+保留區的照片清單（PLAN §4.2 G 圖文版、§9 灰階單 K）。
 """
 import json
 from dataclasses import dataclass
@@ -44,6 +46,18 @@ class Paragraph:
             object.__setattr__(self, "runs", (Run(self.text),))
 
 
+@dataclass(frozen=True)
+class PlacedImage:
+    """置入一張圖到某版面頁的主版 figure 保留區（PLAN §4.2 G 圖文版照片、§9 灰階單 K）。
+
+    path：圖檔路徑（相對路徑於 render／export 時相對文件目錄解析）；
+    page：版面頁號（1 起算，與 --page 選頁鍵、檔名同鍵，Sprint 12 決議）。
+    v1 每頁 figure 保留區置一張圖、contain 等比置中（primitives.fit_image_rect）。
+    """
+    path: str
+    page: int
+
+
 def _runs_from_list(raw, idx: int) -> tuple:
     runs = []
     for j, r in enumerate(raw):
@@ -56,6 +70,29 @@ def _runs_from_list(raw, idx: int) -> tuple:
     if not runs:
         raise DocumentError(f"paragraphs[{idx}].runs 不得為空陣列")
     return tuple(runs)
+
+
+def _images_from_list(raw) -> tuple:
+    """解析 images 陣列（選配）。每項須含非空 path 與 ≥1 整數 page；page 重複快速失敗
+    （v1 每頁 figure 保留區只置一張圖）。"""
+    images = []
+    seen_pages = set()
+    for j, im in enumerate(raw):
+        if not isinstance(im, dict):
+            raise DocumentError(f"images[{j}] 須為物件")
+        path = im.get("path")
+        if not (isinstance(path, str) and path):
+            raise DocumentError(f"images[{j}] 需含非空 path 字串")
+        page = im.get("page")
+        if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+            raise DocumentError(f"images[{j}] page 需為 ≥1 的整數，得到 {page!r}")
+        if page in seen_pages:
+            raise DocumentError(
+                f"images[{j}] page {page} 重複（v1 每頁 figure 保留區只置一張圖）"
+            )
+        seen_pages.add(page)
+        images.append(PlacedImage(path=path, page=page))
+    return tuple(images)
 
 
 def document_from_dict(data) -> "Document":
@@ -86,12 +123,16 @@ def document_from_dict(data) -> "Document":
             paragraphs.append(Paragraph(p["text"], p["style"], page_no=page_no))
         else:
             raise DocumentError(f"paragraphs[{i}] 需含 text 字串或 runs 陣列")
+    raw_images = data.get("images", [])
+    if not isinstance(raw_images, list):
+        raise DocumentError("images 必須是陣列")
     return Document(
         title=str(meta.get("title", "")),
         template=str(meta.get("template", "")),
         master=str(meta.get("master", "A-內文版")),
         paragraphs=tuple(paragraphs),
         language=str(meta.get("language", "zh-TW")),
+        images=_images_from_list(raw_images),
     )
 
 
@@ -102,6 +143,7 @@ class Document:
     master: str    # 主版名，v1 全文件單一主版
     paragraphs: tuple
     language: str = "zh-TW"
+    images: tuple = ()  # PlacedImage 序列（@2 相容擴充；置入主版 figure 保留區）
 
 
 def _paragraph_to_dict(p: Paragraph) -> dict:
@@ -119,7 +161,7 @@ def _paragraph_to_dict(p: Paragraph) -> dict:
 
 
 def document_to_dict(doc: Document) -> dict:
-    return {
+    out = {
         "schema": SCHEMA_ID,
         "meta": {
             "title": doc.title,
@@ -129,6 +171,9 @@ def document_to_dict(doc: Document) -> dict:
         },
         "paragraphs": [_paragraph_to_dict(p) for p in doc.paragraphs],
     }
+    if doc.images:
+        out["images"] = [{"path": im.path, "page": im.page} for im in doc.images]
+    return out
 
 
 def load_document(path) -> Document:
