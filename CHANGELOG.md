@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.63.0（2026-07-17，Sprint 68）樣式繼承（based_on 基底＋子樣式覆寫，改基底即級聯全書）
+
+### 新增
+
+- [實作] 載入期繼承解析（cjkfolio/styles.py）：
+  - 樣式宣告帶 `based_on` 即繼承基底有效欄位、自身宣告欄位覆寫（鏈式傳遞）；效值於 template_from_dict 扁平化＝消費端（layout／render／pdf／frames／canvas）讀平面欄位零變更。
+  - `declared`（自身宣告欄位）＋`based_on` 簿記欄位（供編輯級聯與後續 save_template 只寫宣告欄位）。
+  - 循環（含自指）／未知基底 TemplateError 快速失敗；子樣式可全承免必填、根樣式必填守門不變；schema 維持 template@1 相容擴充。
+  - 欄位型別轉換表（PARAGRAPH_STYLE_FIELDS／CHARACTER_STYLE_FIELDS）上收 styles.py 單一來源（style_editing 改引用）。
+- [實作] 編輯期級聯（cjkfolio/style_editing.py）：set_paragraph_style／set_character_style 改樣式後依 based_on 依賴序刷新傳遞子孫的未覆寫欄位（覆寫欄位不動）；被編輯欄位併入 declared＝自此成覆寫（InDesign 慣例）；based_on 不可經 set_* 編輯。session 零變更（update_* 自動級聯、快照三元組承 Sprint 67）。
+
+### 驗證
+
+- 核心基線 **521 passed / 0 failed**（506→521，+15，新檔 tests/test_style_inheritance.py：載入解析 7／編輯級聯 5／守門 1／session 端到端 1／內建模版回歸 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C11 全過 0 退步。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，自擬）：子樣式（based_on 內文、覆寫 indent 0）段落與基底段落同頁，session 改基底 11.5→16pt → 子樣式級數級聯放大、縮排覆寫保留（頂格 vs 縮 2 字對照清晰）render 前後 PNG 親 Read、0 違規、undo 回原。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #34）
+
+- [實作]：繼承解析＋編輯級聯核心（載入與編輯兩層，消費端零變更）。
+- 未做：繼承 UI 與「新增子樣式」入口（承 #34 (a)(d)）、改基底（based_on 結構變更）、修改後模版落檔（save_template，#34 (c)）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 同 v0.61.0 hands-on 批次（本 Sprint 為核心層，無新 UI 面）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：樣式新增／刪除＋save_template 落檔（書系模版另存半邊，補 Phase 3 DoD「從零建立模版」）、樣式編輯 UI 面板、docx 匯入。
+
 ## v0.62.0（2026-07-17，Sprint 67）樣式修改核心（Phase 3 首片：改樣式即全書套用＋統一 undo）
 
 ### 新增
