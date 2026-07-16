@@ -2,6 +2,32 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.65.0（2026-07-17，Sprint 70）模版序列化落檔（save_template，「從零建立模版」資料面全備）
+
+### 新增
+
+- [實作] cjkfolio/styles.py：`template_to_dict`（template_from_dict 的逆）＋`save_template`（utf-8／ensure_ascii=False／indent=1，承 Sprint 23 慣例）：
+  - 樣式只寫 declared 欄位＋based_on＝繼承宣告保真（重載後級聯仍活，Sprint 68 declared 簿記兌現）。
+  - 主版 margins／grid／mirror／footer／frame／rule／toc／figure／evidence／note 全欄位鏡射載入層；round-trip 相等鐵律（內建模版全 A〜G 主版覆蓋＋to_dict 冪等）。
+
+### 驗證
+
+- 核心基線 **544 passed / 0 failed**（537→544，+7，新檔 tests/test_template_io.py）；typecheck EXIT=0（含 editor/*.py）；smoke C1〜C11 全過 0 退步；styles.py 559 行守 800。繁中標點 grep 無破折號。
+- 真實素材驗收（R5）：內建模版 save_template 落檔（23KB）→ load_template 重載相等 True；落檔親 Read（人類可讀、繁中不轉義、declared 欄位齊備）。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #34）
+
+- [實作]：模版序列化與落檔核心。至此「從零建立一套新書樣式模版」資料面完備（新增／繼承／修改／刪除／另存）。
+- 未做：另存 UI 與模版庫管理面（命名／清單／匯入，§4.3「模版庫」）、樣式改名、樣式管理 UI（#34 (d)）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 同 v0.61.0 hands-on 批次（本 Sprint 為核心層，無新 UI 面）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：樣式管理 UI（面板新增／編輯／刪除／另存接線，收口 #34 (d) 可自主半邊）、docx 匯入（Phase 3 §6）、從參考 PDF 萃取起始模版。
+
 ## v0.64.0（2026-07-17，Sprint 69）樣式新增／刪除核心（§4.3 可新增，「從零建立模版」資料面補齊）
 
 ### 新增

@@ -446,3 +446,114 @@ def load_template(path) -> Template:
     except (OSError, json.JSONDecodeError) as e:
         raise TemplateError(f"讀取模版失敗 {path}：{e}") from e
     return template_from_dict(data)
+
+
+def _style_to_dict(style) -> dict:
+    """樣式 → 宣告 dict：只寫 declared 欄位＋based_on（繼承宣告保真，Sprint 70）。"""
+    out = {}
+    if style.based_on is not None:
+        out["based_on"] = style.based_on
+    for f in style.declared:
+        out[f] = getattr(style, f)
+    return out
+
+
+def _footer_item_to_dict(item: FooterItem) -> dict:
+    return {
+        "style": item.style,
+        "source": item.source,
+        "baseline_from_top_pt": item.baseline_from_top_pt,
+        "outer_offset_pt": item.outer_offset_pt,
+        "pages": item.pages,
+    }
+
+
+def _frame_to_dict(f: FrameSpec) -> dict:
+    out = {"kind": f.kind, "cmyk": list(f.cmyk),
+           "line_width_pt": f.line_width_pt, "pad_pt": f.pad_pt}
+    if f.pad_v_pt is not None:
+        out["pad_v_pt"] = f.pad_v_pt
+    return out
+
+
+def _rule_to_dict(r: RuleSpec) -> dict:
+    return {"kind": r.kind, "y_from_top_pt": r.y_from_top_pt, "cmyk": list(r.cmyk),
+            "line_width_pt": r.line_width_pt, "dash_on_pt": r.dash_on_pt,
+            "dash_off_pt": r.dash_off_pt, "bleed_extend_pt": r.bleed_extend_pt,
+            "break_before_pt": r.break_before_pt, "break_after_pt": r.break_after_pt}
+
+
+def _toc_to_dict(t: TocSpec) -> dict:
+    return {"page_no_style": t.page_no_style,
+            "page_no_bottom_pt": t.page_no_bottom_pt,
+            "leader_width_pt": t.leader_width_pt,
+            "leader_gap_pt": t.leader_gap_pt,
+            "leader_cmyk": list(t.leader_cmyk)}
+
+
+def _figure_to_dict(f: FigureSpec) -> dict:
+    out = {"kind": f.kind, "top_from_top_pt": f.top_from_top_pt,
+           "bottom_from_top_pt": f.bottom_from_top_pt, "cmyk": list(f.cmyk),
+           "line_width_pt": f.line_width_pt, "dash_on_pt": f.dash_on_pt,
+           "dash_off_pt": f.dash_off_pt}
+    if f.note is not None:
+        out["note"] = f.note
+    return out
+
+
+def _master_to_dict(m: MasterPage) -> dict:
+    out = {
+        "margins_mm": {"top": m.margins.top_mm, "bottom": m.margins.bottom_mm,
+                       "outer": m.margins.outer_mm, "inner": m.margins.inner_mm},
+        "grid": {"chars_per_line": m.grid.chars_per_line,
+                 "lines_per_page": m.grid.lines_per_page,
+                 "char_advance_pt": m.grid.char_advance_pt,
+                 "line_pitch_pt": m.grid.line_pitch_pt,
+                 "base_size_pt": m.grid.base_size_pt},
+        "mirror": m.mirror,
+    }
+    if m.footer:
+        out["footer"] = {n: _footer_item_to_dict(it) for n, it in m.footer.items()}
+    if m.frame:
+        out["frame"] = _frame_to_dict(m.frame)
+    if m.rule:
+        out["rule"] = _rule_to_dict(m.rule)
+    if m.toc:
+        out["toc"] = _toc_to_dict(m.toc)
+    if m.figure:
+        out["figure"] = _figure_to_dict(m.figure)
+    if m.evidence is not None:
+        out["evidence"] = m.evidence
+    if m.note is not None:
+        out["note"] = m.note
+    return out
+
+
+def template_to_dict(template: Template) -> dict:
+    """Template → 模版 JSON dict（template_from_dict 的逆，round-trip 相等；Sprint 70）。
+
+    樣式只寫 declared 欄位＋based_on（不把繼承效值寫死成覆寫）；主版與 spec 全欄位
+    鏡射載入層。供 save_template 落檔（§4.3 人類可讀序列化）。
+    """
+    return {
+        "schema": SCHEMA_ID,
+        "name": template.name,
+        "page": {"width_mm": template.page_width_mm,
+                 "height_mm": template.page_height_mm},
+        "colors": dict(template.colors),
+        "paragraph_styles": {n: _style_to_dict(st)
+                             for n, st in template.paragraph_styles.items()},
+        "character_styles": {n: _style_to_dict(st)
+                             for n, st in template.character_styles.items()},
+        "masters": {n: _master_to_dict(m) for n, m in template.masters.items()},
+        "md_mapping": dict(template.md_mapping),
+        "md_inline_mapping": dict(template.md_inline_mapping),
+    }
+
+
+def save_template(template: Template, path) -> None:
+    """模版另存為人類可讀 JSON（utf-8、ensure_ascii=False、indent=1 承 Sprint 23 慣例）。"""
+    Path(path).write_text(
+        json.dumps(template_to_dict(template), ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+    )
