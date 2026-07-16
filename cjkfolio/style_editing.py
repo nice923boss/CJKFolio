@@ -19,9 +19,13 @@ from typing import Mapping
 from .styles import (
     CHARACTER_STYLE_FIELDS,
     PARAGRAPH_STYLE_FIELDS,
+    CharacterStyle,
+    ParagraphStyle,
     Template,
     TemplateError,
 )
+
+_REQUIRED_STYLE_FIELDS = ("font_family", "font_weight", "size_pt")  # 根樣式必填（同載入層）
 
 
 def _coerce_changes(fields: Mapping, changes: Mapping, ctx: str) -> dict:
@@ -96,4 +100,101 @@ def set_character_style(template: Template, name: str, changes: Mapping) -> Temp
         template,
         character_styles=_with_cascade(
             template.character_styles, name, new_style, CHARACTER_STYLE_FIELDS),
+    )
+
+
+def _added_style(styles: Mapping, fields: Mapping, name, decl: Mapping,
+                 kind: str, make):
+    """建構新樣式（Sprint 69）：宣告形同模版 JSON（選配 based_on＋參數欄位）。
+
+    名稱空或衝突 TemplateError；子樣式承基底現值再以宣告覆寫（載入層同構）；
+    根樣式必填欄位守門（同載入層）。
+    """
+    if not isinstance(name, str) or not name:
+        raise TemplateError(f"{kind} 新樣式名不可為空")
+    if name in styles:
+        raise TemplateError(f"{kind} 已存在同名樣式「{name}」")
+    decl = dict(decl)
+    based_on = decl.pop("based_on", None)
+    coerced = _coerce_changes(fields, decl, f"{kind}[{name}]")
+    if based_on is None:
+        missing = [f for f in _REQUIRED_STYLE_FIELDS if f not in coerced]
+        if missing:
+            raise TemplateError(f"{kind}[{name}] 根樣式缺必要欄位 {missing}")
+        effective = coerced
+    else:
+        if based_on not in styles:
+            raise TemplateError(
+                f"{kind}[{name}] based_on 引用不存在的樣式「{based_on}」")
+        base = styles[based_on]
+        effective = {**{f: getattr(base, f) for f in fields}, **coerced}
+    return make(name=name, based_on=based_on,
+                declared=tuple(sorted(coerced)), **effective)
+
+
+def add_paragraph_style(template: Template, name: str, decl: Mapping) -> Template:
+    """新增段落樣式（§4.3 模版管理「可新增」的資料面，Sprint 69）。"""
+    style = _added_style(template.paragraph_styles, PARAGRAPH_STYLE_FIELDS,
+                         name, decl, "paragraph_styles", ParagraphStyle)
+    return replace(
+        template, paragraph_styles={**template.paragraph_styles, name: style})
+
+
+def add_character_style(template: Template, name: str, decl: Mapping) -> Template:
+    """新增字元樣式（對稱 add_paragraph_style）。"""
+    style = _added_style(template.character_styles, CHARACTER_STYLE_FIELDS,
+                         name, decl, "character_styles", CharacterStyle)
+    return replace(
+        template, character_styles={**template.character_styles, name: style})
+
+
+def remove_paragraph_style(template: Template, name: str) -> Template:
+    """刪除段落樣式（Sprint 69）：模版內參照守門（子樣式承基底、md_mapping 引用即拒）。
+
+    未知樣式 KeyError；文件層引用不在此驗（session 全文重排 KeyError 快速失敗）。
+    """
+    template.paragraph_styles[name]
+    children = [n for n, st in template.paragraph_styles.items()
+                if st.based_on == name]
+    if children:
+        raise TemplateError(
+            f"paragraph_styles[{name}] 有子樣式承基底，不可刪除：{children}")
+    used_md = sorted(k for k, v in template.md_mapping.items() if v == name)
+    if used_md:
+        raise TemplateError(
+            f"paragraph_styles[{name}] 被 md_mapping 引用，不可刪除：{used_md}")
+    return replace(
+        template,
+        paragraph_styles={n: st for n, st in template.paragraph_styles.items()
+                          if n != name},
+    )
+
+
+def remove_character_style(template: Template, name: str) -> Template:
+    """刪除字元樣式（Sprint 69）：守門子樣式、md_inline_mapping、主版頁腳與 toc 引用。"""
+    template.character_styles[name]
+    children = [n for n, st in template.character_styles.items()
+                if st.based_on == name]
+    if children:
+        raise TemplateError(
+            f"character_styles[{name}] 有子樣式承基底，不可刪除：{children}")
+    used_md = sorted(k for k, v in template.md_inline_mapping.items() if v == name)
+    if used_md:
+        raise TemplateError(
+            f"character_styles[{name}] 被 md_inline_mapping 引用，不可刪除：{used_md}")
+    for mname, master in template.masters.items():
+        used_footer = sorted(k for k, item in master.footer.items()
+                             if item.style == name)
+        if used_footer:
+            raise TemplateError(
+                f"character_styles[{name}] 被 masters[{mname}] 頁腳引用，"
+                f"不可刪除：{used_footer}")
+        if master.toc and master.toc.page_no_style == name:
+            raise TemplateError(
+                f"character_styles[{name}] 被 masters[{mname}].toc 頁碼樣式引用，"
+                "不可刪除")
+    return replace(
+        template,
+        character_styles={n: st for n, st in template.character_styles.items()
+                          if n != name},
     )

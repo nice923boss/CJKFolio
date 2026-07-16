@@ -48,7 +48,14 @@ from .frame_editing import (
 )
 from .frames import masters_for_layout, resolve_text_frames
 from .layout import LayoutResult, layout_document
-from .style_editing import set_character_style, set_paragraph_style
+from .style_editing import (
+    add_character_style,
+    add_paragraph_style,
+    remove_character_style,
+    remove_paragraph_style,
+    set_character_style,
+    set_paragraph_style,
+)
 from .styles import Template
 
 
@@ -215,6 +222,27 @@ class EditSession:
         字元樣式變更不動斷行、由渲染層取新定義。"""
         return self._commit_template(
             set_character_style(self._template, name, changes))
+
+    def add_para_style(self, name: str, decl: Mapping):
+        """新增段落樣式（Sprint 69）：入統一 undo 歷史，新樣式立即可套用。"""
+        return self._commit_template(
+            add_paragraph_style(self._template, name, decl))
+
+    def add_char_style(self, name: str, decl: Mapping):
+        """新增字元樣式（對稱 add_para_style）。"""
+        return self._commit_template(
+            add_character_style(self._template, name, decl))
+
+    def remove_para_style(self, name: str):
+        """刪除段落樣式：模版內參照守門在純層；文件仍用該樣式者由全文重排
+        KeyError 快速失敗（狀態不變，不入歷史）。"""
+        return self._commit_template(
+            remove_paragraph_style(self._template, name))
+
+    def remove_char_style(self, name: str):
+        """刪除字元樣式（對稱 remove_para_style）。"""
+        return self._commit_template(
+            remove_character_style(self._template, name))
 
     def _commit_template(self, template: Template):
         """模版變更入歷史（樣式編輯共用）：先重排快速失敗，再推快照切換現態。"""

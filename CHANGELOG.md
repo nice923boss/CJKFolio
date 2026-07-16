@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.64.0（2026-07-17，Sprint 69）樣式新增／刪除核心（§4.3 可新增，「從零建立模版」資料面補齊）
+
+### 新增
+
+- [實作] cjkfolio/style_editing.py：
+  - `add_paragraph_style`／`add_character_style`：宣告形同模版 JSON（選配 based_on 承基底現值再覆寫＝載入層同構；根樣式必填守門；名稱空／衝突 TemplateError；新子樣式自動參與級聯）。
+  - `remove_paragraph_style`／`remove_character_style`：模版內參照守門（子樣式承基底、md_mapping／md_inline_mapping、主版頁腳與 toc 頁碼樣式引用即拒）；未知樣式 KeyError。
+- [實作] cjkfolio/session.py：`add_para_style`／`add_char_style`／`remove_para_style`／`remove_char_style` 入統一 undo 歷史；刪除文件仍用的樣式由全文重排 KeyError 快速失敗（狀態不變、不入歷史，承 Sprint 67 先重排再入歷史紀律）。
+
+### 驗證
+
+- 核心基線 **537 passed / 0 failed**（521→537，+16，新檔 tests/test_style_add_remove.py：add 7／remove 6／session 3）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C11 全過 0 退步。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，自擬）：session 新增子樣式「內文-小字註記」（based_on 內文、9pt）→ 套用至段落 → render PNG 親 Read（9pt 與 11.5pt 同頁對照、直排括號正確、0 違規）；雙 undo 回原（樣式消失、段落回內文）。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #34）
+
+- [實作]：新增／刪除樣式核心（含繼承整合與參照守門）。至此樣式資料面新增／繼承／修改／刪除全備。
+- 未做：樣式改名（需全書段落參照同步）、save_template 落檔（#34 (c)，「從零建立模版」最後資料面缺口）、樣式管理 UI（#34 (d)）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 同 v0.61.0 hands-on 批次（本 Sprint 為核心層，無新 UI 面）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：save_template 模版序列化落檔（書系模版另存半邊，關 #34 (c)）、樣式管理 UI 面板（新增／編輯／刪除接線）、docx 匯入（Phase 3 §6）。
+
 ## v0.63.0（2026-07-17，Sprint 68）樣式繼承（based_on 基底＋子樣式覆寫，改基底即級聯全書）
 
 ### 新增
