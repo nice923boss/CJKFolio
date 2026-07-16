@@ -2,6 +2,40 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.47.0（2026-07-17，Sprint 52）全書組裝管線（book@1 多章串接為單一多主版文件，直向全書級 PDF/X）
+
+### 新增
+
+- [實作] 書冊組裝 `cjkfolio/book.py`（cjkfolio/book@1；Owner「最複雜架構先做」下，Sprint 51 預定三選項取最重）：
+  - 書冊清單 JSON：meta.title（全書題名，PDF /Title 與書眉用）／meta.template（各章必須一致）／`chapters` 章序即節序（每章＝{path, master?}）／選配書冊層級 `images`（page＝全書版面頁號）。
+  - `assemble_book`：串接為**普通 document@2 文件**，組裝層零新排版機制（章首段掛 `Paragraph.master` 節首標記＝Sprint 51 節式主版指派，render／export／editing 照既有管線）；主版解析優先序＝chapters[].master 顯式覆寫 ＞ 章首段既有標記 ＞ 章文件 meta.master；章內既有節照搬；page_no 透傳。
+  - 快速失敗：schema 不合、空章、template 不一致、章層級 images（其 page 為章內排版頁號、組裝後即失效，改列書冊層級）、章檔缺失。
+  - CLI `assemble` 子命令（章路徑相對書冊清單目錄；輸出 doc.json 可直接 render／export-pdf／編輯）。
+  - 樣張 `samples/book.json`（自擬全書：E 序文＋D 目錄＋B/A 章首＋C 個案扉頁＋G 圖文版五章六頁）。
+
+### 修正
+
+- samples/figure-page.doc.json 補缺漏的 meta.template（Sprint 27 起缺、載入時默認空字串；組裝器 template 一致性檢查抓到＝快速失敗設計自證）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **428 passed / 0 failed**（413→428，+15，新檔 tests/test_book.py：schema 驗證／assemble 章首標記與覆寫優先序／章內節照搬／page_no 透傳／template 不一致／空章／缺檔／章級 images 拒絕／書冊級 images 透傳／組裝後 layout 節序／save round-trip／CLI／五章全書端到端）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5，自擬全書樣張，非參考書內容）：CLI assemble samples/book.json → 5 章 21 段（6 節首標記）→ render 6 頁（禁則 0 違規、齊行擠入 1）＋export PDF 6 頁 **preflight 12/12 全綠**；親 Read 三跨主版代表頁：D 目錄頁（篇名嵌線斷開＋條目縮退＋引導線＋頁碼底錨對齊）、A 內文頁（頁碼跨節連續＝書頁 4 偶右頁、書眉採全書題名）、G 圖文頁（辰宇圖說＋photo-slot 佔位框），與各單頁樣張特徵逐項一致。
+- Gate 4 獨立驗證：五章端到端測試以 PyMuPDF 驗頁序（D→B→A→C→G）、部扉大標逐字抽取、目錄頁碼記號、G 頁影像 XObject；組裝與 layout 斷言互證（paragraphs master 序列 vs pages master 序列）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：book@1 組裝全管線、CLI assemble、全書級單一 PDF/X 直向產出。
+- v1 已知限制（GAPS #31）：images 僅書冊層級；直排橫排不可混（F 版權頁另出一份 PDF，承 #30 (b)）；目錄頁碼作者手填（自動生成 Phase 4）；單向產出（改章文件後重跑 assemble，無增量同步）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 全書樣張 out/book/*.png 六頁與 out/book.pdf 抽檢（本機重現：`python -m cjkfolio.cli assemble samples/book.json -o out/book.doc.json` → render／export-pdf）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 純邏輯離屏可驗項擇一：節式混向文件（per-section 書寫方向，讓 F 版權頁入冊、關 GAPS #30 (b)／#31 (b)）、圖說與照片相對位置樣式化置放、或多圖／任意矩形置入模型。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.46.0（2026-07-17，Sprint 51）Phase 2 主版指派核心（節式多主版文件：一份文件部扉＋內文跨主版成書）
 
 ### 新增

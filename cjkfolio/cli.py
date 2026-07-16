@@ -3,6 +3,7 @@
 用法（自 repo 根執行）：
   python -m cjkfolio.cli import-txt 稿.txt -o doc.json --title 書名
   python -m cjkfolio.cli import-md 稿.md -o doc.json --title 書名
+  python -m cjkfolio.cli assemble book.json -o 全書.doc.json
   python -m cjkfolio.cli render doc.json -o out/樣張 --dpi 150 --first-page 30
   python -m cjkfolio.cli export-pdf doc.json -o out/書.pdf
   python -m cjkfolio.cli preflight out/書.pdf
@@ -11,6 +12,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .book import assemble_book, load_book
 from .document import (
     load_document,
     save_document,
@@ -122,6 +124,18 @@ def cmd_export_pdf(args) -> int:
     return 0
 
 
+def cmd_assemble(args) -> int:
+    book = load_book(args.book)
+    doc = assemble_book(book, base_dir=Path(args.book).parent)
+    save_document(doc, args.output)
+    marks = sum(1 for p in doc.paragraphs if p.master)
+    print(f"組裝完成：{len(book.chapters)} 章 → {len(doc.paragraphs)} 段"
+          f"（{marks} 個節首標記）→ {args.output}")
+    if doc.images:
+        print(f"書冊層級置入圖：{len(doc.images)} 張（page＝全書版面頁號）")
+    return 0
+
+
 def cmd_preflight(args) -> int:
     report = check_pdfx1a(args.pdf)
     for finding in report.findings:
@@ -174,6 +188,12 @@ def main(argv=None) -> int:
     p_pdf.add_argument("--icc", default=None,
                        help="嵌入 DestOutputProfile 的 CMYK 輸出 ICC 檔（自訂識別時必填）")
     p_pdf.set_defaults(func=cmd_export_pdf)
+
+    p_asm = sub.add_parser("assemble",
+                           help="書冊清單 JSON 組裝為單一多主版文件 JSON（章序即節序，章首掛節首標記）")
+    p_asm.add_argument("book", help="書冊清單 JSON（cjkfolio/book@1；章路徑相對此檔目錄）")
+    p_asm.add_argument("-o", "--output", required=True)
+    p_asm.set_defaults(func=cmd_assemble)
 
     p_pre = sub.add_parser("preflight", help="PDF/X-1a 機械檢查（自寫規則；非 Acrobat 認證級）")
     p_pre.add_argument("pdf")

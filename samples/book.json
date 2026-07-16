@@ -1,0 +1,14 @@
+{
+ "schema": "cjkfolio/book@1",
+ "meta": {
+  "title": "整理練習（全書樣張）",
+  "template": "neizai-zhengli"
+ },
+ "chapters": [
+  {"path": "preface.doc.json"},
+  {"path": "toc.doc.json"},
+  {"path": "chapter-opening.doc.json"},
+  {"path": "case-divider.doc.json"},
+  {"path": "figure-page.doc.json"}
+ ]
+}
