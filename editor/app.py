@@ -1,16 +1,17 @@
 """CJKFolio 編輯器 Phase 2 真視窗 demo：雙層畫布＋點字格反查游標＋IME 提交插入 reflow。
 
-承 editor/canvas.py 雙層畫布與 cjkfolio/editing.py 編輯引擎，於真視窗展示：
-  雙層畫布（底圖 PNG＋互動層字格）、點字格 → 反查文件游標（段／字／樣式）＋高亮、
-  IME 輸入區：組字後按 Enter 提交 → 於游標插入 → 全文 reflow → 畫布重繪 → 游標跟隨。
+承 editor/canvas.py 雙層畫布與 cjkfolio/editing.py 編輯引擎（EditSession），於真視窗展示：
+  雙層畫布（底圖 PNG＋互動層字格）、點字格 → 反查文件／框游標（段或框／字／樣式）＋高亮、
+  IME 輸入區：組字後按 Enter 提交 → 於游標插入（body 全文 reflow／框鏈重佈局）→ 重繪
+  → 游標跟隨、Ctrl+Z／Ctrl+Y 復原重做（body 與框統一歷史，Sprint 60）。
 
 誠實範圍（honest-planning R3）：
-  [實作]（離屏 smoke_check.py 已驗）＝雙層畫布顯示＋點字格反查文件游標＋
-          IME 提交插入 reflow 回路（插字 → layout_document 全文重排 → 反查新游標畫布落點；
-          reflow 走全文重排，Spike 3 實測 7.67ms/章、互動級，非增量近似）。
-  [Shell]／待 Owner（離屏測不了，GAPS #19）＝IME 直排組字是否順、候選字窗、真視窗視覺對位。
-          本 demo 以「輸入區組字 → Enter 提交」代替直排畫布內嵌 IME 游標；畫布內嵌 IME
-          即點即打與拖曳／選取 UI 為 Phase 2 編輯 UI 後續工程。
+  [實作]（離屏 smoke_check.py 已驗）＝雙層畫布顯示＋點字格反查游標（body 與框）＋
+          IME 提交插入回路（body 走 session.insert 全文重排；框走 session.insert_frame
+          框鏈重佈局，Sprint 61 接線）＋undo／redo 快捷鍵。
+  [Shell]／待 Owner（離屏測不了，GAPS #19）＝IME 直排組字是否順、候選字窗、真視窗視覺對位、
+          快捷鍵手感。本 demo 以「輸入區組字 → Enter 提交」代替直排畫布內嵌 IME 游標；
+          畫布內嵌 IME 即點即打與拖曳／選取 UI 為 Phase 2 編輯 UI 後續工程。
 
 執行（自 repo 根，需真視窗環境）：
   python editor/app.py [文件路徑]   預設 samples/case-divider.doc.json
@@ -23,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtGui import QAction, QBrush, QColor, QPen  # noqa: E402
+from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QGraphicsRectItem,
@@ -38,8 +39,8 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from cjkfolio.document import load_document  # noqa: E402
-from cjkfolio.editing import DocCursor, apply_insert  # noqa: E402
-from cjkfolio.layout import layout_document  # noqa: E402
+from cjkfolio.editing import DocCursor, EditSession  # noqa: E402
+from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -74,11 +75,12 @@ class EditorWindow(QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
-        self.doc = load_document(str(doc_path))
         self.template = load_template(str(TEMPLATE))
-        self.layout_result = layout_document(self.doc, self.template)
+        # 編輯狀態單一事實來源＝EditSession（Sprint 61 接線；doc／layout 由 property 委派）
+        self.session = EditSession(load_document(str(doc_path)), self.template)
         self.page = self.layout_result.pages[0]
-        self.cursor = None  # 目前選取字格 (placed_idx, cell_idx)
+        self.cursor = None        # 目前選取 body 字格 (placed_idx, cell_idx)
+        self.frame_cursor = None  # 目前選取框字格 ("frame", fi, li, ci)；與 body 游標互斥
         self._highlight = None
 
         self.scene, self._item_by_key = self._make_scene()
@@ -86,7 +88,7 @@ class EditorWindow(QMainWindow):
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
-            "先點頁面字格選游標，再用注音／倉頡／拼音組字，按 Enter 於游標插入並 reflow"
+            "先點頁面字格選游標（body 或文字框），組字後按 Enter 於游標插入"
         )
         self._ime.textChanged.connect(self._on_ime_preview)
         self._ime.returnPressed.connect(self._on_ime_commit)
@@ -98,15 +100,33 @@ class EditorWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.statusBar().showMessage(
-            "點頁面字格 → 反查文件游標；下方輸入區組字後按 Enter 插入並 reflow"
+            "點頁面字格 → 反查游標；組字按 Enter 插入；Ctrl+Z／Ctrl+Y 復原重做"
         )
         credit = QLabel(AUTHOR)
         credit.setStyleSheet("color:#999; font-size:11px; padding:0 8px;")
         self.statusBar().addPermanentWidget(credit)
 
+        edit_menu = self.menuBar().addMenu("編輯")
+        undo_action = QAction("復原", self)
+        undo_action.setShortcut(QKeySequence.StandardKey.Undo)  # Ctrl+Z
+        undo_action.triggered.connect(self._on_undo)
+        redo_action = QAction("重做", self)
+        redo_action.setShortcut(QKeySequence.StandardKey.Redo)  # Ctrl+Y／Ctrl+Shift+Z
+        redo_action.triggered.connect(self._on_redo)
+        edit_menu.addAction(undo_action)
+        edit_menu.addAction(redo_action)
+
         help_action = QAction("Owner IME 實測說明", self)
         help_action.triggered.connect(self._show_help)
         self.menuBar().addMenu("說明").addAction(help_action)
+
+    @property
+    def doc(self):
+        return self.session.document
+
+    @property
+    def layout_result(self):
+        return self.session.layout
 
     def _make_scene(self):
         """建雙層畫布 scene，回傳 (scene, {(placed_idx, cell_idx): item})。"""
@@ -130,6 +150,7 @@ class EditorWindow(QMainWindow):
         pi, ci = key
         hit = resolve_hit(self.doc, self.page, pi, ci)
         self.cursor = (pi, ci)
+        self.frame_cursor = None  # body 與框游標互斥（最後點選者為 IME 目標）
         src = ""
         if hit.para_idx is not None and hit.span is not None:
             s, e = hit.span
@@ -141,11 +162,10 @@ class EditorWindow(QMainWindow):
         self._draw_highlight(item.rect())
 
     def _on_pick_frame(self, item, fi: int, li: int, ci: int) -> None:
-        """點文字框字格：反查框游標並顯示來源切片（框編輯待框編輯專項，IME 不入框）。"""
-        placements = page_frame_placements(
-            self.template, self.doc, self.layout_result, self.page)
-        placement = next(pl for pl in placements if pl.frame_idx == fi)
-        hit = resolve_frame_hit(self.page.number, placement, li, ci)
+        """點文字框字格：反查框游標（Sprint 61 起為 IME 插入目標，與 body 游標互斥）。"""
+        hit = self._frame_hit(fi, li, ci)
+        self.frame_cursor = ("frame", fi, li, ci)
+        self.cursor = None
         src = ""
         if hit.span is not None:
             s, e = hit.span
@@ -153,9 +173,15 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(
             f"框游標｜框 {hit.frame_idx}（文字來源框 {hit.source_idx}）｜"
             f"字 {hit.span}＝「{hit.text}」｜樣式 {hit.style}／{hit.kind}｜"
-            f"來源切片「{src}」｜框編輯待後續（IME 插入僅 body）"
+            f"來源切片「{src}」｜組字按 Enter 插入框內"
         )
         self._draw_highlight(item.rect())
+
+    def _frame_hit(self, fi: int, li: int, ci: int):
+        placements = page_frame_placements(
+            self.template, self.doc, self.layout_result, self.page)
+        placement = next(pl for pl in placements if pl.frame_idx == fi)
+        return resolve_frame_hit(self.page.number, placement, li, ci)
 
     def _draw_highlight(self, rect) -> None:
         if self._highlight is not None:
@@ -171,6 +197,13 @@ class EditorWindow(QMainWindow):
         """組字中預覽插入目標（不變更文件；提交在 Enter）。"""
         if not text:
             return
+        if self.frame_cursor is not None:
+            hit = self._frame_hit(*self.frame_cursor[1:])
+            pos = hit.span[1] if hit.span else "?"
+            self.statusBar().showMessage(
+                f"IME 組字：「{text}」→ 目標 框{hit.source_idx} 字位{pos}（按 Enter 插入框內）"
+            )
+            return
         if self.cursor is None:
             self.statusBar().showMessage(f"IME 組字：「{text}」→ 未選游標（先點一個字格）")
             return
@@ -181,9 +214,13 @@ class EditorWindow(QMainWindow):
         )
 
     def _on_ime_commit(self) -> None:
-        """Enter 提交：於游標插入組字文字 → 全文 reflow → 畫布重繪 → 游標跟隨新落點。"""
+        """Enter 提交：於游標插入（body 走 session.insert 全文 reflow；框走
+        session.insert_frame 框鏈重佈局）→ 畫布重繪 → 游標跟隨新落點。"""
         text = self._ime.text()
         if not text:
+            return
+        if self.frame_cursor is not None:
+            self._commit_frame_insert(text)
             return
         if self.cursor is None:
             self.statusBar().showMessage("先點一個字格選游標，再組字並按 Enter")
@@ -192,11 +229,7 @@ class EditorWindow(QMainWindow):
         if hit.para_idx is None or hit.span is None:
             self.statusBar().showMessage("此字格無文件游標（拉丁串／空格），無法定位插入")
             return
-        res = apply_insert(
-            self.doc, self.template, DocCursor(hit.para_idx, hit.span[1]), text
-        )
-        self.doc = res.document
-        self.layout_result = res.layout
+        res = self.session.insert(DocCursor(hit.para_idx, hit.span[1]), text)
         if res.address is not None:
             self.page = self.layout_result.pages[res.address.page_number - 1]
             self.cursor = (res.address.placed_idx, res.address.cell_idx)
@@ -213,19 +246,78 @@ class EditorWindow(QMainWindow):
             f"游標 段{res.cursor.para_idx} 字位{res.cursor.caret}"
         )
 
+    def _commit_frame_insert(self, text: str) -> None:
+        """框游標插入（Sprint 61）：session.insert_frame → 框鏈重佈局 → 游標跟隨。"""
+        hit = self._frame_hit(*self.frame_cursor[1:])
+        if hit.span is None:
+            self.statusBar().showMessage("此框字格無來源游標，無法定位插入")
+            return
+        res = self.session.insert_frame(FrameCursor(hit.source_idx, hit.span[1]), text)
+        self._follow_frame_address(res)
+        self._ime.clear()
+        self.statusBar().showMessage(
+            f"已插入框「{text}」→ 框{res.cursor.source_idx} 字位{res.cursor.caret}"
+            "（body 版面不重排）"
+        )
+
+    def _follow_frame_address(self, res) -> None:
+        """框編輯／還原後：重繪並讓框游標與高亮跟隨 address。"""
+        if res.address is not None:
+            self.page = self.layout_result.pages[res.address.page_number - 1]
+            self.frame_cursor = ("frame", res.address.frame_idx,
+                                 res.address.line_idx, res.address.cell_idx)
+        else:
+            self.frame_cursor = None
+        self.cursor = None
+        self._rebuild()
+        if self.frame_cursor is not None and self.frame_cursor in self._item_by_key:
+            self._draw_highlight(self._item_by_key[self.frame_cursor].rect())
+
+    def _on_undo(self) -> None:
+        self._apply_history(self.session.undo(), "復原")
+
+    def _on_redo(self) -> None:
+        self._apply_history(self.session.redo(), "重做")
+
+    def _apply_history(self, res, verb: str) -> None:
+        """undo／redo 共用：依還原態型別（body／框）跟隨游標並重繪（Sprint 61）。"""
+        if res is None:
+            self.statusBar().showMessage(f"無可{verb}")
+            return
+        if isinstance(res, FrameEditResult):
+            self._follow_frame_address(res)
+            self.statusBar().showMessage(
+                f"已{verb} → 框{res.cursor.source_idx} 字位{res.cursor.caret}")
+            return
+        if res.address is not None:
+            self.page = self.layout_result.pages[res.address.page_number - 1]
+            self.cursor = (res.address.placed_idx, res.address.cell_idx)
+        else:
+            self.page = self.layout_result.pages[0]
+            self.cursor = None
+        self.frame_cursor = None
+        self._rebuild()
+        if self.cursor is not None and self.cursor in self._item_by_key:
+            self._draw_highlight(self._item_by_key[self.cursor].rect())
+        self.statusBar().showMessage(
+            f"已{verb} → 段{res.cursor.para_idx} 字位{res.cursor.caret}")
+
     def _show_help(self) -> None:
         QMessageBox.information(
             self,
             "Owner IME 實測說明",
             "本視窗為 Phase 2 畫布骨架＋編輯引擎 demo（GAPS #19）。\n\n"
             "已實作（離屏 smoke_check 已驗）：\n"
-            "  雙層畫布顯示、點字格 → 反查文件游標（段／字／樣式）、\n"
-            "  IME 提交插入 reflow（組字後按 Enter → 於游標插入 → 全文重排 → 重繪 → 游標跟隨）。\n\n"
+            "  雙層畫布顯示、點字格 → 反查游標（body 段落與文字框皆可）、\n"
+            "  IME 提交插入（body 全文重排／文字框框鏈重佈局，含串接跨框流動）、\n"
+            "  Ctrl+Z 復原／Ctrl+Y 重做（body 與框編輯統一歷史）。\n\n"
             "待您鍵盤實測：\n"
             "  1. 點一個內文字格選游標，在下方輸入區用注音／倉頡／拼音組字，按 Enter，\n"
             "     確認頁面即時 reflow、游標跟到剛插入的字。\n"
-            "  2. 目檢頁面字形與互動層對位（點字格看高亮是否框住字）。\n"
-            "  3. 確認直排 IME 組字與候選字窗正常（此為 §5.2 選 Qt 的關鍵理由）。\n\n"
+            "  2. 點文字框字格（如圖說），組字按 Enter，確認文字入框並沿串接鏈流動。\n"
+            "  3. Ctrl+Z／Ctrl+Y 連按，確認 body 與框編輯依序回退重做、高亮跟隨。\n"
+            "  4. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
+            "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、拖曳與範圍選取 UI。",
         )

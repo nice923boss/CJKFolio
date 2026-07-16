@@ -187,15 +187,46 @@ def main() -> int:
         msg = fwin.statusBar().currentMessage()
         assert "框游標" in msg and "來源框 0" in msg, f"app 框分流訊息異常：{msg}"
         assert fwin.cursor is None, "點框字格不應設 body 插入游標"
-    print(
-        f"C6 文字框互動層：框字格 hit-test {fhit}/{ftotal} 全對、"
-        f"{rt} 格 FrameCellHit round-trip（續框 span 錨鏈首 (18, 19)）、"
-        "app 點框字格分流顯示框游標"
-    )
+        print(
+            f"C6 文字框互動層：框字格 hit-test {fhit}/{ftotal} 全對、"
+            f"{rt} 格 FrameCellHit round-trip（續框 span 錨鏈首 (18, 19)）、"
+            "app 點框字格分流顯示框游標"
+        )
+
+        # C7 app session 接線（Sprint 61）：IME 提交入框＋Ctrl+Z／Y 統一歷史
+        orig_head = fdoc.text_frames[0].text
+        edited_head = orig_head[:19] + "新" + orig_head[19:]
+        fwin._ime.setText("新")
+        fwin._on_ime_commit()  # 框游標（C6 已點 ("frame",1,0,0)，span (18,19)）→ 插入框
+        assert fwin.doc.text_frames[0].text == edited_head, "IME 提交未入框"
+        assert fwin.frame_cursor is not None and fwin.frame_cursor[1] == 1, \
+            "框游標未跟隨到續框"
+        assert fwin._highlight is not None, "框插入後未重新高亮"
+        fwin._on_undo()
+        assert fwin.doc.text_frames[0].text == orig_head, "Ctrl+Z 未回退框編輯"
+        fwin._on_redo()
+        assert fwin.doc.text_frames[0].text == edited_head, "Ctrl+Y 未重做框編輯"
+        body_key = next(k for k in fwin._item_by_key if k and k[0] != "frame")
+        fwin._on_pick(fwin._item_by_key[body_key])
+        assert fwin.cursor is not None and fwin.frame_cursor is None, \
+            "點 body 字格未互斥清除框游標"
+        fwin._ime.setText("好")
+        fwin._on_ime_commit()
+        assert "好" in fwin.doc.paragraphs[0].text, "IME 提交未入 body"
+        fwin._on_undo()  # 回退 body 插入
+        assert "好" not in fwin.doc.paragraphs[0].text
+        assert fwin.doc.text_frames[0].text == edited_head
+        fwin._on_undo()  # 回退框插入（統一歷史依序）
+        assert fwin.doc.text_frames[0].text == orig_head
+        print(
+            "C7 app session 接線：IME 提交入框（游標跨框跟隨）＋"
+            "undo／redo 統一歷史（body、框依序回退）"
+        )
 
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
-        "＋框字格互動層（IME 直排組字與視覺對位待 Owner 真視窗）"
+        "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）"
+        "（IME 直排組字與視覺對位待 Owner 真視窗）"
     )
     return 0
 

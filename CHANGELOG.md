@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.56.0（2026-07-17，Sprint 61）app 真視窗接線批次（session＋IME 入框＋Ctrl+Z／Y）
+
+### 新增
+
+- [實作]（離屏 smoke C7 驗）editor/app.py（337 行）接線 Sprint 58〜60 核心：
+  - EditorWindow 改持 `EditSession`（編輯狀態單一事實來源；doc／layout_result 轉 property 委派，既有介面不變）。
+  - 點框字格設框游標（與 body 游標互斥＝最後點選者為 IME 目標）；IME 提交分流：body → `session.insert`（全文 reflow）、框 → `session.insert_frame`（框鏈重佈局，body 版面不重排），游標跨框跟隨＋高亮。
+  - 「編輯」選單 Ctrl+Z／Ctrl+Y（QKeySequence 標準鍵）→ `session.undo()`／`redo()`；`_apply_history` 依還原態型別（EditResult／FrameEditResult）分流游標高亮跟隨。
+  - 說明選單 Owner 實測步驟更新為四項（body IME、框 IME、快捷鍵、對位）。
+
+### 驗證
+
+- 核心基線 **491 passed / 0 failed**（不變＝UI 接線層，核心已於 Sprint 58〜60 入基線）；typecheck EXIT=0（含 editor/*.py）；離屏 smoke C1〜C7 全過，新增 **C7**：IME 提交入框（插「新」於鏈首字位 19 → 文字入框、游標跟隨續框＋高亮）＋undo／redo 統一歷史（body「好」、框「新」依序回退）＋既有 C5 body 回路走 session 0 退步。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：session 接線＋IME 入框＋快捷鍵（離屏全回路驗證）。
+- [Shell]／待 Owner（GAPS #19）：真視窗鍵盤實測（IME 直排組字、候選字窗、快捷鍵手感、視覺對位），啟動編輯器.bat 開任一含框文件即可測。
+- 決策：橫排框 v2 本輪不做（R1 證據弱＝參考書無「橫排文字框」用例，依 R8 不為無用例功能建介面）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗四項實測（說明選單有步驟）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 候選：圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先下載全字庫 TW-Kai，宜先問 Owner 下載授權）、框編輯 UI 後續（Backspace 刪框字、拖曳選取）。
+
 ## v0.55.0（2026-07-17，Sprint 60）EditSession 框編輯整合（body 與框統一 undo／redo 歷史）
 
 ### 新增
