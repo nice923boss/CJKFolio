@@ -333,6 +333,19 @@ CJKFolio/
 - **進度（2026-07-17 Sprint 65）**：拖曳範圍選取 UI [實作]／[Shell]（GAPS #24 拖曳子項與 #28 選取拖曳 UI 關閉；Phase 2 可自主項至此含拖曳選取全數收口，剩 Owner hands-on 批次 #19）。editor/app.py＝CanvasView 加 `mouseMoveEvent`（左鍵按住拖曳回呼 on_drag）；按下 body 字格設拖曳起點（框字格不設＝框選取 v1 不支援）、拖曳過字格以文件序正規化起訖成 `DocSpan`（反向拖曳等價、拖回起點退回單游標）、選取 shading（文件序半開區間相交判定該頁字格，與 provenance 同座標系；藍色半透明、取代單格高亮）；選取操作全走 session 統一 undo 歷史＝Backspace／Delete 刪選取（session.delete_span）、字元樣式面板吃選取範圍（session.apply_style_span，套後保留選取＝InDesign 慣例）、IME 提交替換選取（session.replace_span）、Enter 選取中不分段提示；換頁與重繪清選取。[實作]（離屏 smoke C11 驗）＝跨段選取 19 格 shading（同格退回單游標、反向拖曳正規化）＋Backspace 刪選取併段＋字元樣式套選取（選取保留）＋IME 替換選取（皆 undo 可回）＋框拖曳不選取。[Shell]／待 Owner（GAPS #19）＝真視窗拖曳手感與 shading 視覺。v1 限制：跨段選取套段落樣式未支援（套拖曳起點所在段，多段一次套用需核心單一 undo 多段 API）、框內拖曳選取不支援。測試 491 不變（UI 層，DocSpan 核心已於 Sprint 48〜49 入基線）、typecheck（含 editor）0、smoke C1〜C11 全過。
 - 製作者標示「製作者：黃政文」置於關於視窗或 footer 灰色小字。
 
+#### Phase 2 收尾判定（2026-07-17 Sprint 66，Owner 定案收尾轉 Phase 3）
+
+**Phase 2 可自主項全數收口，收尾轉 Phase 3。** honest review 實查（非橡皮圖章）：
+
+- §6 交付清單逐項有一手驗證：文字框建立／串接（Sprint 55／57）、主版指派（Sprint 51 節式）、樣式面板套用（Sprint 64／65 含拖曳選取範圍）、圖片置入（Sprint 50／54 任意矩形多圖）、即時預覽（編輯 → 全文 reflow → 重繪回路，Spike 10 中位 37ms 級）、IME 直排輸入機制（輸入區組字提交入 body 與框，Sprint 41／61）、復原重做（Sprint 44／47／60，body 與框統一歷史含連續輸入合併）、鍵盤編輯與換頁（Sprint 62）、拖曳範圍選取（Sprint 65）、AI 設定面板（Sprint 56／63）、製作者標示（app statusBar footer 灰字，收尾實查 editor/app.py 命中）；`pytest spikes tests` 491 綠、typecheck（含 editor）EXIT=0、離屏 smoke C1〜C11 全過、模版實查 7 主版＋18 段落／9 字元樣式。
+- 誠實差異：§6 原文「Qt＋Skia 畫布」實作為 PySide6＋QGraphicsView 雙層畫布（底圖＝自寫 PNG 渲染後端＝兩後端同源紀律的延伸；Skia 不採用，Sprint 40 技術棧定案）；「IME 直排輸入」的真視窗組字順暢度（§5.2 選 Qt 關鍵理由）屬 Owner hands-on，離屏不可驗。
+
+**正式 sign-off 待 Owner（R5 人類抽檢，執行工程師不代行）**：GAPS #19 真視窗批次（IME 直排組字、視覺對位、快捷鍵與拖曳手感；啟動編輯器.bat＋說明選單六項）；連同 Phase 1 遺留 GAPS #10（Spike 1 對比圖）與 #23（斷行逐行一致率）同批可做，均不阻擋轉場（Phase 1 收尾先例）。
+
+**剩餘項處置**：全數彙整 GAPS #33 Phase 2 Known Limitations（甲 Owner hands-on sign-off；乙 UI 延伸工程＝內嵌 IME 即點即打、拖放置圖、頁面面板、橫排互動層、拉線串框、跨段選取套段落樣式；丙 後續 Phase 既定），開源釋出前以 Known Limitations 公開承認（R7）。
+
+**下個 Sprint**：Phase 3 開工首項＝樣式系統（樣式新增／修改／繼承，§4.3）。
+
 ### Phase 3：樣式模版系統與模版庫（6〜8 週）[實作]
 
 - 樣式新增／修改／繼承；書系模版另存／匯入／匯出；從參考 PDF 萃取起始模版；色票管理。
@@ -502,6 +515,7 @@ CJKFolio/
 | 2026-07-17（Sprint 63，AI 設定面板 UI） | 面板 UI 定案（§4.4「AI 設定面板」UI 半邊收口）：AiConfigDialog 三欄位、儲存與載入全走 ai_config 資料面（單一事實來源）、慣例路徑 local/ai-config.local.json；金鑰紅線 UI 落實＝API Key 遮罩顯示、錯誤與狀態訊息一律不含欄位值、載入儲存錯誤用面板內嵌警示列（非 modal＝離屏可驗，也避免 offscreen modal 卡死）；面板獨立檔 editor/ai_panel.py（app.py 439 行行數管理）。Phase 2 §6 可自主收口項至此全數完成：畫布／文字框建立串接／主版指派／樣式套用核心／圖片置入／IME 插入（body＋框）／復原重做／鍵盤編輯／換頁／AI 設定面板；剩 Owner hands-on 批次（GAPS #19）與拖曳範圍選取（#24） | 承 Sprint 56 資料面（金鑰紅線測試已釘）；本 Sprint 基線 491 不變 0 退步、typecheck（含 editor）0；離屏 smoke 擴 C9（round-trip 三欄位、既有值帶入、遮罩、壞檔警示不含值）；R5 使用者既有本機設定檔實載（3/3 欄位非空、值零輸出）；R2 零新技術（先例 Sprint 61〜62 接線模式） |
 | 2026-07-17（Sprint 64，樣式面板 UI） | 樣式面板定案（§4.3「點選即套用」Phase 2 半邊，GAPS #26／#27 面板子項關閉）：StylePanel 段落／字元雙清單（清單即 template 樣式集＝不會未知樣式，無需守門死碼）；段落樣式套游標所在段、字元樣式套游標字（單字 DocRange＝拖曳選取未建前的最小可用，選取落地後同回呼直接改吃範圍）、「（清除字元樣式）」＝套 None；框游標提示不套（框單一樣式為框屬性，§6 文字框 v1 設計）；皆走 session 入統一 undo 歷史；雙擊編輯樣式參數與繼承屬 Phase 3。至此 §6 Phase 2 可自主收口項全數完成（畫布／文字框建立串接／主版指派／樣式面板／圖片置入／IME（body＋框）／undo redo／鍵盤編輯／換頁／AI 設定面板），剩 Owner hands-on 批次（#19）與拖曳範圍選取（#24） | 承 Sprint 45〜46（apply_style／apply_para_style 核心）；本 Sprint 基線 491 不變 0 退步、typecheck（含 editor）0；離屏 smoke 擴 C10（段落樣式全段換名＋字元樣式套與清除＋三步 undo 回原）；R5＝smoke C10 樣張全回路（真視窗手感 Owner-hands-on）；R2 零新技術（先例 Sprint 61〜63 接線模式） |
 | 2026-07-17（Sprint 65，拖曳範圍選取 UI） | 拖曳選取定案（GAPS #24 鍵盤後最終子項與 #28 選取拖曳 UI 關閉）：選取模型＝按下 body 字格設拖曳起點、按住左鍵拖曳過字格成 DocSpan（起訖以文件序正規化＝反向拖曳等價；拖回起點字格退回單游標；重新按下清選取）；選取 shading＝文件序半開區間相交判定該頁 body 字格（cell.span 為錨，與 Sprint 18 provenance 同座標系），取代單格高亮；選取操作全走 session 統一 undo 歷史（Backspace／Delete → delete_span、字元樣式面板同回呼改吃選取 → apply_style_span 套後保留選取＝InDesign 慣例、IME 提交 → replace_span 替換選取、Enter 選取中不分段提示）；框字格不設拖曳起點（框編輯以單游標為單位、框單一樣式無範圍語意，v1 設計）；跨段選取套段落樣式不支援（多段一次套用需核心單一 undo 多段 API，後續樣式系統工程） | 承 Sprint 48〜49（DocSpan／delete_span／replace_span／apply_style_span 核心已入 pytest 基線）＋Sprint 61〜64 接線模式（R2 零新技術無需 spike）；本 Sprint 基線 491 不變 0 退步、typecheck（含 editor）0；離屏 smoke 擴 C11（跨段選取 19 格 shading〔同格退回單游標、反向拖曳正規化〕＋Backspace 刪選取併段＋字元樣式套選取保留選取＋IME 替換選取皆 undo 可回＋框拖曳不選取）；R5＝smoke C11 樣張全回路（真視窗拖曳手感 Owner-hands-on 不代行） |
+| 2026-07-17（Sprint 66，Owner AskUserQuestion 定案「收尾轉 Phase 3」） | Phase 2 收尾定案（[Doc] 無程式碼變更）：honest review 實查 §6 Phase 2 交付清單逐項收口（文字框建立／串接、主版指派、樣式面板含選取範圍、圖片置入任意矩形多圖、即時預覽 reflow 回路、IME 輸入區提交入 body 與框、復原重做統一歷史、鍵盤編輯換頁、拖曳範圍選取、AI 設定面板、製作者標示 footer 灰字實查命中），491 綠、typecheck（含 editor）0、smoke C1〜C11 全過、模版 7 主版＋18／9 樣式實查。誠實差異記錄：§6「Qt＋Skia」實作為 PySide6＋自寫 PNG 底圖（Sprint 40 定案，Skia 不採用）；IME 真視窗組字順暢度屬 Owner hands-on。剩項彙整 GAPS #33（甲 hands-on sign-off＝#19 連同 Phase 1 遺留 #10／#23；乙 UI 延伸工程；丙 後續 Phase 既定），均不阻擋轉場。下個 Sprint 轉 Phase 3 首項＝樣式系統（樣式新增／修改／繼承，§4.3） | Owner AskUserQuestion 定案（收尾轉 Phase 3）＋honest review（§6 清單對照 Sprint 40〜65 一手驗證記錄＋本場次基線複驗）＋Phase 1 收尾先例（Sprint 39：hands-on sign-off 並行不阻擋）＋R5／R7 |
 
 ## 11. 證據附錄（關鍵引用）
 

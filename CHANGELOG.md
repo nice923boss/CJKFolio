@@ -2,6 +2,26 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.61.0（2026-07-17，Sprint 66）Phase 2 收尾判定（Owner 定案收尾轉 Phase 3）[Doc]
+
+### 定案
+
+- Owner AskUserQuestion 定案「收尾轉 Phase 3」：honest review 實查 §6 Phase 2 交付清單逐項收口（文字框建立／串接、主版指派、樣式面板含選取範圍、圖片置入任意矩形多圖、即時預覽 reflow 回路、IME 輸入區提交入 body 與框、復原重做統一歷史、鍵盤編輯換頁、拖曳範圍選取、AI 設定面板、製作者標示 footer 灰字實查命中），對照 Sprint 40〜65 一手驗證記錄。
+- 剩餘項彙整 GAPS #33 Phase 2 Known Limitations（同 #22 為 Phase 1 之例）：**甲** Owner hands-on sign-off（#19 真視窗批次連同 Phase 1 遺留 #10／#23，不阻擋轉場＝Phase 1 先例）；**乙** UI 延伸工程（內嵌 IME 即點即打、拖放置圖、頁面面板、橫排互動層、拉線串框、跨段選取套段落樣式）；**丙** 後續 Phase 既定（PPI／彩色影像／目錄自動生成／圖文繞排 Phase 4、book 增量 Phase 3 再議）。
+- 誠實差異：§6「Qt＋Skia 畫布」實作為 PySide6＋QGraphicsView＋自寫 PNG 渲染底圖（Sprint 40 定案；兩後端同源紀律延伸，Skia 不採用）；IME 真視窗組字順暢度（§5.2 選 Qt 關鍵理由）屬 Owner hands-on。
+
+### 驗證
+
+- [Doc] 無程式碼變更；基線複驗 **491 passed / 0 failed**、typecheck EXIT=0（含 editor/*.py）、離屏 smoke C1〜C11 全過、模版實查 7 主版＋18 段落／9 字元樣式。繁中標點 grep 無破折號。
+
+### 待 Owner 真實素材驗收（R5）
+
+- hands-on 批次：啟動編輯器.bat 照說明選單六項實測；連同 GAPS #10（Spike 1 對比圖 spikes/spike1-vertical-core/out/spread_comparison.png）、#23（斷行逐行一致率）同批。
+
+### 下個 Sprint 預定範圍
+
+- Phase 3 開工首項：樣式系統（樣式新增／修改／繼承，§4.3）。
+
 ## v0.60.0（2026-07-17，Sprint 65）拖曳範圍選取 UI（跨段選取 → 刪除／套字元樣式／IME 替換）
 
 ### 新增
