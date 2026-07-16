@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.60.0（2026-07-17，Sprint 65）拖曳範圍選取 UI（跨段選取 → 刪除／套字元樣式／IME 替換）
+
+### 新增
+
+- [實作]（離屏 smoke C11 驗）editor/app.py 拖曳範圍選取（GAPS #24 拖曳子項與 #28 選取拖曳 UI 關閉）：
+  - CanvasView 左鍵按住拖曳回呼（mouseMoveEvent）；按下 body 字格＝拖曳起點，拖曳過字格＝`DocSpan` 選取（起訖文件序正規化＝反向拖曳等價；拖回起點退回單游標；重新按下清選取）。
+  - 選取 shading：文件序半開區間相交判定該頁 body 字格（cell.span 為錨，與 provenance 同座標系），藍色半透明、取代單格高亮。
+  - 選取操作入統一 undo 歷史：Backspace／Delete 刪選取（session.delete_span）、字元樣式面板同回呼改吃選取範圍（session.apply_style_span，套後保留選取）、IME 提交替換選取（session.replace_span）、Enter 選取中不分段提示；換頁與重繪清選取。
+  - 框字格不設拖曳起點（框選取 v1 不支援）；說明選單 Owner 實測步驟更新為六項（增拖曳選取）。
+- **Phase 2 可自主項至此含拖曳選取全數收口**：剩 Owner hands-on 批次（GAPS #19）；Phase 2 收尾判定與轉 Phase 3 需 Owner 定案（同 Sprint 39 先例）。
+
+### 驗證
+
+- 核心基線 **491 passed / 0 failed**（不變＝UI 層，DocSpan 核心已於 Sprint 48〜49 入基線）；typecheck EXIT=0（含 editor/*.py）；離屏 smoke C1〜C11 全過，新增 **C11**：跨段選取 19 格 shading（同格退回單游標、反向拖曳正規化）＋Backspace 刪選取併段（undo 回原）＋字元樣式套選取（跨段生效、選取保留）＋IME 替換選取（undo 回原）＋框拖曳不選取。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：拖曳選取與選取編輯接線（離屏全回路驗證）。
+- [Shell]／待 Owner（GAPS #19）：真視窗拖曳手感與 shading 視覺。
+- v1 限制：跨段選取套段落樣式未支援（套拖曳起點所在段，多段一次套用需核心單一 undo 多段 API）、框內拖曳選取不支援。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗按住左鍵拖曳選取（跨段、反向），試 Backspace 刪除、字元樣式套用、組字 Enter 替換；其餘同 v0.59.0 批次（說明選單六項）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 2 可自主項全數收口。Phase 2 收尾判定與轉 Phase 3 由 Owner 定案（同 Sprint 39 先例）；候選：Phase 3 開工首項（樣式新增／修改／繼承）、Owner hands-on 批次（GAPS #19）先行。
+
 ## v0.59.0（2026-07-17，Sprint 64）樣式面板 UI（段落／字元樣式點選套用，Phase 2 可自主項全收口）
 
 ### 新增

@@ -2,16 +2,18 @@
 
 承 editor/canvas.py 雙層畫布與 cjkfolio/editing.py 編輯引擎（EditSession），於真視窗展示：
   雙層畫布（底圖 PNG＋互動層字格）、點字格 → 反查文件／框游標（段或框／字／樣式）＋高亮、
+  按住左鍵拖曳 → 範圍選取（可跨段；刪除／套字元樣式／IME 替換，Sprint 65）、
   IME 輸入區：組字後按 Enter 提交 → 於游標插入（body 全文 reflow／框鏈重佈局）→ 重繪
   → 游標跟隨、Ctrl+Z／Ctrl+Y 復原重做（body 與框統一歷史，Sprint 60）。
 
 誠實範圍（honest-planning R3）：
   [實作]（離屏 smoke_check.py 已驗）＝雙層畫布顯示＋點字格反查游標（body 與框）＋
           IME 提交插入回路（body 走 session.insert 全文重排；框走 session.insert_frame
-          框鏈重佈局，Sprint 61 接線）＋undo／redo 快捷鍵。
+          框鏈重佈局，Sprint 61 接線）＋undo／redo 快捷鍵＋拖曳範圍選取
+          （跨段選取 → Backspace 刪除／字元樣式面板套選取／IME 替換，Sprint 65）。
   [Shell]／待 Owner（離屏測不了，GAPS #19）＝IME 直排組字是否順、候選字窗、真視窗視覺對位、
-          快捷鍵手感。本 demo 以「輸入區組字 → Enter 提交」代替直排畫布內嵌 IME 游標；
-          畫布內嵌 IME 即點即打與拖曳／選取 UI 為 Phase 2 編輯 UI 後續工程。
+          快捷鍵與拖曳手感。本 demo 以「輸入區組字 → Enter 提交」代替直排畫布內嵌 IME 游標；
+          畫布內嵌 IME 即點即打為 Phase 2 編輯 UI 後續工程。
 
 執行（自 repo 根，需真視窗環境）：
   python editor/app.py [文件路徑]   預設 samples/case-divider.doc.json
@@ -42,7 +44,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from cjkfolio.document import load_document  # noqa: E402
-from cjkfolio.editing import DocCursor, DocRange, EditSession  # noqa: E402
+from cjkfolio.editing import DocCursor, DocRange, DocSpan, EditSession  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_panel import AiConfigDialog  # noqa: E402
@@ -62,20 +64,35 @@ AUTHOR = "製作者：黃政文"
 
 class CanvasView(QGraphicsView):
     """點畫布 → 反查最上層帶 provenance 的字格 item，回呼 on_pick(item)；
+    按住左鍵拖曳過字格 → 回呼 on_drag(item)（範圍選取，Sprint 65）；
     鍵盤事件（Backspace／Delete／Enter／PgUp／PgDn）回呼 on_key(event)（Sprint 62）。"""
 
-    def __init__(self, scene: QGraphicsScene, on_pick, on_key=None) -> None:
+    def __init__(self, scene: QGraphicsScene, on_pick, on_key=None,
+                 on_drag=None) -> None:
         super().__init__(scene)
         self._on_pick = on_pick
         self._on_key = on_key
+        self._on_drag = on_drag
 
-    def mousePressEvent(self, event) -> None:
+    def _cell_item_at(self, event):
         pt = self.mapToScene(event.position().toPoint())
         for item in self.scene().items(pt):  # top-first；跳過高亮（data None）
             if item.data(0) is not None:
-                self._on_pick(item)
-                break
+                return item
+        return None
+
+    def mousePressEvent(self, event) -> None:
+        item = self._cell_item_at(event)
+        if item is not None:
+            self._on_pick(item)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._on_drag is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            item = self._cell_item_at(event)
+            if item is not None:
+                self._on_drag(item)
+        super().mouseMoveEvent(event)
 
     def keyPressEvent(self, event) -> None:
         if self._on_key is not None and self._on_key(event):
@@ -94,9 +111,12 @@ class EditorWindow(QMainWindow):
         self.cursor = None        # 目前選取 body 字格 (placed_idx, cell_idx)
         self.frame_cursor = None  # 目前選取框字格 ("frame", fi, li, ci)；與 body 游標互斥
         self._highlight = None
+        self.selection = None     # 拖曳範圍選取（DocSpan，僅 body，Sprint 65）
+        self._sel_items = []      # 選取範圍 shading items
+        self._drag_anchor = None  # 拖曳起點 (para_idx, span)，按下 body 字格時設定
 
         self.scene, self._item_by_key = self._make_scene()
-        self.view = CanvasView(self.scene, self._on_pick, self._on_key)
+        self.view = CanvasView(self.scene, self._on_pick, self._on_key, self._on_drag)
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
@@ -165,13 +185,17 @@ class EditorWindow(QMainWindow):
         return scene, {it.data(0): it for it in items}
 
     def _rebuild(self) -> None:
-        """reflow 後重繪：換上新 scene，高亮清空（舊 scene 連同高亮一併丟棄）。"""
+        """reflow 後重繪：換上新 scene，高亮與選取清空（舊 scene 連同其 item 一併丟棄）。"""
         self.scene, self._item_by_key = self._make_scene()
         self.view.setScene(self.scene)
         self._highlight = None
+        self.selection = None
+        self._sel_items = []
 
     def _on_pick(self, item) -> None:
         key = item.data(0)
+        self._set_selection(None)   # 重新按下＝清既有選取；拖曳起點隨本次點選重設
+        self._drag_anchor = None    # 框字格不設拖曳起點（框選取 v1 不支援）
         if key and key[0] == "frame":  # 文字框字格（Sprint 58）：顯示框游標，不設插入游標
             self._on_pick_frame(item, *key[1:])
             return
@@ -179,6 +203,8 @@ class EditorWindow(QMainWindow):
         hit = resolve_hit(self.doc, self.page, pi, ci)
         self.cursor = (pi, ci)
         self.frame_cursor = None  # body 與框游標互斥（最後點選者為 IME 目標）
+        if hit.para_idx is not None and hit.span is not None:
+            self._drag_anchor = (hit.para_idx, hit.span)
         src = ""
         if hit.para_idx is not None and hit.span is not None:
             s, e = hit.span
@@ -221,9 +247,108 @@ class EditorWindow(QMainWindow):
         self.scene.addItem(hl)
         self._highlight = hl
 
+    def _on_drag(self, item) -> None:
+        """按住左鍵拖曳過字格（Sprint 65）：自按下的 body 字格起劃範圍選取（可跨段）。
+
+        起訖以文件序正規化（反向拖曳等價）；拖回起點字格＝退回單游標；
+        框字格不支援拖曳選取（框編輯以單游標為單位，v1 設計）。"""
+        key = item.data(0)
+        if self._drag_anchor is None or not key or key[0] == "frame":
+            return
+        hit = resolve_hit(self.doc, self.page, *key)
+        if hit.para_idx is None or hit.span is None:
+            return
+        a_para, a_span = self._drag_anchor
+        if (hit.para_idx, hit.span) == (a_para, a_span):
+            self._set_selection(None)  # 拖回起點字格＝維持單游標
+            return
+        if (a_para, a_span[0]) <= (hit.para_idx, hit.span[0]):
+            span = DocSpan(DocCursor(a_para, a_span[0]),
+                           DocCursor(hit.para_idx, hit.span[1]))
+        else:
+            span = DocSpan(DocCursor(hit.para_idx, hit.span[0]),
+                           DocCursor(a_para, a_span[1]))
+        self._set_selection(span)
+        self.statusBar().showMessage(
+            f"選取 段{span.start.para_idx} 字位{span.start.caret} 〜 "
+            f"段{span.end.para_idx} 字位{span.end.caret}"
+            f"（{self._selection_char_count()} 字）｜"
+            "Backspace 刪除選取、點字元樣式套用至選取、組字 Enter 替換選取"
+        )
+
+    def _set_selection(self, span) -> None:
+        """設定／清除拖曳範圍選取並重畫選取 shading（僅 body 字格）。"""
+        for it in self._sel_items:
+            self.scene.removeItem(it)
+        self._sel_items = []
+        self.selection = span
+        if span is None:
+            return
+        if self._highlight is not None:  # 選取 shading 取代單格高亮
+            self.scene.removeItem(self._highlight)
+            self._highlight = None
+        for key in self._selected_cell_keys():
+            item = self._item_by_key.get(key)
+            if item is None:
+                continue
+            hl = QGraphicsRectItem(item.rect())
+            hl.setPen(Qt.NoPen)
+            hl.setBrush(QBrush(QColor(60, 120, 220, 70)))
+            hl.setZValue(2)
+            self.scene.addItem(hl)
+            self._sel_items.append(hl)
+
+    def _selected_cell_keys(self) -> list:
+        """目前頁面上落在選取範圍內的 body 字格 key（文件序半開區間相交判定）。"""
+        span = self.selection
+        if span is None:
+            return []
+        lo = (span.start.para_idx, span.start.caret)
+        hi = (span.end.para_idx, span.end.caret)
+        keys = []
+        for pi, placed in enumerate(self.page.placed):
+            if placed.para_idx is None:
+                continue
+            for ci, cell in enumerate(placed.line.cells):
+                if cell.span is None:
+                    continue
+                lo_c = (placed.para_idx, cell.span[0])
+                hi_c = (placed.para_idx, cell.span[1])
+                if lo_c < hi and hi_c > lo:
+                    keys.append((pi, ci))
+        return keys
+
+    def _selection_char_count(self) -> int:
+        """選取範圍涵蓋的字元數（段界不計；供狀態列顯示）。"""
+        s, e = self.selection.start, self.selection.end
+        if s.para_idx == e.para_idx:
+            return e.caret - s.caret
+        total = len(self.doc.paragraphs[s.para_idx].text) - s.caret + e.caret
+        for p in range(s.para_idx + 1, e.para_idx):
+            total += len(self.doc.paragraphs[p].text)
+        return total
+
+    def _delete_selection(self) -> bool:
+        """Backspace／Delete 刪除拖曳選取（session.delete_span 入統一歷史）。"""
+        span = self.selection
+        res = self.session.delete_span(span)
+        self._follow_body_address(res)
+        self.statusBar().showMessage(
+            f"已刪選取 段{span.start.para_idx} 字位{span.start.caret} 〜 "
+            f"段{span.end.para_idx} 字位{span.end.caret} → "
+            f"游標 段{res.cursor.para_idx} 字位{res.cursor.caret}"
+        )
+        return True
+
     def _on_ime_preview(self, text: str) -> None:
         """組字中預覽插入目標（不變更文件；提交在 Enter）。"""
         if not text:
+            return
+        if self.selection is not None:
+            self.statusBar().showMessage(
+                f"IME 組字：「{text}」→ 將替換選取"
+                f"（{self._selection_char_count()} 字，按 Enter）"
+            )
             return
         if self.frame_cursor is not None:
             hit = self._frame_hit(*self.frame_cursor[1:])
@@ -246,6 +371,17 @@ class EditorWindow(QMainWindow):
         session.insert_frame 框鏈重佈局）→ 畫布重繪 → 游標跟隨新落點。"""
         text = self._ime.text()
         if not text:
+            return
+        if self.selection is not None:  # 選取中提交＝替換選取（Sprint 65）
+            span = self.selection
+            res = self.session.replace_span(span, text)
+            self._follow_body_address(res)
+            self._ime.clear()
+            self.statusBar().showMessage(
+                f"已以「{text}」替換選取（段{span.start.para_idx}〜"
+                f"段{span.end.para_idx}）→ 游標 段{res.cursor.para_idx} "
+                f"字位{res.cursor.caret}"
+            )
             return
         if self.frame_cursor is not None:
             self._commit_frame_insert(text)
@@ -329,12 +465,19 @@ class EditorWindow(QMainWindow):
     def _on_key(self, event) -> bool:
         """畫布鍵盤事件（Sprint 62）：Backspace／Delete 刪字、Enter 分段、PgUp／PgDn 換頁。
 
-        游標語意＝點選字格之後（與 IME 插入同）：Backspace 刪游標字、Delete 刪其後一字。
+        游標語意＝點選字格之後（與 IME 插入同）：Backspace 刪游標字、Delete 刪其後一字；
+        拖曳選取中（Sprint 65）Backspace／Delete 刪整段選取。
         回 True＝已處理（未處理交回 QGraphicsView 預設行為）。"""
         key = event.key()
         if key in (Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
             self._turn_page(1 if key == Qt.Key.Key_PageDown else -1)
             return True
+        if self.selection is not None:  # 選取中（Sprint 65）：刪除吃整段選取、不分段
+            if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+                return self._delete_selection()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.statusBar().showMessage("選取中不分段；先刪除選取或重新點選單一字格")
+                return True
         if key == Qt.Key.Key_Backspace:
             return self._delete_at_cursor(before=True)
         if key == Qt.Key.Key_Delete:
@@ -396,7 +539,10 @@ class EditorWindow(QMainWindow):
         return True
 
     def _apply_para_style_at_cursor(self, name: str) -> None:
-        """樣式面板點段落樣式 → 套用至 body 游標所在段（session 入統一歷史）。"""
+        """樣式面板點段落樣式 → 套用至 body 游標所在段（session 入統一歷史）。
+
+        跨段選取套段落樣式 v1 未支援（套用於拖曳起點所在段；多段一次套用需
+        核心單一 undo 單元的多段 API，屬後續樣式系統工程）。"""
         if self.frame_cursor is not None:
             self.statusBar().showMessage("文字框樣式為框屬性（單一樣式），面板套用僅 body")
             return
@@ -411,9 +557,17 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(f"段{hit.para_idx} 段落樣式 → {name}")
 
     def _apply_char_style_at_cursor(self, name) -> None:
-        """樣式面板點字元樣式 → 套用至 body 游標字（單字範圍；None＝清除）。
-
-        拖曳範圍選取 UI 未建前的最小可用；範圍選取落地後同回呼改吃選取範圍。"""
+        """樣式面板點字元樣式 → 套用至拖曳選取範圍（Sprint 65）或 body 游標字（None＝清除）。"""
+        if self.selection is not None:  # 選取中＝套整段選取（可跨段，Sprint 49 核心）
+            span = self.selection
+            res = self.session.apply_style_span(span, name)
+            self._follow_body_address(res)
+            self._set_selection(span)  # 套樣式不改 text，選取座標仍有效＝保留選取
+            self.statusBar().showMessage(
+                f"選取 段{span.start.para_idx}〜段{span.end.para_idx} 字元樣式 → "
+                f"{name if name else '（清除）'}"
+            )
+            return
         if self.frame_cursor is not None:
             self.statusBar().showMessage("文字框無字元樣式（單一樣式），面板套用僅 body")
             return
@@ -453,7 +607,8 @@ class EditorWindow(QMainWindow):
             "已實作（離屏 smoke_check 已驗）：\n"
             "  雙層畫布顯示、點字格 → 反查游標（body 段落與文字框皆可）、\n"
             "  IME 提交插入（body 全文重排／文字框框鏈重佈局，含串接跨框流動）、\n"
-            "  Ctrl+Z 復原／Ctrl+Y 重做（body 與框編輯統一歷史）。\n\n"
+            "  Ctrl+Z 復原／Ctrl+Y 重做（body 與框編輯統一歷史）、\n"
+            "  按住左鍵拖曳範圍選取（可跨段；刪除／套字元樣式／IME 替換）。\n\n"
             "待您鍵盤實測：\n"
             "  1. 點一個內文字格選游標，在下方輸入區用注音／倉頡／拼音組字，按 Enter，\n"
             "     確認頁面即時 reflow、游標跟到剛插入的字。\n"
@@ -461,10 +616,13 @@ class EditorWindow(QMainWindow):
             "  3. Ctrl+Z／Ctrl+Y 連按，確認 body 與框編輯依序回退重做、高亮跟隨。\n"
             "  4. 點畫布後按 Backspace（刪游標字）／Delete（刪後一字）／Enter（body 分段）、\n"
             "     PgUp／PgDn 換頁，確認刪字 reflow 與換頁顯示。\n"
-            "  5. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
+            "  5. 按住左鍵拖曳選取多字（可跨段、可反向），確認藍色 shading 跟手；\n"
+            "     試 Backspace 刪除選取、點字元樣式套用至選取、組字 Enter 替換選取。\n"
+            "  6. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
             "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
-            "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、拖曳與範圍選取 UI。",
+            "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、\n"
+            "  跨段選取套段落樣式、框內拖曳選取。",
         )
 
 

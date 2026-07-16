@@ -10,6 +10,8 @@
   C5 編輯回路（IME 提交 → 插字 reflow → 游標跟隨）
   C6 文字框互動層（Sprint 58）：框字格 hit-test 100%＋FrameCellHit round-trip
      （含串接續框 span 錨鏈首 text）＋app 點框字格分流
+  C7〜C10 app session 接線／畫布鍵盤編輯／AI 設定面板／樣式面板（Sprint 61〜64）
+  C11 拖曳範圍選取（Sprint 65）：跨段選取 → 刪除／套字元樣式／IME 替換
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -319,10 +321,86 @@ def main() -> int:
         "（內文強調-明體W9→清除）＋三步 undo 回原"
     )
 
+    # C11 拖曳範圍選取（Sprint 65）：跨段選取 → 刪除／套字元樣式／IME 替換，undo 可回
+    from cjkfolio.editing import DocCursor, DocSpan
+
+    win11 = EditorWindow(str(DOC))
+    orig_texts = [p.text for p in win11.doc.paragraphs]
+
+    def cell_key(w, para_idx, char_pos):
+        for pi, pl in enumerate(w.page.placed):
+            if pl.para_idx != para_idx:
+                continue
+            for ci, cell in enumerate(pl.line.cells):
+                if cell.span is not None and cell.span[0] == char_pos:
+                    return (pi, ci)
+        raise AssertionError(f"找不到 段{para_idx} 字位{char_pos} 的字格")
+
+    a_key = cell_key(win11, 3, 0)  # 段3「三」（內文）
+    b_key = cell_key(win11, 5, 0)  # 段5「夫」（內文）
+    win11._on_pick(win11._item_by_key[a_key])
+    assert win11._drag_anchor is not None and win11.selection is None
+    win11._on_drag(win11._item_by_key[a_key])  # 拖回起點字格＝維持單游標
+    assert win11.selection is None, "同格拖曳不應產生選取"
+    win11._on_drag(win11._item_by_key[b_key])
+    want = DocSpan(DocCursor(3, 0), DocCursor(5, 1))
+    assert win11.selection == want, f"選取範圍異常：{win11.selection}"
+    # 選取 shading＝段3 全 14 字＋段4「【成員】」4 字＋段5 首字＝19 格
+    assert len(win11._sel_items) == 19, f"選取 shading 數異常：{len(win11._sel_items)}"
+    win11._on_pick(win11._item_by_key[b_key])
+    win11._on_drag(win11._item_by_key[a_key])  # 反向拖曳＝同一範圍（起訖正規化）
+    assert win11.selection == want, f"反向拖曳未正規化起訖：{win11.selection}"
+    # Backspace 刪選取：段3＋段5 併段（承頭段樣式）、段4 移除、undo 回原
+    assert win11._on_key(key_event(Qt.Key.Key_Backspace)), "選取 Backspace 未被處理"
+    assert len(win11.doc.paragraphs) == 4, f"跨段刪除後段數 {len(win11.doc.paragraphs)}"
+    assert win11.doc.paragraphs[3].text == orig_texts[5][1:], \
+        f"併段內容異常：{win11.doc.paragraphs[3].text!r}"
+    assert win11.selection is None and win11._sel_items == []
+    win11._on_undo()
+    assert [p.text for p in win11.doc.paragraphs] == orig_texts, "undo 未回拖曳刪除前"
+    # 字元樣式面板吃選取範圍（Sprint 64 預告）：跨段套用、選取保留、undo 回原
+    win11._on_pick(win11._item_by_key[a_key])
+    win11._on_drag(win11._item_by_key[b_key])
+    win11._style_panel.pick_char_style("內文強調-明體W9")
+    c3 = next(cell for pl in win11.page.placed if pl.para_idx == 3
+              for cell in pl.line.cells if cell.span == (0, 1))
+    c5 = next(cell for pl in win11.page.placed if pl.para_idx == 5
+              for cell in pl.line.cells if cell.span == (0, 1))
+    assert c3.char_style == c5.char_style == "內文強調-明體W9", "選取套字元樣式未跨段生效"
+    assert win11.selection == want, "套樣式後選取未保留"
+    assert len(win11._sel_items) == 19, "套樣式後選取 shading 未重畫"
+    win11._on_undo()
+    assert win11.selection is None
+    # IME 提交替換選取：跨段替換為「極簡」、undo 回原
+    win11._on_pick(win11._item_by_key[a_key])
+    win11._on_drag(win11._item_by_key[b_key])
+    win11._ime.setText("極簡")
+    win11._on_ime_commit()
+    assert len(win11.doc.paragraphs) == 4
+    assert win11.doc.paragraphs[3].text == "極簡" + orig_texts[5][1:], \
+        f"替換選取內容異常：{win11.doc.paragraphs[3].text!r}"
+    win11._on_undo()
+    assert [p.text for p in win11.doc.paragraphs] == orig_texts, "undo 未回替換前"
+    # 框字格不支援拖曳選取（v1 設計）：不設拖曳起點、不產生選取
+    with tempfile.TemporaryDirectory() as td11:
+        fpath11 = Path(td11) / "frame-demo.doc.json"
+        fpath11.write_text(json.dumps(frame_doc_dict, ensure_ascii=False),
+                           encoding="utf-8")
+        fwin11 = EditorWindow(str(fpath11))
+        fwin11._on_pick(fwin11._item_by_key[("frame", 0, 0, 0)])
+        assert fwin11._drag_anchor is None, "框字格不應成為拖曳選取起點"
+        fwin11._on_drag(fwin11._item_by_key[("frame", 0, 0, 1)])
+        assert fwin11.selection is None, "框拖曳不應產生選取"
+    print(
+        "C11 拖曳範圍選取：跨段選取 19 格 shading（同格退回單游標、反向拖曳正規化）"
+        "＋Backspace 刪選取併段＋字元樣式套選取（選取保留）＋IME 替換選取"
+        "（皆 undo 可回）＋框拖曳不選取"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
-        "＋樣式面板（IME 直排組字與視覺對位待 Owner 真視窗）"
+        "＋樣式面板＋拖曳範圍選取（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0
 
