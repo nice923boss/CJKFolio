@@ -19,14 +19,10 @@ HORIZONTAL_MODE = "horizontal-tb"
 WRITING_MODES = (VERTICAL_MODE, HORIZONTAL_MODE)
 
 
-def page_is_vertical(doc, template: Template) -> bool:
-    """由文件實際引用的段落樣式判定頁面書寫方向（v1：全文件單一方向）。
-
-    混用 vertical-rl 與 horizontal-tb（版面軸不同、slot 幾何不相容）快速失敗；
-    未知 writing_mode 亦快速失敗（系統邊界驗證）。
-    """
+def _direction_modes(paragraphs, template: Template) -> list:
+    """收集段落樣式的書寫方向（去重、保序）；未知 writing_mode 快速失敗。"""
     modes = []
-    for p in doc.paragraphs:
+    for p in paragraphs:
         st = template.paragraph_styles.get(p.style)
         if st is None:
             continue  # 未知樣式由 layout_document 另行 raise
@@ -37,10 +33,31 @@ def page_is_vertical(doc, template: Template) -> bool:
             )
         if st.writing_mode not in modes:
             modes.append(st.writing_mode)
+    return modes
+
+
+def page_is_vertical(doc, template: Template) -> bool:
+    """整份文件單一書寫方向判定（相容 util）：混向即快速失敗。
+
+    節式逐頁方向（直排內文＋橫排版權頁同冊，Sprint 53）由 layout_document
+    逐節判定並掛 LayoutPage.vertical，不經此函式。
+    """
+    modes = _direction_modes(doc.paragraphs, template)
     if len(modes) > 1:
         raise ValueError(
             f"v1 不支援單一文件混用書寫方向（本文件含 {modes}）；"
             "橫排頁（版權頁）與直排內文請分屬不同文件"
+        )
+    return modes[0] != HORIZONTAL_MODE if modes else True
+
+
+def _section_is_vertical(paragraphs, template: Template, master_name: str) -> bool:
+    """一節的書寫方向：同節混用（版面軸不同、slot 幾何不相容）快速失敗。"""
+    modes = _direction_modes(paragraphs, template)
+    if len(modes) > 1:
+        raise ValueError(
+            f"不支援同一節混用書寫方向（節「{master_name}」含 {modes}）；"
+            "橫排頁（版權頁）與直排內文請以節首標記（Paragraph.master）分節"
         )
     return modes[0] != HORIZONTAL_MODE if modes else True
 
@@ -81,6 +98,7 @@ class LayoutPage:
     number: int  # 1 起算（版面頁號；書頁號另計）
     placed: tuple
     master: str = ""  # 本頁主版名（節式主版指派，Sprint 51；layout_document 必填）
+    vertical: bool = True  # 本頁書寫方向（節式混向，Sprint 53；False＝橫排 horizontal-tb）
 
 
 @dataclass(frozen=True)
@@ -118,7 +136,7 @@ class LayoutResult:
     pages: tuple
     violations: list  # 禁則違規訊息（runtime 檢查，應為空）
     justify_stats: dict  # {"squeezed": n, "stretched": n, "beyond": n}
-    vertical: bool = True  # 頁面書寫方向（False＝橫排 horizontal-tb）
+    vertical: bool = True  # 首節方向（相容欄位）；逐頁方向以 LayoutPage.vertical 為準（Sprint 53）
     toc_marks: dict = field(default_factory=dict)  # page number → (TocEntryMark, ...)
     rule_breaks: dict = field(default_factory=dict)  # page number → (RuleBreak, ...)
 
@@ -182,7 +200,7 @@ def _rule_breaks(pages, template: Template) -> dict:
     breaks: dict = {}
     for page in pages:
         master = template.masters[page.master]
-        if master.rule is None:
+        if not page.vertical or master.rule is None:  # rule 為直排目錄原件
             continue
         grid = master.grid
         top_pt = master.margins.top_mm * PT_PER_MM
@@ -217,11 +235,11 @@ def _sections(doc) -> list:
 
 
 def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
-    vertical = page_is_vertical(doc, template)
     pages: list = []
     for si, (master_name, lo, hi) in enumerate(_sections(doc)):
         if master_name not in template.masters:
             raise KeyError(f"文件引用未知主版：{master_name}")
+        vertical = _section_is_vertical(doc.paragraphs[lo:hi], template, master_name)
         grid = template.masters[master_name].grid
         specs = []
         for i in range(lo, hi):
@@ -254,19 +272,21 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
             first_para_continues=first_para_continues and si == 0, vertical=vertical,
         )
         for page in raw_pages:
-            pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name))
+            pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name,
+                                    vertical=vertical))
     pages = tuple(pages)
     violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
     toc_marks, toc_violations = _toc_marks(pages, template)
     violations += toc_violations
-    rule_breaks = _rule_breaks(pages, template) if vertical else {}
+    rule_breaks = _rule_breaks(pages, template)
     stats = {"squeezed": 0, "stretched": 0, "beyond": 0}
-    if vertical:  # 齊行為直排內文特徵；橫排版權頁短行左齊、不字距縮放
-        for page in pages:
-            for pl in page.placed:
-                _, status = line_justified_advance(pl.line, 1.0)
-                if status in stats:
-                    stats[status] += 1
+    for page in pages:
+        if not page.vertical:  # 齊行為直排內文特徵；橫排版權頁短行左齊、不字距縮放
+            continue
+        for pl in page.placed:
+            _, status = line_justified_advance(pl.line, 1.0)
+            if status in stats:
+                stats[status] += 1
     return LayoutResult(pages=pages, violations=violations, justify_stats=stats,
-                        vertical=vertical, toc_marks=toc_marks,
-                        rule_breaks=rule_breaks)
+                        vertical=pages[0].vertical if pages else True,
+                        toc_marks=toc_marks, rule_breaks=rule_breaks)

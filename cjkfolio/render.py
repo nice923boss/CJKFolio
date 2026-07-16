@@ -494,7 +494,7 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
                 "title": doc.title,
             }
         img = renderer.render_page(page, footer_texts=texts, book_number=book_number,
-                                   vertical=layout.vertical,
+                                   vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
                                    toc_marks=layout.toc_marks.get(page.number, ()),
                                    rule_breaks=layout.rule_breaks.get(page.number, ()),
                                    image=images_by_page.get(page.number))

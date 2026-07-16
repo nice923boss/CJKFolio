@@ -706,7 +706,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         if footer and masters_by_page[page.number].footer:  # 頁腳依該頁主版 gate
             texts = {"number": str(book_number), "title": doc.title}
         contents.append(writer.build_page(
-            page, footer_texts=texts, book_number=book_number, vertical=layout.vertical,
+            page, footer_texts=texts, book_number=book_number,
+            vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
             toc_marks=layout.toc_marks.get(page.number, ()),
             rule_breaks=layout.rule_breaks.get(page.number, ()),
             image=images_by_page.get(page.number)))

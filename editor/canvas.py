@@ -103,12 +103,16 @@ def build_page_scene(
     book_number = page.number
     renderer = PageRenderer(template, doc.master, dpi=dpi)
     footer = {"number": str(book_number), "title": doc.title or ""}
+    vertical = getattr(page, "vertical", layout.vertical)  # 逐頁方向（Sprint 53）
     pil_img = renderer.render_page(
-        page, footer_texts=footer, book_number=book_number, vertical=layout.vertical
+        page, footer_texts=footer, book_number=book_number, vertical=vertical
     )
     base = QGraphicsPixmapItem(QPixmap.fromImage(pil_to_qimage(pil_img)))
     base.setZValue(0)
     scene.addItem(base)
+    if not vertical:
+        # 橫排頁互動層未建（iter_cell_rects 為直排 body 幾何）：僅底圖，GAPS #30 (b) 註記
+        return []
 
     # 逐頁主版（節式主版指派，Sprint 51）：互動層幾何依該頁主版，與 render 同源
     master = template.masters[getattr(page, "master", "") or doc.master]

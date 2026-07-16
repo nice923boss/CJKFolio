@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.48.0（2026-07-17，Sprint 53）節式混向文件（直排內文＋橫排版權頁同冊，F 入冊全書單一 PDF/X）
+
+### 新增
+
+- [實作] 書寫方向降到節層級（Owner「最複雜架構先做」下，關 GAPS #30 (b)／#31 (b)；零新排版機制＝方向參數本就逐 flow_pages 傳遞，「全文件單向」係單一 flow 時代遺留）：
+  - layout：`_section_is_vertical`（同一節混向仍快速失敗，訊息引導以節首標記分節）＋`LayoutPage.vertical` 逐頁方向載體；`LayoutResult.vertical` 改義＝首節方向（相容欄位，逐頁以 LayoutPage.vertical 為準）；`page_is_vertical` 保留為全文件單向相容 util。
+  - 齊行統計逐頁 gate（橫排頁短行左齊、不入統計）；rule 斷線逐頁 gate（直排目錄原件）。
+  - 兩後端 render_document／export_pdf 逐頁傳方向；frame（橫排原件）與 rule（直排原件）既有 gate 自動逐頁正確。
+  - editor canvas：底圖逐頁方向；橫排頁互動層未建（僅底圖，iter_cell_rects 為直排 body 幾何，入 GAPS #30 (b) 註記待真視窗批次）。
+  - samples/book.json 加第六章 cip-copyright.doc.json：F 版權頁入冊，全書單一 PDF/X（原「F 另出一份」解除）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **436 passed / 0 failed**（428→436，+8，新檔 tests/test_direction_sections.py：逐頁方向／首節橫排／單向不變／同節混向仍 raise／齊行統計對照／混向 PDF 幾何／render 混向兩頁／book 含 F 章端到端）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5，自擬全書樣張）：assemble 6 章 → 28 段（7 節首標記）→ render 7 頁（禁則 0 違規）＋export 單一 PDF **preflight 12/12 全綠**；親 Read 頁 7（F 版權頁：橫排 CIP 七行左起、細框四邊閉合、ISBN 拉丁串完整、無頁腳），直排 6 頁特徵不變。
+- Gate 4 獨立驗證：PyMuPDF rawdict 混向幾何（頁 1 直排＝同欄字墨 cx 一致且 y 遞增；頁 2 橫排＝同行基線 y 一致且 x 遞增）＋get_drawings 驗 CIP 細框 `re` 只在 F 頁＋齊行統計混向對照（加橫排節統計不變）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：節式混向全管線（layout 逐頁方向＋兩後端＋齊行統計）、F 版權頁入冊。
+- v1 已知限制：同一節混向快速失敗（版面軸不同、slot 幾何不相容，設計行為）；橫排頁畫布互動層未建（僅底圖，GAPS #30 (b) 註記，真視窗批次）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 全書樣張 out/book/*.png 七頁與 out/book.pdf 抽檢（重現：assemble → render → export-pdf → preflight）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- Sprint 51 預定餘項擇一：圖說與照片相對位置樣式化置放、多圖／任意矩形置入模型；或 §6 Phase 2 其餘純邏輯項。app.py 真視窗 UI 接線（頁面面板／橫排互動層）待 Owner 真視窗回報批次。
+
 ## v0.47.0（2026-07-17，Sprint 52）全書組裝管線（book@1 多章串接為單一多主版文件，直向全書級 PDF/X）
 
 ### 新增

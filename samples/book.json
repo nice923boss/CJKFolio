@@ -9,6 +9,7 @@
   {"path": "toc.doc.json"},
   {"path": "chapter-opening.doc.json"},
   {"path": "case-divider.doc.json"},
-  {"path": "figure-page.doc.json"}
+  {"path": "figure-page.doc.json"},
+  {"path": "cip-copyright.doc.json"}
  ]
 }
