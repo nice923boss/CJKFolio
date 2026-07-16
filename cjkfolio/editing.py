@@ -15,6 +15,14 @@ from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from .document import Document, Paragraph, Run
+from .frame_editing import (
+    FrameCursor,
+    FrameEditResult,
+    apply_frame_delete,
+    apply_frame_insert,
+    locate_frame_cell,
+)
+from .frames import masters_for_layout, resolve_text_frames
 from .layout import LayoutResult, layout_document
 from .styles import Template
 
@@ -601,14 +609,17 @@ class EditSession:
         self._coalesce_window = coalesce_window  # 連續輸入合併時間窗（秒）
         self._clock = clock  # 單調時鐘（測試可注入可控假時鐘）
         # 當前開放輸入序列的尾（para_idx, run 尾 caret, 時戳）；None＝無可併入的輸入
-        self._pending_insert: Optional[tuple[int, int, float]] = None
+        # 連續輸入序列尾：(鍵, 尾 caret, 時戳)；鍵＝("body", para_idx) 或
+        # ("frame", source_idx)（Sprint 60：body 與框輸入互為序列邊界，鍵不同即打斷）
+        self._pending_insert: Optional[tuple] = None
 
     @property
     def document(self) -> Document:
         return self._document
 
     @property
-    def cursor(self) -> DocCursor:
+    def cursor(self):
+        """現態游標：DocCursor（body）或 FrameCursor（框編輯後，Sprint 60）。"""
         return self._cursor
 
     @property
@@ -621,11 +632,12 @@ class EditSession:
     def can_redo(self) -> bool:
         return bool(self._redo)
 
-    def _commit(self, result: EditResult) -> EditResult:
+    def _commit(self, result):
         """把現態存入 undo、清 redo，切換至編輯結果（供各編輯方法共用）。
 
-        記為一個新 undo 單元並重置輸入序列（_pending_insert 歸零，其後的連續輸入不與
-        此前輸入合併）。
+        result＝EditResult（body 編輯）或 FrameEditResult（框編輯，Sprint 60；其
+        layout 為原物件＝框編輯不重排 body）。記為一個新 undo 單元並重置輸入序列
+        （_pending_insert 歸零，其後的連續輸入不與此前輸入合併）。
         """
         self._undo.append((self._document, self._cursor))
         self._redo.clear()
@@ -644,7 +656,7 @@ class EditSession:
         """
         result = apply_insert(self._document, self._template, cursor, text)
         now = self._clock()
-        if self._can_coalesce(cursor, now):
+        if self._can_coalesce(("body", cursor.para_idx), cursor.caret, now):
             # 併入當前 undo 單元：更新現態但不新增 undo 快照、不動 redo
             self._document = result.document
             self._cursor = result.cursor
@@ -652,19 +664,40 @@ class EditSession:
         else:
             self._commit(result)  # 起新 undo 單元（推編輯前態、清 redo、重置序列）
         # 記錄本次輸入尾為序列新尾（含合併路徑：時戳刷新為最近一次輸入）
-        self._pending_insert = (cursor.para_idx, result.cursor.caret, now)
+        self._pending_insert = (("body", cursor.para_idx), result.cursor.caret, now)
         return result
 
-    def _can_coalesce(self, cursor: DocCursor, now: float) -> bool:
-        """連續輸入是否併入當前 undo 單元：承前一輸入、游標接續其尾、未逾時間窗。"""
+    def insert_frame(self, cursor: FrameCursor, text: str) -> FrameEditResult:
+        """框內插字（Sprint 60）：與 body 編輯共用同一 undo／redo 歷史。
+
+        框連續前進打字（同一來源框、caret 接續前一輸入尾、未逾時間窗）併入同一
+        undo 單元；body 與框輸入互為序列邊界（鍵不同即起新單元）。框編輯不重排
+        body（result.layout＝原物件），現態 layout 不變。
+        """
+        result = apply_frame_insert(
+            self._document, self._template, self._layout, cursor, text)
+        now = self._clock()
+        key = ("frame", cursor.source_idx)
+        if self._can_coalesce(key, cursor.caret, now):
+            self._document = result.document
+            self._cursor = result.cursor  # layout 不變（框編輯不影響流排）
+        else:
+            self._commit(result)
+        self._pending_insert = (key, result.cursor.caret, now)
+        return result
+
+    def delete_frame(self, source_idx: int, start: int, end: int) -> FrameEditResult:
+        """框內刪除範圍（Sprint 60）：入同一 undo／redo 歷史（非插入操作，打斷輸入序列）。"""
+        return self._commit(apply_frame_delete(
+            self._document, self._template, self._layout, source_idx, start, end))
+
+    def _can_coalesce(self, key: tuple, caret: int, now: float) -> bool:
+        """連續輸入是否併入當前 undo 單元：同鍵（body 段／框來源）、caret 接續前一
+        輸入尾、未逾時間窗。"""
         if self._pending_insert is None:
             return False
-        para_idx, end_caret, ts = self._pending_insert
-        return (
-            cursor.para_idx == para_idx
-            and cursor.caret == end_caret
-            and now - ts <= self._coalesce_window
-        )
+        pkey, end_caret, ts = self._pending_insert
+        return pkey == key and caret == end_caret and now - ts <= self._coalesce_window
 
     def delete(self, drange: DocRange) -> EditResult:
         return self._commit(apply_delete(self._document, self._template, drange))
@@ -711,6 +744,17 @@ class EditSession:
         self._cursor = cursor
         self._layout = layout_document(document, self._template)
         self._pending_insert = None
+        if isinstance(cursor, FrameCursor):  # 還原態為框編輯態 → 框結果（Sprint 60）
+            placements = resolve_text_frames(
+                document, self._template,
+                masters_for_layout(self._template, document, self._layout))
+            return FrameEditResult(
+                document=document,
+                layout=self._layout,
+                placements_by_page=placements,
+                cursor=cursor,
+                address=locate_frame_cell(placements, cursor),
+            )
         return EditResult(
             document=document,
             layout=self._layout,
@@ -718,16 +762,20 @@ class EditSession:
             address=locate_cell(self._layout, cursor),
         )
 
-    def undo(self) -> Optional[EditResult]:
-        """回退一步至上一提交態；無可回退回 None（no-op）。"""
+    def undo(self):
+        """回退一步至上一提交態；無可回退回 None（no-op）。
+
+        回傳 EditResult 或 FrameEditResult（依還原態游標型別，Sprint 60）。"""
         if not self._undo:
             return None
         self._redo.append((self._document, self._cursor))
         document, cursor = self._undo.pop()
         return self._restore(document, cursor)
 
-    def redo(self) -> Optional[EditResult]:
-        """重做一步至下一提交態；無可重做回 None（no-op）。"""
+    def redo(self):
+        """重做一步至下一提交態；無可重做回 None（no-op）。
+
+        回傳 EditResult 或 FrameEditResult（依還原態游標型別，Sprint 60）。"""
         if not self._redo:
             return None
         self._undo.append((self._document, self._cursor))

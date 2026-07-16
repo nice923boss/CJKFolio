@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 
 from cjkfolio.document import document_from_dict
+from cjkfolio.editing import DocCursor, EditSession
 from cjkfolio.frame_editing import (
     FrameCursor,
+    FrameEditResult,
     apply_frame_delete,
     apply_frame_insert,
     delete_frame_range,
@@ -144,3 +146,92 @@ def test_locate_frame_cell_caret_zero_and_none(template):
     pl = next(p for p in by_page[addr.page_number] if p.frame_idx == 0)
     assert pl.lines[addr.line_idx].line.cells[addr.cell_idx].text == "安"
     assert locate_frame_cell(by_page, FrameCursor(7, 0)) is None  # 查無來源框
+
+
+# ---------- EditSession 框編輯整合（Sprint 60：與 body 統一 undo／redo 歷史） ----------
+
+class _FakeClock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+ORIG_HEAD = "安放選擇收納歸位" * 2
+
+
+def test_session_frame_insert_undo_redo(template):
+    """框插字入 undo 歷史；undo 回編輯前（body 態）、redo 回框態（FrameEditResult）。"""
+    s = EditSession(make_doc(), template)
+    res = s.insert_frame(FrameCursor(0, 4), "整理")
+    assert isinstance(res, FrameEditResult)
+    assert s.document.text_frames[0].text == "安放選擇整理收納歸位安放選擇收納歸位"
+    back = s.undo()
+    assert back is not None
+    assert s.document.text_frames[0].text == ORIG_HEAD
+    assert s.can_redo()
+    again = s.redo()
+    assert isinstance(again, FrameEditResult)  # 還原態游標為 FrameCursor → 框結果
+    assert s.document.text_frames[0].text == "安放選擇整理收納歸位安放選擇收納歸位"
+    assert again.address is not None
+    pl = next(p for p in again.placements_by_page[again.address.page_number]
+              if p.frame_idx == again.address.frame_idx)
+    cell = pl.lines[again.address.line_idx].line.cells[again.address.cell_idx]
+    assert cell.text == "理"
+
+
+def test_session_body_and_frame_history_interleave(template):
+    """body 與框編輯交錯共用同一歷史：兩次 undo 依序回退框、body。"""
+    doc = make_doc()
+    s = EditSession(doc, template)
+    s.insert(DocCursor(0, 2), "更")                 # body 編輯
+    s.insert_frame(FrameCursor(0, 0), "先")         # 框編輯（新 undo 單元）
+    assert s.document.paragraphs[0].text == "留白更是安放的開始。"
+    assert s.document.text_frames[0].text == "先" + ORIG_HEAD
+    s.undo()  # 回退框編輯
+    assert s.document.text_frames[0].text == ORIG_HEAD
+    assert s.document.paragraphs[0].text == "留白更是安放的開始。"
+    s.undo()  # 回退 body 編輯
+    assert s.document.paragraphs[0].text == "留白是安放的開始。"
+    assert not s.can_undo()
+
+
+def test_session_frame_insert_coalesces_single_undo_unit(template):
+    """框連續前進打字併為單一 undo 單元；一步 undo 還原整串。"""
+    clock = _FakeClock()
+    s = EditSession(make_doc(), template, clock=clock)
+    s.insert_frame(FrameCursor(0, 0), "一")
+    clock.t += 1.0
+    s.insert_frame(FrameCursor(0, 1), "二")  # caret 接續前一輸入尾 → 併入
+    assert s.document.text_frames[0].text == "一二" + ORIG_HEAD
+    s.undo()
+    assert s.document.text_frames[0].text == ORIG_HEAD
+    assert not s.can_undo()
+
+
+def test_session_body_input_breaks_frame_sequence(template):
+    """body 輸入打斷框輸入序列（鍵不同）：框、body、框＝三個 undo 單元。"""
+    clock = _FakeClock()
+    s = EditSession(make_doc(), template, clock=clock)
+    s.insert_frame(FrameCursor(0, 0), "一")
+    clock.t += 0.5
+    s.insert(DocCursor(0, 0), "多")
+    clock.t += 0.5
+    s.insert_frame(FrameCursor(0, 1), "二")  # 序列已被 body 打斷 → 新單元
+    s.undo()
+    assert s.document.text_frames[0].text == "一" + ORIG_HEAD  # 只退「二」
+    s.undo()
+    assert s.document.paragraphs[0].text == "留白是安放的開始。"
+    s.undo()
+    assert s.document.text_frames[0].text == ORIG_HEAD
+    assert not s.can_undo()
+
+
+def test_session_delete_frame_undo(template):
+    s = EditSession(make_doc(), template)
+    res = s.delete_frame(0, 2, 6)
+    assert isinstance(res, FrameEditResult)
+    assert s.document.text_frames[0].text == "安放歸位安放選擇收納歸位"
+    s.undo()
+    assert s.document.text_frames[0].text == ORIG_HEAD

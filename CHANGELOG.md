@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.55.0（2026-07-17，Sprint 60）EditSession 框編輯整合（body 與框統一 undo／redo 歷史）
+
+### 新增
+
+- [實作] `EditSession.insert_frame`／`delete_frame`（cjkfolio/editing.py，783 行守 800）：框編輯與 body 編輯共用同一 undo／redo 堆疊。
+  - undo／redo 快照 cursor 容 DocCursor 與 FrameCursor（快照層只存不解釋）；`_restore` 依游標型別分流＝FrameCursor → resolve_text_frames＋locate_frame_cell 回 FrameEditResult、DocCursor → locate_cell 回 EditResult（undo／redo 回傳型別隨還原態）。
+  - 輸入序列鍵一般化：`_pending_insert` 存（鍵, 尾 caret, 時戳），鍵＝("body", para_idx) 或 ("frame", source_idx)；框連續前進打字併單一 undo 單元（同 Sprint 47 body 慣例），body 與框輸入互為序列邊界（鍵不同即起新單元）。
+  - `_commit` duck-type 收 FrameEditResult（其 layout＝原物件＝框編輯不重排 body，現態 layout 不變）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **491 passed / 0 failed**（486→491，+5，test_edit_frames.py session 段：框 undo／redo 往返（redo 回框態 FrameEditResult＋address 反查）／body 框交錯歷史依序回退／框連續輸入合併單一單元／body 輸入打斷框序列／delete_frame undo）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5）：Sprint 57 真實示範 out/thread-demo 建 session → 框插「而」＋body 插「快」交錯 → 兩段 undo 回初始（不可再退）→ redo 回框態（FrameEditResult、address＝框 1 首格「而」），往返全對。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：統一編輯歷史（純邏輯層）。
+- 剩（GAPS #32 (d)）：框全刪空（「空框」schema 演進）；IME 入框、框編輯與 undo／redo（Ctrl+Z／Y）UI 接線（真視窗批次）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on；真視窗批次（GAPS #19：IME 直排輸入、點框字格、undo／redo 快捷鍵）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：橫排框 v2（shaper 度量介面）、圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先下載全字庫 TW-Kai）、app.py 真視窗接線批次（框游標＋IME 入框＋Ctrl+Z／Y，離屏可先建、鍵盤待 Owner）。
+
 ## v0.54.0（2026-07-17，Sprint 59）框內編輯核心（insert／delete 入框，GAPS #32 (d) 後半）
 
 ### 新增
