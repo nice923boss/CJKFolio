@@ -204,8 +204,8 @@ def test_resolve_dedup_same_path_shared_object(tmp_path, template):
                    images=(PlacedImage(path="same.png", page=1), PlacedImage(path="same.png", page=2)))
     g = template.masters[G_MASTER]
     resolved = resolve_placed_images(doc, {1: g, 2: g}, base_dir=tmp_path)
-    assert resolved[1][0] == resolved[2][0]  # 同解析路徑
-    assert resolved[1][1] is resolved[2][1]  # 同 PIL 物件（cache）
+    assert resolved[1][0][0] == resolved[2][0][0]  # 同解析路徑
+    assert resolved[1][0][1] is resolved[2][0][1]  # 同 PIL 物件（cache）
 
 
 def test_resolve_empty_when_no_images(template):

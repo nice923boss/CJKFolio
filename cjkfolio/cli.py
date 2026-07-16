@@ -85,7 +85,7 @@ def cmd_render(args) -> int:
     )
     print(f"渲染完成：{len(result.paths)} 頁 → {args.output}")
     if result.images_placed:
-        print(f"置入圖：{result.images_placed} 張（灰階單 K，取代 figure 佔位框）")
+        print(f"置入圖：{result.images_placed} 張（灰階單 K；槽式與 rect 任意圖框）")
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     print(_justify_line(result.justify_stats))
     for warning in result.font_warnings:

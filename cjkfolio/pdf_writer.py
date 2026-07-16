@@ -582,19 +582,22 @@ class _PdfPageWriter:
                 self.bleed_pt + edge.x1, self.page_h_pt + self.bleed_pt - edge.y1,
                 edge.dash_on_pt, edge.dash_off_pt)
 
-    def _image(self, content: _Content, image, book_number: int) -> None:
-        """置入圖到主版 figure 保留區（v1 G 圖文版照片）：等比縮放置中（contain）
-        DeviceGray 影像，與 render._draw_image 幾何同源（figure_slot_rect＋fit_image_rect）；
-        top-down 下緣 → y-up 左下角。image＝(解析後路徑, PIL "L" 影像)，同路徑跨頁共用
-        單一 XObject。"""
-        path, gray = image
+    def _image(self, content: _Content, entry, book_number: int) -> None:
+        """置入圖：等比縮放置中（contain）DeviceGray 影像，與 render._draw_image
+        幾何同源（fit_image_rect）；top-down 下緣 → y-up 左下角。
+        entry＝(解析後路徑, PIL "L" 影像, rect|None)；rect＝任意圖框（trim pt、
+        top-down，Sprint 54，可溢出版心入出血）、None＝主版 figure 保留區；
+        同路徑跨頁共用單一 XObject。"""
+        path, gray, rect = entry
         if path not in self._images:
             self._images[path] = EmbeddedImage(gray, f"Im{len(self._images) + 1}")
         emb = self._images[path]
-        page_w = mm_to_pt(self.template.page_width_mm)
-        slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
-                                self.master.figure)
-        box = fit_image_rect(slot.x0, slot.y0, slot.x1, slot.y1, emb.width, emb.height)
+        if rect is None:
+            page_w = mm_to_pt(self.template.page_width_mm)
+            slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+                                    self.master.figure)
+            rect = (slot.x0, slot.y0, slot.x1, slot.y1)
+        box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], emb.width, emb.height)
         content.draw_image(
             emb.res_name, box.x1 - box.x0, box.y1 - box.y0,
             self.bleed_pt + box.x0, self.page_h_pt + self.bleed_pt - box.y1)
@@ -621,7 +624,7 @@ class _PdfPageWriter:
 
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True, toc_marks=(), rule_breaks=(),
-                   image=None) -> bytes:
+                   images=()) -> bytes:
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = self.template.masters[page.master]
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
@@ -633,11 +636,13 @@ class _PdfPageWriter:
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先 emit）
         if vertical and self.master.rule and page.placed:
             self._rule(content, rule_breaks, book_number)
-        # 主版圖框保留區（v1 photo-slot）：有置入圖畫實際照片取代佔位框，否則畫淡虛線骨架
-        if image is not None:
-            self._image(content, image, book_number)
-        elif vertical and self.master.figure and page.placed:
+        # 主版圖框保留區（photo-slot）：槽式圖取代佔位框；佔位框只看槽是否仍空
+        # （rect 任意圖框不填槽，InDesign 空框導引語意，Sprint 54）
+        slot_filled = any(rect is None for _p, _g, rect in images)
+        if vertical and self.master.figure and page.placed and not slot_filled:
             self._figure(content, book_number)
+        for entry in images:  # 文件序＝繪製序
+            self._image(content, entry, book_number)
         if vertical:
             self._vertical_body(content, page, book_number)
         else:
@@ -662,7 +667,7 @@ class PdfResult:
     output_condition_identifier: str
     icc_embedded: bool
     justify_stats: dict
-    images_placed: int = 0  # 置入 figure 保留區的 DeviceGray 影像數（v1 灰階單 K）
+    images_placed: int = 0  # 嵌入的 DeviceGray 影像 XObject 數（同路徑去重；灰階單 K）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -710,7 +715,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
             toc_marks=layout.toc_marks.get(page.number, ()),
             rule_breaks=layout.rule_breaks.get(page.number, ()),
-            image=images_by_page.get(page.number)))
+            images=images_by_page.get(page.number, ())))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []

@@ -51,14 +51,18 @@ class Paragraph:
 
 @dataclass(frozen=True)
 class PlacedImage:
-    """置入一張圖到某版面頁的主版 figure 保留區（PLAN §4.2 G 圖文版照片、§9 灰階單 K）。
+    """置入一張圖到某版面頁（PLAN §4.2 G 圖文版照片、§9 灰階單 K）。
 
     path：圖檔路徑（相對路徑於 render／export 時相對文件目錄解析）；
-    page：版面頁號（1 起算，與 --page 選頁鍵、檔名同鍵，Sprint 12 決議）。
-    v1 每頁 figure 保留區置一張圖、contain 等比置中（primitives.fit_image_rect）。
+    page：版面頁號（1 起算，與 --page 選頁鍵、檔名同鍵，Sprint 12 決議）；
+    rect：任意圖框（Sprint 54，選配）＝(x0, y0, x1, y1) trim 空間 pt、top-down；
+    None＝置入主版 figure 保留區（槽式，每頁一張）。rect 圖每頁多張、可溢出
+    版心（真書照片略溢 1〜4pt 特徵與出血照片皆正當用法，不做邊界快速失敗）。
+    圖在框內 contain 等比置中（primitives.fit_image_rect）。
     """
     path: str
     page: int
+    rect: Optional[tuple] = None
 
 
 def _runs_from_list(raw, idx: int) -> tuple:
@@ -75,11 +79,27 @@ def _runs_from_list(raw, idx: int) -> tuple:
     return tuple(runs)
 
 
+def _rect_from_value(raw, j: int) -> tuple:
+    """解析 images[j].rect：4 個有限數字 [x0, y0, x1, y1]（trim pt、top-down）且
+    x0 < x1、y0 < y1；形狀不合快速失敗。"""
+    ok = (isinstance(raw, list) and len(raw) == 4
+          and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in raw))
+    if ok:
+        x0, y0, x1, y1 = (float(v) for v in raw)
+        ok = x0 < x1 and y0 < y1
+    if not ok:
+        raise DocumentError(
+            f"images[{j}] rect 需為 [x0, y0, x1, y1] 四數字（pt）且 x0<x1、y0<y1，"
+            f"得到 {raw!r}"
+        )
+    return (x0, y0, x1, y1)
+
+
 def _images_from_list(raw) -> tuple:
-    """解析 images 陣列（選配）。每項須含非空 path 與 ≥1 整數 page；page 重複快速失敗
-    （v1 每頁 figure 保留區只置一張圖）。"""
+    """解析 images 陣列（選配）。每項須含非空 path 與 ≥1 整數 page；選配 rect
+    （任意圖框，每頁多張）；無 rect＝槽式（figure 保留區），槽式每頁僅一張。"""
     images = []
-    seen_pages = set()
+    slot_pages = set()
     for j, im in enumerate(raw):
         if not isinstance(im, dict):
             raise DocumentError(f"images[{j}] 須為物件")
@@ -89,12 +109,17 @@ def _images_from_list(raw) -> tuple:
         page = im.get("page")
         if isinstance(page, bool) or not isinstance(page, int) or page < 1:
             raise DocumentError(f"images[{j}] page 需為 ≥1 的整數，得到 {page!r}")
-        if page in seen_pages:
-            raise DocumentError(
-                f"images[{j}] page {page} 重複（v1 每頁 figure 保留區只置一張圖）"
-            )
-        seen_pages.add(page)
-        images.append(PlacedImage(path=path, page=page))
+        rect = None
+        if im.get("rect") is not None:
+            rect = _rect_from_value(im["rect"], j)
+        else:
+            if page in slot_pages:
+                raise DocumentError(
+                    f"images[{j}] page {page} 已有槽式置入圖（figure 保留區每頁一張；"
+                    "多圖請用 rect 任意圖框）"
+                )
+            slot_pages.add(page)
+        images.append(PlacedImage(path=path, page=page, rect=rect))
     return tuple(images)
 
 
@@ -183,7 +208,11 @@ def document_to_dict(doc: Document) -> dict:
         "paragraphs": [_paragraph_to_dict(p) for p in doc.paragraphs],
     }
     if doc.images:
-        out["images"] = [{"path": im.path, "page": im.page} for im in doc.images]
+        out["images"] = [
+            {"path": im.path, "page": im.page,
+             **({"rect": list(im.rect)} if im.rect is not None else {})}
+            for im in doc.images
+        ]
     return out
 
 

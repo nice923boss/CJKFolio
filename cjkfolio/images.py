@@ -31,14 +31,14 @@ def open_grayscale(path) -> Image.Image:
 
 
 def resolve_placed_images(doc, masters_by_page: dict, base_dir=None) -> dict:
-    """把 doc.images 解析為 {版面頁號: (解析後路徑字串, PIL "L" 影像)}，供兩後端共用。
+    """把 doc.images 解析為 {版面頁號: ((解析後路徑, PIL "L" 影像, rect|None), ...)}。
 
+    兩後端共用；每頁多張（文件序＝繪製序，Sprint 54）。
     masters_by_page＝{版面頁號: MasterPage}（節式主版指派後逐頁主版，Sprint 51）：
     - page 超出排版頁數（不在 masters_by_page）→ 快速失敗
-    - 圖落點頁的主版無 figure 保留區 → 快速失敗（無置入標的）
+    - 槽式圖（rect None）落點頁的主版無 figure 保留區 → 快速失敗（無置入標的）；
+      rect 任意圖框不需 figure 槽（座標自帶）
     - 路徑相對 base_dir 解析（None＝相對 CWD）；同路徑只載一次（PDF 端 XObject 去重鍵）
-
-    v1：每頁 figure 保留區置一張圖（document 已驗 page 不重複）。
     """
     if not doc.images:
         return {}
@@ -51,15 +51,15 @@ def resolve_placed_images(doc, masters_by_page: dict, base_dir=None) -> dict:
             raise ImageError(
                 f"置入圖 page {im.page} 超出排版頁數（共 {len(masters_by_page)} 頁）"
             )
-        if master.figure is None:
+        if im.rect is None and master.figure is None:
             raise ImageError(
                 f"置入圖 page {im.page} 的主版「{master.name}」無 figure 保留區配置"
             )
         resolved = str((base / im.path).resolve())
         if resolved not in cache:
             cache[resolved] = open_grayscale(base / im.path)
-        out[im.page] = (resolved, cache[resolved])
-    return out
+        out.setdefault(im.page, []).append((resolved, cache[resolved], im.rect))
+    return {page: tuple(entries) for page, entries in out.items()}
 
 
 class EmbeddedImage:

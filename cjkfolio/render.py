@@ -394,14 +394,18 @@ class PageRenderer:
         for edge in figure_slot_edges(rect, self.master.figure):
             _draw_stroke_line(img, edge, self.scale)
 
-    def _draw_image(self, img, gray, book_number: int) -> None:
-        """置入圖到主版 figure 保留區（v1：G 圖文版照片）：等比縮放置中（contain），
-        以灰階（§9 單 K）貼入畫布、取代佔位框。幾何與 pdf_writer._image 同源
-        （figure_slot_rect＋fit_image_rect）；gray 為 PIL "L" 影像。"""
-        page_w = mm_to_pt(self.template.page_width_mm)
-        slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
-                                self.master.figure)
-        box = fit_image_rect(slot.x0, slot.y0, slot.x1, slot.y1, gray.width, gray.height)
+    def _draw_image(self, img, gray, book_number: int, rect=None) -> None:
+        """置入圖：等比縮放置中（contain）以灰階（§9 單 K）貼入畫布。
+
+        rect＝任意圖框（trim pt、top-down，Sprint 54）；None＝主版 figure 保留區
+        （槽式，取代佔位框）。幾何與 pdf_writer._image 同源（fit_image_rect）；
+        溢出版心的 rect 由 PIL 於畫布邊界自然裁切（PNG 為 trim 空間預覽）。"""
+        if rect is None:
+            page_w = mm_to_pt(self.template.page_width_mm)
+            slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+                                    self.master.figure)
+            rect = (slot.x0, slot.y0, slot.x1, slot.y1)
+        box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], gray.width, gray.height)
         w_px = max(1, round((box.x1 - box.x0) * self.scale))
         h_px = max(1, round((box.y1 - box.y0) * self.scale))
         resized = gray.resize((w_px, h_px))
@@ -429,7 +433,7 @@ class PageRenderer:
 
     def render_page(self, page, footer_texts=None, book_number=None,
                     vertical: bool = True, toc_marks=(),
-                    rule_breaks=(), image=None) -> Image.Image:
+                    rule_breaks=(), images=()) -> Image.Image:
         template = self.template
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = template.masters[page.master]
@@ -446,12 +450,13 @@ class PageRenderer:
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先畫）
         if vertical and self.master.rule and page.placed:
             self._draw_rule(img, rule_breaks, book_number)
-        # 主版圖框保留區（v1 photo-slot）：有置入圖畫實際照片取代佔位框，否則畫淡虛線骨架
-        if image is not None:
-            _path, gray = image
-            self._draw_image(img, gray, book_number)
-        elif vertical and self.master.figure and page.placed:
+        # 主版圖框保留區（photo-slot）：槽式圖取代佔位框；佔位框只看槽是否仍空
+        # （rect 任意圖框不填槽，InDesign 空框導引語意，Sprint 54）
+        slot_filled = any(rect is None for _p, _g, rect in images)
+        if vertical and self.master.figure and page.placed and not slot_filled:
             self._draw_figure(img, book_number)
+        for _path, gray, rect in images:  # 文件序＝繪製序
+            self._draw_image(img, gray, book_number, rect=rect)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
         else:
@@ -470,7 +475,7 @@ class RenderResult:
     fonts_used: list
     font_warnings: list
     justify_stats: dict
-    images_placed: int = 0  # 置入 figure 保留區的照片數（v1 灰階單 K）
+    images_placed: int = 0  # 置入照片數（槽式＋rect 任意圖框，灰階單 K）
 
 
 def render_document(doc, template: Template, out_dir, dpi: int = 150,
@@ -497,7 +502,7 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
                                    vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
                                    toc_marks=layout.toc_marks.get(page.number, ()),
                                    rule_breaks=layout.rule_breaks.get(page.number, ()),
-                                   image=images_by_page.get(page.number))
+                                   images=images_by_page.get(page.number, ()))
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)
@@ -507,5 +512,5 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
         fonts_used=sorted(renderer.fonts_used),
         font_warnings=list(renderer.registry.warnings) + list(renderer.notdef_warnings),
         justify_stats=dict(layout.justify_stats),
-        images_placed=len(images_by_page),
+        images_placed=sum(len(v) for v in images_by_page.values()),
     )

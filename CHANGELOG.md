@@ -2,6 +2,41 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.49.0（2026-07-17，Sprint 54）多圖／任意矩形置入模型（PlacedImage.rect 任意圖框，畫布置圖模型地基）
+
+### 新增
+
+- [實作] 影像模型一般化（Owner「最複雜架構先做」下，GAPS #29 (a)；零新技術＝復用 fit_image_rect／paste／XObject）：
+  - document@2 相容擴充 `PlacedImage.rect`（選配任意圖框＝[x0, y0, x1, y1] trim 空間 pt、top-down；形狀驗證 x0<x1、y0<y1 快速失敗；**允許溢出版心**＝真書照片略溢 1〜4pt 特徵〔GAPS #13 一手記錄〕與出血照片正當用法）。
+  - rect 圖每頁多張（文件序＝繪製序＝疊放 z 序確定性）；槽式（無 rect）維持 figure 保留區每頁一張守門。
+  - `resolve_placed_images` 改列表模型 {頁: ((路徑, 影像, rect|None), ...)}；rect 圖不需 figure 槽（A 內文頁亦可置圖）、槽式仍需；同路徑 XObject 去重不變。
+  - 兩後端 `_draw_image`／`_image` 收 rect（None＝figure 槽既有語意）；佔位虛線框改「槽仍空即畫」（rect 圖不填槽＝InDesign 空框導引）；PNG 溢出框於 trim 畫布自然裁切、PDF 置入出血區。
+
+### 變更
+
+- render／pdf `render_page`／`build_page` 參數 `image=` 改 `images=()`（每頁多張）；`RenderResult.images_placed`＝置入張數、`PdfResult.images_placed`＝去重後 XObject 數（原有語意差明文化）；CLI 置入圖訊息措辭同步（「槽式與 rect 任意圖框」）。
+- tests/test_images.py 去重測試隨 resolve 列表模型同步取值形狀。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **446 passed / 0 failed**（436→446，+10，新檔 tests/test_image_rects.py：rect 解析與序列化／形狀快速失敗／槽式守門與 rect 多張放行／resolve 不需 figure 槽／順序與去重／PDF 多框幾何與溢出／PNG 兩框像素／佔位框槽 gate／節式主版共存）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5，自擬 G 頁雙照片示範＝真書雙照片形態）：兩 rect 圖框（改造前暗／改造後亮）疊放照片區 → render PNG 親 Read（框位精確、contain 等比、佔位框標示空槽）、export PDF **preflight 12/12 全綠**、禁則 0 違規。
+- Gate 4 獨立驗證：PyMuPDF get_image_rects 驗置入 bbox＝rect＋出血（fitz top-down 同向、abs≤0.3pt）、同路徑三框單一 XObject、溢出框右緣跨入出血；PNG getpixel 兩框中心值＋框外紙白。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：rect 任意圖框全管線（document／resolve／兩後端）、每頁多張、溢出版心／出血置圖。
+- [Shell]／待 Owner（GAPS #29 (d)／#19）：畫布拖放／縮放置圖 UI 未接線（app.py 真視窗工程）。
+- v1 已知限制：只灰階 DeviceGray（彩色 CMYK Phase 4，#29 (c)）；PPI 未強制重採樣（#29 (b)／#18）；rect 圖不參與文字繞排（圖文繞排 Phase 4）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 雙照片示範 out/rect-demo/page-001.png 與 demo.pdf 抽檢；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- Sprint 51 預定餘項：圖說與照片相對位置的樣式化置放（需先 R1 量測真書圖說幾何）；或 §6 Phase 2 其餘純邏輯項（AI 設定面板本機設定檔層）。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.48.0（2026-07-17，Sprint 53）節式混向文件（直排內文＋橫排版權頁同冊，F 入冊全書單一 PDF/X）
 
 ### 新增
