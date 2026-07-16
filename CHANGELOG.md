@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.59.0（2026-07-17，Sprint 64）樣式面板 UI（段落／字元樣式點選套用，Phase 2 可自主項全收口）
+
+### 新增
+
+- [實作]（離屏 smoke C10 驗）editor/style_panel.py＝`StylePanel` 段落／字元樣式雙清單（§4.3「點選即套用」Phase 2 半邊；GAPS #26／#27 面板子項關閉）：
+  - 段落樣式：點選套用至 body 游標所在段（session.apply_para_style，入統一 undo 歷史）。
+  - 字元樣式：點選套用至游標字（單字 DocRange，session.apply_style；「（清除字元樣式）」＝套 None 回段落預設）；拖曳範圍選取落地後同回呼改吃選取範圍。
+  - 框游標提示不套（文字框單一樣式為框屬性）；app.py 右側 QDockWidget 接線。
+- **Phase 2 §6 可自主收口項至此全數完成**：畫布、文字框建立／串接、主版指派、樣式面板套用、圖片置入、IME 插入（body＋框）、復原重做、鍵盤編輯、換頁、AI 設定面板。剩 Owner hands-on 批次（GAPS #19）與拖曳範圍選取（#24）。
+
+### 驗證
+
+- 核心基線 **491 passed / 0 failed**（不變＝UI 層，核心 API 已於 Sprint 45〜46 入基線）；typecheck EXIT=0（含 editor/*.py）；離屏 smoke C1〜C10 全過，新增 **C10**：內文段套「引文-仿宋語錄」全段換名、游標字套「內文強調-明體W9」再清除、三步 undo 回原。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：樣式面板點選套用（離屏全回路驗證）。
+- [Shell]／待 Owner（GAPS #19）：真視窗面板手感。
+- 註：雙擊編輯樣式參數、樣式繼承、模版庫屬 Phase 3（§4.3）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗右側樣式面板點選實測；其餘同 v0.58.0 批次（說明選單五項）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 2 可自主項已收口。候選：Phase 2 收尾判定（honest review 後轉 Phase 3，需 Owner 定案同 Sprint 39 先例）、圖說相對位置樣式化置放（R1 量測）、拖曳範圍選取（真視窗批次）。建議：本場次收工，Phase 2 收尾判定與轉場由 Owner 定案後新場次開工。
+
 ## v0.58.0（2026-07-17，Sprint 63）AI 設定面板 UI（§4.4 三欄位面板，金鑰紅線 UI 落實）
 
 ### 新增

@@ -29,6 +29,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QDialog,
+    QDockWidget,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
@@ -51,6 +52,7 @@ from editor.canvas import (  # noqa: E402
     resolve_frame_hit,
     resolve_hit,
 )
+from editor.style_panel import StylePanel  # noqa: E402
 
 DEFAULT_DOC = ROOT / "samples" / "case-divider.doc.json"
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -125,6 +127,13 @@ class EditorWindow(QMainWindow):
         redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
+
+        dock = QDockWidget("樣式", self)
+        self._style_panel = StylePanel(
+            self.template, self._apply_para_style_at_cursor,
+            self._apply_char_style_at_cursor)
+        dock.setWidget(self._style_panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
         ai_action = QAction("AI 設定…", self)
         ai_action.triggered.connect(self._show_ai_config)
@@ -385,6 +394,40 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(
             f"已刪 段{hit.para_idx} 字位 [{start}, {end}) → 游標 字位{res.cursor.caret}")
         return True
+
+    def _apply_para_style_at_cursor(self, name: str) -> None:
+        """樣式面板點段落樣式 → 套用至 body 游標所在段（session 入統一歷史）。"""
+        if self.frame_cursor is not None:
+            self.statusBar().showMessage("文字框樣式為框屬性（單一樣式），面板套用僅 body")
+            return
+        if self.cursor is None:
+            self.statusBar().showMessage("先點一個 body 字格選游標，再點段落樣式")
+            return
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None or hit.span is None:
+            return
+        res = self.session.apply_para_style(DocCursor(hit.para_idx, hit.span[1]), name)
+        self._follow_body_address(res)
+        self.statusBar().showMessage(f"段{hit.para_idx} 段落樣式 → {name}")
+
+    def _apply_char_style_at_cursor(self, name) -> None:
+        """樣式面板點字元樣式 → 套用至 body 游標字（單字範圍；None＝清除）。
+
+        拖曳範圍選取 UI 未建前的最小可用；範圍選取落地後同回呼改吃選取範圍。"""
+        if self.frame_cursor is not None:
+            self.statusBar().showMessage("文字框無字元樣式（單一樣式），面板套用僅 body")
+            return
+        if self.cursor is None:
+            self.statusBar().showMessage("先點一個 body 字格選游標，再點字元樣式")
+            return
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None or hit.span is None:
+            return
+        s, e = hit.span
+        res = self.session.apply_style(DocRange(hit.para_idx, s, e), name)
+        self._follow_body_address(res)
+        self.statusBar().showMessage(
+            f"段{hit.para_idx} 字位 [{s}, {e}) 字元樣式 → {name if name else '（清除）'}")
 
     def _split_at_cursor(self) -> bool:
         """Enter＝body 游標處分段（session.split）；文字框為單段不分段。"""

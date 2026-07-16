@@ -294,10 +294,35 @@ def main() -> int:
         real_loaded = f"；R5 真實設定檔載入欄位非空數＝{sum(bool(v) for v in (cfg4.base_url, cfg4.api_key, cfg4.model))}/3（值零輸出）"
     print(f"C9 AI 設定面板：round-trip 三欄位全對、金鑰遮罩、壞檔警示不含值{real_loaded}")
 
+    # C10 樣式面板（Sprint 64）：點選套段落／字元樣式至游標段／游標字、undo 可回
+    hit10 = resolve_hit(win.doc, win.page, *win.cursor)  # C5 游標在內文「試」
+    p10 = hit10.para_idx
+    win._style_panel.pick_para_style("引文-仿宋語錄")
+    styles = {pl.style for pg in win.layout_result.pages for pl in pg.placed
+              if pl.para_idx == p10}
+    assert styles == {"引文-仿宋語錄"}, f"段落樣式未套用：{styles}"
+    win._style_panel.pick_char_style("內文強調-明體W9")
+    hit10b = resolve_hit(win.doc, win.page, *win.cursor)
+    cell10 = win.page.placed[win.cursor[0]].line.cells[win.cursor[1]]
+    assert cell10.char_style == "內文強調-明體W9", "字元樣式未套用至游標字"
+    win._style_panel.pick_char_style(None)
+    cell10c = win.page.placed[win.cursor[0]].line.cells[win.cursor[1]]
+    assert cell10c.char_style is None, "字元樣式未清除"
+    for _ in range(3):
+        win._on_undo()
+    styles_back = {pl.style for pg in win.layout_result.pages for pl in pg.placed
+                   if pl.para_idx == p10}
+    assert styles_back == {"內文-明體直排"}, f"undo 未回原段落樣式：{styles_back}"
+    assert hit10b.para_idx == p10
+    print(
+        "C10 樣式面板：段落樣式套游標段（引文-仿宋語錄）＋字元樣式套游標字"
+        "（內文強調-明體W9→清除）＋三步 undo 回原"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
-        "（IME 直排組字與視覺對位待 Owner 真視窗）"
+        "＋樣式面板（IME 直排組字與視覺對位待 Owner 真視窗）"
     )
     return 0
 
