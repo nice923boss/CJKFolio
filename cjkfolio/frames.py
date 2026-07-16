@@ -130,6 +130,15 @@ def layout_thread(frames, template, grids) -> list:
     return placements
 
 
+def masters_for_layout(template, doc, layout) -> dict:
+    """{版面頁號: MasterPage}（節式主版指派，Sprint 51 的標準構造）。
+
+    resolve_text_frames 的 masters_by_page 單一事實來源，供框編輯回路
+    （frame_editing）與畫布（editor.canvas）共用。"""
+    return {p.number: template.masters[getattr(p, "master", "") or doc.master]
+            for p in layout.pages}
+
+
 def resolve_text_frames(doc, template, masters_by_page: dict) -> dict:
     """把 doc.text_frames 解析為 {版面頁號: (FramePlacement, ...)}，供兩後端共用。
 

@@ -20,7 +20,7 @@ from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene
 
 from cjkfolio.document import Document
-from cjkfolio.frames import resolve_text_frames
+from cjkfolio.frames import masters_for_layout, resolve_text_frames
 from cjkfolio.layout import (
     LayoutResult,
     line_justified_advance,
@@ -113,8 +113,7 @@ def page_frame_placements(
 
     封裝逐頁主版解析＋resolve_text_frames，供 build_page_scene 與呼叫端
     （app／smoke 反查 FrameCellHit 來源文字）共用單一事實來源。"""
-    masters = {p.number: template.masters[getattr(p, "master", "") or doc.master]
-               for p in layout.pages}
+    masters = masters_for_layout(template, doc, layout)
     return resolve_text_frames(doc, template, masters).get(page.number, ())
 
 

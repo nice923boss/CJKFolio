@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.54.0（2026-07-17，Sprint 59）框內編輯核心（insert／delete 入框，GAPS #32 (d) 後半）
+
+### 新增
+
+- [實作] `cjkfolio/frame_editing.py`（入 pytest 基線；editing.py 735 行近上限依行數紀律分檔，先例 images.py／pdfx_meta.py）：
+  - `FrameCursor`（source_idx＋來源 text 半開座標 caret，與 Sprint 58 框 span 同座標系閉環）；`FrameCellAddress`／`FrameEditResult`。
+  - `insert_frame_text`／`delete_frame_range`：鏈首 text 不可變字串切接（框單段單一樣式無 runs）；續框無文字編輯（引導對鏈首）、全刪空（框 text 非空為 document@2 不變式）、越界皆快速失敗。
+  - `apply_frame_insert`／`apply_frame_delete`：改鏈首 text → `resolve_text_frames` 框鏈重佈局（**body layout 不重排**，原物件傳回＝框編輯不影響流排）→ `locate_frame_cell` span 反查新框游標落點；插字跨框流動游標自動跟隨。
+- frames.py 抽 `masters_for_layout`（masters_by_page 標準構造單一事實來源）；editor/canvas.py `page_frame_placements` 同步改用。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **486 passed / 0 failed**（478→486，+8，新檔 tests/test_edit_frames.py：insert 不可變與守門 2／delete 與守門 2／apply 回路 3（含插字流入續框跨框游標跟隨）／locate 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5）：Sprint 57 真實示範 out/thread-demo 圖說 caret 8 插「而」→ 16 字恰滿兩框、「而」流入續框成首字、游標落點框 1 欄 0 格 0、佈局 0 違規；render（out/thread-demo/edited）親 Read 與編輯前樣張對照逐項正確。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：框內插刪核心與 apply 回路（純邏輯層）。
+- 剩（GAPS #32 (d)）：EditSession 整合（框編輯入 undo／redo，cursor 型別容 DocCursor 與 FrameCursor）；框全刪空（「空框」schema 演進）；IME 入框與框編輯 UI 接線（真視窗批次）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 編輯前後樣張 out/thread-demo/page-001.png 與 edited/page-001.png 對照抽檢；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 候選：EditSession 框編輯整合（undo／redo 統一歷史，「最複雜架構」項）、橫排框 v2、圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先下載全字庫 TW-Kai）。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.53.0（2026-07-17，Sprint 58）框 provenance＋畫布框字格反查（GAPS #32 (d) 前半）
 
 ### 新增
