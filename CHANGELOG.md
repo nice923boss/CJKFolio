@@ -2,6 +2,41 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.50.0（2026-07-17，Sprint 55）獨立文字框 v1（任意矩形直排文字框：圖說自由位置等自由手排項的機制載體）
+
+### 新增
+
+- [實作] 獨立文字框（Owner「最複雜架構先做」下，§6 Phase 2「文字框建立／串接」的**建立半邊**；threading 屬串接半邊後續專項）：
+  - document@2 相容擴充 `TextFrame`（text／style／page／rect；rect 同 PlacedImage 座標系＝trim pt top-down、可溢出版心；@1 拒絕、schema 驗證快速失敗）。
+  - `cjkfolio/frames.py`（兩後端同源單一幾何層）：`layout_text_frame`（欄容量＝floor(框高/字距)、欄距＝級數×(網格行距/基準級數) §10 同構、欄自框右緣右至左、框內不齊行；斷行禁則復用 engine break_paragraph〔擠入追出同 body〕；溢出框寬欄不繪並列違規不沉默；未知樣式／橫排樣式快速失敗）＋`resolve_text_frames`（逐頁主版 grid；框頁超出流排頁快速失敗＝不為框造頁，同 images 規則）。
+  - 兩後端 `_draw_text_frame`（render）／`_text_frame`（pdf_writer）：復用直排 cell 繪製助手（cjk／tcy／latin 旋轉）；frame violations 併入 RenderResult／PdfResult（不沉默）。
+  - editor canvas 底圖繪框（build_page_scene 傳 frames；框字格互動層待框 provenance）。
+  - book.py 章級 text_frames 組裝拒絕（頁號章內語意同 images；框於組裝後全書文件加入）。
+
+### 變更
+
+- pdf_writer 行數上限管理：XMP 助手抽出至 `cjkfolio/pdfx_meta.py`（`xmp_packet`，純搬移行為不變；pdf_writer 796 行守住 800 上限）。
+- render_page／build_page 加 `frames=()` 參數（FramePlacement 序列，由 resolve_text_frames 提供）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **457 passed / 0 failed**（446→457，+11，新檔 tests/test_text_frames.py：TextFrame 解析與序列化／驗證快速失敗／@1 拒絕／欄容量與行軸／折欄禁則／溢字違規／橫排與未知樣式快速失敗／PDF 框幾何／PNG 框內墨跡框外紙白／框頁超出快速失敗）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0（canvas 繪框後複驗）。
+- 真實素材驗收（R5，自擬）：雙照片＋雙直排辰宇圖說貼照片側（框位溢出版心＝真書 G 頁「照片＋自由圖說」形態）→ render PNG 親 Read（圖說直排落位、body 旁注照排）、export PDF **preflight 12/12 全綠**、禁則 0 違規。
+- Gate 4 獨立驗證：PyMuPDF rawdict 框字墨 cx＝frames 行軸（abs≤1.2pt）、框緣 bearing 容忍 3pt（字墨可略超字框＝字型度量差，Sprint 37 同性質）；PNG crop 框內有墨、框下方紙白。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：文字框建立全管線（document／frames／兩後端／canvas 底圖）。
+- v1 已知限制（GAPS #32）：不串接（threading 後續專項）；只直排（橫排框 v2）；單一段落樣式、無 runs、不齊行；框無 provenance（畫布互動層與 editing 游標不入框，框編輯專項）；章級 text_frames 組裝拒絕（設計行為）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 圖說示範 out/rect-demo/page-001.png 與 demo.pdf 抽檢；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 候選：文字框串接（threading，§6「串接」半邊）、框編輯（provenance＋游標）、圖說與照片相對位置樣式化置放（真書 R1 量測）、AI 設定檔層。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.49.0（2026-07-17，Sprint 54）多圖／任意矩形置入模型（PlacedImage.rect 任意圖框，畫布置圖模型地基）
 
 ### 新增

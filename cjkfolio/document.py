@@ -50,6 +50,20 @@ class Paragraph:
 
 
 @dataclass(frozen=True)
+class TextFrame:
+    """獨立文字框（Sprint 55）：任意矩形內的直排文字（v1 單一樣式、不串接、不繞排）。
+
+    rect＝(x0, y0, x1, y1) trim 空間 pt、top-down（同 PlacedImage.rect 座標系，
+    可溢出版心＝自由佈局層正當用法）；page＝版面頁號（1 起算，須落於流排頁）。
+    圖說自由位置、署名字卡等「自由手排」項的機制載體。
+    """
+    text: str
+    style: str
+    page: int
+    rect: tuple
+
+
+@dataclass(frozen=True)
 class PlacedImage:
     """置入一張圖到某版面頁（PLAN §4.2 G 圖文版照片、§9 灰階單 K）。
 
@@ -79,9 +93,9 @@ def _runs_from_list(raw, idx: int) -> tuple:
     return tuple(runs)
 
 
-def _rect_from_value(raw, j: int) -> tuple:
-    """解析 images[j].rect：4 個有限數字 [x0, y0, x1, y1]（trim pt、top-down）且
-    x0 < x1、y0 < y1；形狀不合快速失敗。"""
+def _rect_from_value(raw, ctx: str) -> tuple:
+    """解析 rect：4 個數字 [x0, y0, x1, y1]（trim pt、top-down）且 x0 < x1、
+    y0 < y1；形狀不合快速失敗。ctx＝錯誤訊息用的欄位標籤。"""
     ok = (isinstance(raw, list) and len(raw) == 4
           and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in raw))
     if ok:
@@ -89,7 +103,7 @@ def _rect_from_value(raw, j: int) -> tuple:
         ok = x0 < x1 and y0 < y1
     if not ok:
         raise DocumentError(
-            f"images[{j}] rect 需為 [x0, y0, x1, y1] 四數字（pt）且 x0<x1、y0<y1，"
+            f"{ctx} rect 需為 [x0, y0, x1, y1] 四數字（pt）且 x0<x1、y0<y1，"
             f"得到 {raw!r}"
         )
     return (x0, y0, x1, y1)
@@ -111,7 +125,7 @@ def _images_from_list(raw) -> tuple:
             raise DocumentError(f"images[{j}] page 需為 ≥1 的整數，得到 {page!r}")
         rect = None
         if im.get("rect") is not None:
-            rect = _rect_from_value(im["rect"], j)
+            rect = _rect_from_value(im["rect"], f"images[{j}]")
         else:
             if page in slot_pages:
                 raise DocumentError(
@@ -121,6 +135,29 @@ def _images_from_list(raw) -> tuple:
             slot_pages.add(page)
         images.append(PlacedImage(path=path, page=page, rect=rect))
     return tuple(images)
+
+
+def _frames_from_list(raw) -> tuple:
+    """解析 text_frames 陣列（選配，Sprint 55）：text／style 非空字串、page ≥1
+    整數、rect 必填（任意矩形文字框）；不合 schema 快速失敗。"""
+    frames = []
+    for j, f in enumerate(raw):
+        if not isinstance(f, dict):
+            raise DocumentError(f"text_frames[{j}] 須為物件")
+        text = f.get("text")
+        if not (isinstance(text, str) and text):
+            raise DocumentError(f"text_frames[{j}] 需含非空 text 字串")
+        style = f.get("style")
+        if not (isinstance(style, str) and style):
+            raise DocumentError(f"text_frames[{j}] 需含非空 style 字串")
+        page = f.get("page")
+        if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+            raise DocumentError(f"text_frames[{j}] page 需為 ≥1 的整數，得到 {page!r}")
+        if f.get("rect") is None:
+            raise DocumentError(f"text_frames[{j}] 需含 rect（任意矩形文字框必填）")
+        rect = _rect_from_value(f["rect"], f"text_frames[{j}]")
+        frames.append(TextFrame(text=text, style=style, page=page, rect=rect))
+    return tuple(frames)
 
 
 def document_from_dict(data) -> "Document":
@@ -160,6 +197,11 @@ def document_from_dict(data) -> "Document":
     raw_images = data.get("images", [])
     if not isinstance(raw_images, list):
         raise DocumentError("images 必須是陣列")
+    raw_frames = data.get("text_frames", [])
+    if raw_frames and schema == SCHEMA_V1:
+        raise DocumentError("使用 text_frames 需 schema document@2")
+    if not isinstance(raw_frames, list):
+        raise DocumentError("text_frames 必須是陣列")
     return Document(
         title=str(meta.get("title", "")),
         template=str(meta.get("template", "")),
@@ -167,6 +209,7 @@ def document_from_dict(data) -> "Document":
         paragraphs=tuple(paragraphs),
         language=str(meta.get("language", "zh-TW")),
         images=_images_from_list(raw_images),
+        text_frames=_frames_from_list(raw_frames),
     )
 
 
@@ -177,7 +220,8 @@ class Document:
     master: str    # 首節預設主版名（段落 master 節首標記起新節，Sprint 51）
     paragraphs: tuple
     language: str = "zh-TW"
-    images: tuple = ()  # PlacedImage 序列（@2 相容擴充；置入主版 figure 保留區）
+    images: tuple = ()  # PlacedImage 序列（@2 相容擴充；槽式與 rect 任意圖框）
+    text_frames: tuple = ()  # TextFrame 序列（@2 相容擴充；獨立文字框，Sprint 55）
 
 
 def _paragraph_to_dict(p: Paragraph) -> dict:
@@ -212,6 +256,11 @@ def document_to_dict(doc: Document) -> dict:
             {"path": im.path, "page": im.page,
              **({"rect": list(im.rect)} if im.rect is not None else {})}
             for im in doc.images
+        ]
+    if doc.text_frames:
+        out["text_frames"] = [
+            {"text": tf.text, "style": tf.style, "page": tf.page, "rect": list(tf.rect)}
+            for tf in doc.text_frames
         ]
     return out
 

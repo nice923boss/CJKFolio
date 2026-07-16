@@ -14,6 +14,7 @@ import uharfbuzz as hb
 from PIL import Image, ImageDraw
 
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
+from .frames import resolve_text_frames
 from .images import resolve_placed_images
 from .layout import (
     layout_document,
@@ -411,6 +412,29 @@ class PageRenderer:
         resized = gray.resize((w_px, h_px))
         img.paste(resized, (round(box.x0 * self.scale), round(box.y0 * self.scale)))
 
+    def _draw_text_frame(self, img, placement) -> None:
+        """獨立文字框（Sprint 55）：欄幾何取 frames.FramePlacement（與 pdf_writer
+        同源），逐字格繪製復用直排 body 的 cell 繪製助手（框內不齊行、等距）。"""
+        style = self.template.paragraph_styles[placement.style]
+        shaper = self._shaper_for(style)
+        for fl in placement.lines:
+            content_i = 0
+            for cell in fl.line.cells:
+                cell_top = fl.top_pt + content_i * fl.advance_pt
+                if cell.kind == "cjk":
+                    missing = _draw_ttb_char(img, shaper, cell.text, fl.axis_x_pt,
+                                             cell_top, fl.size_pt, self.scale)
+                elif cell.kind == "tcy":
+                    missing = _draw_tcy(img, shaper, cell.text, fl.axis_x_pt, cell_top,
+                                        fl.size_pt, fl.advance_pt, self.scale)
+                elif cell.kind == "latin":
+                    missing = _draw_rotated_latin(img, shaper, cell.text, fl.axis_x_pt,
+                                                  cell_top, fl.size_pt, self.scale)
+                else:
+                    missing = []
+                self._note_missing(shaper, missing)
+                content_i += cell.width
+
     def _draw_toc_marks(self, img, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
         幾何取 layout.TocEntryMark，與 pdf_writer 同源。"""
@@ -433,7 +457,7 @@ class PageRenderer:
 
     def render_page(self, page, footer_texts=None, book_number=None,
                     vertical: bool = True, toc_marks=(),
-                    rule_breaks=(), images=()) -> Image.Image:
+                    rule_breaks=(), images=(), frames=()) -> Image.Image:
         template = self.template
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = template.masters[page.master]
@@ -463,6 +487,8 @@ class PageRenderer:
             self._draw_horizontal_body(img, page, book_number)
         if toc_marks:  # 目錄條目頁碼＋引導線（marks 僅目錄主版產生）
             self._draw_toc_marks(img, toc_marks, book_number)
+        for placement in frames:  # 獨立文字框（自由佈局層，body 之上）
+            self._draw_text_frame(img, placement)
         if footer_texts:
             self._draw_footer(img, book_number, footer_texts)
         return img
@@ -487,6 +513,9 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
+    frames_by_page = resolve_text_frames(doc, template, masters_by_page)
+    frame_violations = [v for pls in frames_by_page.values()
+                        for pl in pls for v in pl.violations]
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -502,13 +531,14 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
                                    vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
                                    toc_marks=layout.toc_marks.get(page.number, ()),
                                    rule_breaks=layout.rule_breaks.get(page.number, ()),
-                                   images=images_by_page.get(page.number, ()))
+                                   images=images_by_page.get(page.number, ()),
+                                   frames=frames_by_page.get(page.number, ()))
         path = out / f"{basename}-{page.number:03d}.png"
         img.save(path)
         paths.append(path)
     return RenderResult(
         paths=paths,
-        violations=list(layout.violations),
+        violations=list(layout.violations) + frame_violations,
         fonts_used=sorted(renderer.fonts_used),
         font_warnings=list(renderer.registry.warnings) + list(renderer.notdef_warnings),
         justify_stats=dict(layout.justify_stats),

@@ -26,7 +26,9 @@ from fontTools import subset as ft_subset
 from fontTools.ttLib import TTFont
 
 from .fonts import DEFAULT_FONT_DIR, FontError, FontRegistry
+from .frames import resolve_text_frames
 from .images import EmbeddedImage, resolve_placed_images
+from .pdfx_meta import xmp_packet
 from .layout import (
     layout_document,
     line_justified_advance,
@@ -109,38 +111,6 @@ def _pdf_string(s: str) -> str:
 def _pdf_date(dt: datetime) -> str:
     off = dt.strftime("%z")  # astimezone() 保證帶時區，如 +0800
     return f"D:{dt.strftime('%Y%m%d%H%M%S')}{off[:3]}'{off[3:]}'"
-
-
-def _xml_escape(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _xmp_packet(title: str, date_iso: str) -> bytes:
-    """X-1a 識別與文件中繼資料的最小 XMP（與 Info dict 同值）。"""
-    t = _xml_escape(title)
-    return (
-        f'<?xpacket begin="{chr(0xFEFF)}" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
-        '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
-        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
-        '<rdf:Description rdf:about=""\n'
-        ' xmlns:dc="http://purl.org/dc/elements/1.1/"\n'
-        ' xmlns:xmp="http://ns.adobe.com/xap/1.0/"\n'
-        ' xmlns:pdf="http://ns.adobe.com/pdf/1.3/"\n'
-        ' xmlns:pdfx="http://ns.adobe.com/pdfx/1.3/"\n'
-        ' xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/">\n'
-        f'<dc:title><rdf:Alt><rdf:li xml:lang="x-default">{t}</rdf:li></rdf:Alt></dc:title>\n'
-        f'<xmp:CreateDate>{date_iso}</xmp:CreateDate>\n'
-        f'<xmp:ModifyDate>{date_iso}</xmp:ModifyDate>\n'
-        '<xmp:CreatorTool>CJKFolio</xmp:CreatorTool>\n'
-        '<pdf:Producer>CJKFolio</pdf:Producer>\n'
-        '<pdf:Trapped>False</pdf:Trapped>\n'
-        f'<pdfx:GTS_PDFXVersion>{PDFX_VERSION}</pdfx:GTS_PDFXVersion>\n'
-        f'<pdfx:GTS_PDFXConformance>{PDFX_CONFORMANCE}</pdfx:GTS_PDFXConformance>\n'
-        f'<pdfxid:GTS_PDFXVersion>{PDFX_VERSION}</pdfxid:GTS_PDFXVersion>\n'
-        f'<pdfxid:GTS_PDFXConformance>{PDFX_CONFORMANCE}</pdfxid:GTS_PDFXConformance>\n'
-        '</rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n'
-        '<?xpacket end="w"?>'
-    ).encode("utf-8")
 
 
 def _validate_output_profile(data: bytes, source) -> None:
@@ -602,6 +572,29 @@ class _PdfPageWriter:
             emb.res_name, box.x1 - box.x0, box.y1 - box.y0,
             self.bleed_pt + box.x0, self.page_h_pt + self.bleed_pt - box.y1)
 
+    def _text_frame(self, content: _Content, placement) -> None:
+        """獨立文字框（Sprint 55）：欄幾何取 frames.FramePlacement（與 render
+        同源），逐字格 emit 復用直排 placements 助手（框內不齊行、等距）。"""
+        style = self.template.paragraph_styles[placement.style]
+        key, shaper = self._shaper_for(style)
+        for fl in placement.lines:
+            content_i = 0
+            for cell in fl.line.cells:
+                cell_top = fl.top_pt + content_i * fl.advance_pt
+                if cell.kind == "cjk":
+                    pls = ttb_char_placements(shaper, cell.text, fl.axis_x_pt,
+                                              cell_top, fl.size_pt)
+                elif cell.kind == "tcy":
+                    pls = tcy_placements(shaper, cell.text, fl.axis_x_pt, cell_top,
+                                         fl.size_pt, fl.advance_pt)
+                elif cell.kind == "latin":
+                    pls = rotated_latin_placements(shaper, cell.text, fl.axis_x_pt,
+                                                   cell_top, fl.size_pt)
+                else:
+                    pls = []
+                self._emit(content, key, pls)
+                content_i += cell.width
+
     def _toc_marks(self, content: _Content, marks, book_number: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
         幾何取 layout.TocEntryMark，與 render._draw_toc_marks 同源。"""
@@ -624,7 +617,7 @@ class _PdfPageWriter:
 
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True, toc_marks=(), rule_breaks=(),
-                   images=()) -> bytes:
+                   images=(), frames=()) -> bytes:
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = self.template.masters[page.master]
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
@@ -649,6 +642,8 @@ class _PdfPageWriter:
             self._horizontal_body(content, page, book_number)
         if toc_marks:  # 目錄條目頁碼＋引導線（marks 僅目錄主版產生）
             self._toc_marks(content, toc_marks, book_number)
+        for placement in frames:  # 獨立文字框（自由佈局層，body 之上）
+            self._text_frame(content, placement)
         if footer_texts:
             self._footer(content, book_number, footer_texts)
         return content.finish()
@@ -697,6 +692,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
+    frames_by_page = resolve_text_frames(doc, template, masters_by_page)
+    frame_violations = [v for pls in frames_by_page.values()
+                        for pl in pls for v in pl.violations]
     selected = list(layout.pages)
     if pages is not None:
         wanted = set(pages)
@@ -715,7 +713,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
             toc_marks=layout.toc_marks.get(page.number, ()),
             rule_breaks=layout.rule_breaks.get(page.number, ()),
-            images=images_by_page.get(page.number, ())))
+            images=images_by_page.get(page.number, ()),
+            frames=frames_by_page.get(page.number, ())))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []
@@ -763,7 +762,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     now = datetime.now().astimezone()
     xmp_num = pdf.stream(
         " /Type /Metadata /Subtype /XML",
-        _xmp_packet(doc.title, now.isoformat(timespec="seconds")),
+        xmp_packet(doc.title, now.isoformat(timespec="seconds"),
+                   PDFX_VERSION, PDFX_CONFORMANCE),
         compress=False,  # metadata stream 不壓縮，外部工具可直讀
     )
     catalog_num = pdf.add(
@@ -785,7 +785,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     return PdfResult(
         path=out,
         page_count=len(contents),
-        violations=list(layout.violations),
+        violations=list(layout.violations) + frame_violations,
         fonts_used=sorted(writer.fonts_used),
         font_warnings=list(writer.registry.warnings) + list(writer.notdef_warnings),
         embedded_fonts=embedded,

@@ -20,6 +20,7 @@ from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene
 
 from cjkfolio.document import Document
+from cjkfolio.frames import resolve_text_frames
 from cjkfolio.layout import (
     LayoutResult,
     line_justified_advance,
@@ -104,8 +105,12 @@ def build_page_scene(
     renderer = PageRenderer(template, doc.master, dpi=dpi)
     footer = {"number": str(book_number), "title": doc.title or ""}
     vertical = getattr(page, "vertical", layout.vertical)  # 逐頁方向（Sprint 53）
+    masters = {p.number: template.masters[getattr(p, "master", "") or doc.master]
+               for p in layout.pages}
+    frames = resolve_text_frames(doc, template, masters).get(page.number, ())
     pil_img = renderer.render_page(
-        page, footer_texts=footer, book_number=book_number, vertical=vertical
+        page, footer_texts=footer, book_number=book_number, vertical=vertical,
+        frames=frames,  # 底圖含獨立文字框（Sprint 55）；框字格互動層待框 provenance
     )
     base = QGraphicsPixmapItem(QPixmap.fromImage(pil_to_qimage(pil_img)))
     base.setZValue(0)

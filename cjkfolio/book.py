@@ -113,6 +113,11 @@ def assemble_book(book: Book, base_dir=None) -> Document:
                 f"chapters[{i}]（{ch.path}）帶章層級 images：其 page 為章內排版頁號，"
                 "組裝後即失效；置入圖請改列書冊清單的 images（全書版面頁號）"
             )
+        if doc.text_frames:
+            raise BookError(
+                f"chapters[{i}]（{ch.path}）帶章層級 text_frames：其 page 為章內排版"
+                "頁號，組裝後即失效；文字框請於組裝後的全書文件上以全書版面頁號加入"
+            )
         head = doc.paragraphs[0]
         resolved = ch.master or head.master or doc.master
         paragraphs.append(replace(head, master=resolved))
