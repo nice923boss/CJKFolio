@@ -2,6 +2,40 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.52.0（2026-07-17，Sprint 57）文字框串接（thread 跨框續排，§6「文字框建立／串接」補齊）
+
+### 新增
+
+- [實作] 文字框串接（§6 Phase 2「文字框建立／串接」的**串接半邊**，關 GAPS #32 (a)；承 Sprint 55 建立半邊）：
+  - document@2 相容擴充 `TextFrame.thread`（選配串接鏈名）：同 thread 框依文件序成鏈、文字掛鏈首；解析層守門＝續框帶 text 雙源快速失敗、續框 style 須與鏈首一致、thread 空字串拒絕；序列化續框不寫空 text。
+  - `cjkfolio/frames.py` `layout_thread`：鏈文字一次 tokenize 成 cells，逐框以該框頁主版網格換算容量斷行、取前欄數容量欄、以已消費 cell 數切出剩餘 cells 續排下一框；切點＝合法行邊界（`_break_cells` 行序列 cells 連續無增刪且每行行首行尾禁則已解消）＝框邊界禁則自然正確；中間框排滿即續流、鏈尾仍剩列違規掛鏈尾（不沉默）；跨頁串接逐框取該頁網格（節式主版指派一致）。
+  - `resolve_text_frames`：鏈框統一佈局後放回各自頁；頁內繪製序＝文件序（Sprint 54 rect 圖慣例）。
+  - engine 加公開 `break_cells`（cells 級斷行入口；`break_paragraph` 委派，行為不變）。
+  - 兩後端與 editor canvas 零變更（FramePlacement 介面不動）。
+
+### 變更
+
+- `layout_text_frame` 內部改用共用助手（`_frame_style`／`_frame_metrics`／`_place_lines`，與 `layout_thread` 共用），單框行為與溢出訊息不變。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **475 passed / 0 failed**（463→475，+12，tests/test_text_frames.py：thread schema 解析與 round-trip／守門快速失敗 2、跨框續排／框邊界禁則／逐框幾何／鏈尾溢出／單框鏈等價／跨頁逐框網格 6、resolve 文件序與鏈成員頁守門 2、兩後端串接幾何 2）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5，自擬）：「雙照片＋一段圖說流過上下兩框」示範（out/thread-demo/demo.doc.json）→ render PNG 親 Read（上框「改造前雜物滿地，」句逗收框尾不落下框行首、下框「改造後留白生光」接續）、export PDF **preflight 12/12 全綠**、禁則 0 違規。
+- Gate 4 獨立驗證：PyMuPDF rawdict 串接守恆（框 A 8 字＋框 B 7 字＝原文 15 字無重複無遺漏）、兩框字墨 cx＝各框行軸（356.1＝框右緣−半欄距）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋R5 驗）：串接全管線（schema 守門／逐框續排佈局／resolve 分組）。
+- v1 已知限制（GAPS #32）：鏈序＝文件序（無顯式序欄位）；無框內強制斷點原語（InDesign 框斷字元同義項）；只直排、單一樣式（全鏈一致）、框無 provenance 承 Sprint 55；拉線串框／框編輯 UI 屬真視窗批次。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 串接示範 out/thread-demo/page-001.png 與 demo.pdf 抽檢；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 候選：框編輯（provenance＋游標入框，畫布互動地基）、橫排框 v2（shaper 度量介面）、圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先下載全字庫 TW-Kai，GAPS #12／#22 甲類）。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.51.0（2026-07-17，Sprint 56）AI 設定檔層（§4.4 三欄位本機設定，金鑰紅線）
 
 ### 新增

@@ -51,16 +51,19 @@ class Paragraph:
 
 @dataclass(frozen=True)
 class TextFrame:
-    """獨立文字框（Sprint 55）：任意矩形內的直排文字（v1 單一樣式、不串接、不繞排）。
+    """獨立文字框（Sprint 55 建立＋Sprint 57 串接）：任意矩形內的直排文字。
 
     rect＝(x0, y0, x1, y1) trim 空間 pt、top-down（同 PlacedImage.rect 座標系，
     可溢出版心＝自由佈局層正當用法）；page＝版面頁號（1 起算，須落於流排頁）。
+    thread（選配）＝串接鏈名：同 thread 的框依文件序成鏈跨框續排；文字掛鏈首
+    （續框 text 為空、style 與鏈首一致，解析層守門）。
     圖說自由位置、署名字卡等「自由手排」項的機制載體。
     """
     text: str
     style: str
     page: int
     rect: tuple
+    thread: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -138,25 +141,48 @@ def _images_from_list(raw) -> tuple:
 
 
 def _frames_from_list(raw) -> tuple:
-    """解析 text_frames 陣列（選配，Sprint 55）：text／style 非空字串、page ≥1
-    整數、rect 必填（任意矩形文字框）；不合 schema 快速失敗。"""
+    """解析 text_frames 陣列（選配，Sprint 55）：style 非空字串、page ≥1 整數、
+    rect 必填（任意矩形文字框）；不合 schema 快速失敗。
+    thread 串接鏈（Sprint 57）：同 thread 依文件序成鏈，文字掛鏈首（text 非空）、
+    續框不得帶 text（雙源）且 style 須與鏈首一致。"""
     frames = []
+    chain_heads: dict = {}  # thread → 鏈首 style
     for j, f in enumerate(raw):
         if not isinstance(f, dict):
             raise DocumentError(f"text_frames[{j}] 須為物件")
-        text = f.get("text")
-        if not (isinstance(text, str) and text):
-            raise DocumentError(f"text_frames[{j}] 需含非空 text 字串")
+        thread = f.get("thread")
+        if thread is not None and (not isinstance(thread, str) or not thread):
+            raise DocumentError(f"text_frames[{j}] thread 需為非空字串")
         style = f.get("style")
         if not (isinstance(style, str) and style):
             raise DocumentError(f"text_frames[{j}] 需含非空 style 字串")
+        text = f.get("text", "")
+        if not isinstance(text, str):
+            raise DocumentError(f"text_frames[{j}] text 需為字串")
+        if thread is not None and thread in chain_heads:  # 串接續框
+            if text:
+                raise DocumentError(
+                    f"text_frames[{j}] 串接續框不得帶 text"
+                    f"（文字掛鏈首，thread「{thread}」）"
+                )
+            if style != chain_heads[thread]:
+                raise DocumentError(
+                    f"text_frames[{j}] 串接續框 style 須與鏈首一致"
+                    f"（thread「{thread}」鏈首為「{chain_heads[thread]}」）"
+                )
+        else:  # 獨立框或鏈首
+            if not text:
+                raise DocumentError(f"text_frames[{j}] 需含非空 text 字串")
+            if thread is not None:
+                chain_heads[thread] = style
         page = f.get("page")
         if isinstance(page, bool) or not isinstance(page, int) or page < 1:
             raise DocumentError(f"text_frames[{j}] page 需為 ≥1 的整數，得到 {page!r}")
         if f.get("rect") is None:
             raise DocumentError(f"text_frames[{j}] 需含 rect（任意矩形文字框必填）")
         rect = _rect_from_value(f["rect"], f"text_frames[{j}]")
-        frames.append(TextFrame(text=text, style=style, page=page, rect=rect))
+        frames.append(TextFrame(text=text, style=style, page=page, rect=rect,
+                                thread=thread))
     return tuple(frames)
 
 
@@ -259,7 +285,9 @@ def document_to_dict(doc: Document) -> dict:
         ]
     if doc.text_frames:
         out["text_frames"] = [
-            {"text": tf.text, "style": tf.style, "page": tf.page, "rect": list(tf.rect)}
+            {**({"text": tf.text} if tf.text else {}),  # 串接續框 text 為空不寫
+             "style": tf.style, "page": tf.page, "rect": list(tf.rect),
+             **({"thread": tf.thread} if tf.thread is not None else {})}
             for tf in doc.text_frames
         ]
     return out

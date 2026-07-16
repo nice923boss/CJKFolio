@@ -173,7 +173,17 @@ def cells_from_runs(runs, vertical: bool = True) -> list:
 
 def break_paragraph(text: str, chars_per_line: int, indent: int = 2,
                     vertical: bool = True) -> list:
-    return _break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
+    return break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
+
+
+def break_cells(cells: list, chars_per_line: int, indent: int = 2) -> list:
+    """cells 級斷行（break_paragraph 的 cells 入口）。
+
+    行序列的 cells 連續無增刪（擠入追出只移動行邊界），且每行行首行尾禁則已
+    解消，故任一行邊界皆為合法切點：文字框串接（Sprint 57）據此逐框取欄、
+    以已消費 cell 數切出剩餘 cells 續排下一框。
+    """
+    return _break_cells(cells, chars_per_line, indent)
 
 
 def _break_cells(cells: list, chars_per_line: int, indent: int = 2,
