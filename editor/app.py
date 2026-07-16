@@ -44,8 +44,9 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from cjkfolio.document import load_document  # noqa: E402
-from cjkfolio.editing import DocCursor, DocRange, DocSpan, EditSession  # noqa: E402
+from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
+from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_panel import AiConfigDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402

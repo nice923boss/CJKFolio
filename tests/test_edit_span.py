@@ -17,13 +17,13 @@ from cjkfolio.editing import (
     DocCursor,
     DocRange,
     DocSpan,
-    EditSession,
     apply_delete_span,
     apply_replace_span,
     delete_range,
     delete_span,
     replace_span,
 )
+from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 
 ROOT = Path(__file__).resolve().parents[1]

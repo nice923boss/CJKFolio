@@ -14,7 +14,6 @@ from cjkfolio.editing import (
     CellAddress,
     DocCursor,
     DocRange,
-    EditSession,
     apply_delete,
     apply_insert,
     apply_merge,
@@ -28,6 +27,7 @@ from cjkfolio.editing import (
     split_paragraph,
 )
 from cjkfolio.layout import layout_document
+from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 
 ROOT = Path(__file__).resolve().parents[1]

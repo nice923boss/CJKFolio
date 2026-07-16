@@ -14,11 +14,11 @@ from cjkfolio.document import Document, Paragraph, Run
 from cjkfolio.editing import (
     DocCursor,
     DocRange,
-    EditSession,
     apply_char_style,
     apply_style,
 )
 from cjkfolio.layout import layout_document
+from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -14,10 +14,10 @@ import pytest
 from cjkfolio.document import Document, Paragraph, Run
 from cjkfolio.editing import (
     DocCursor,
-    EditSession,
     apply_para_style,
     change_paragraph_style,
 )
+from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 
 ROOT = Path(__file__).resolve().parents[1]

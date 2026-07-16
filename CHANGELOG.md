@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.62.0（2026-07-17，Sprint 67）樣式修改核心（Phase 3 首片：改樣式即全書套用＋統一 undo）
+
+### 新增
+
+- [實作] `cjkfolio/style_editing.py`（純模版層，入 pytest 基線）：
+  - `set_paragraph_style`／`set_character_style`：改既有樣式參數回傳新 Template（不可變、其他樣式物件共享）；未知樣式 KeyError、不可編輯欄位（含改名）TemplateError、空與等值變更 no-op 回原物件、型別轉換同載入層；值語意（writing_mode、字型）由 layout_document／FontRegistry 守門（承既有分層慣例）。
+- [實作] `cjkfolio/session.py`：EditSession 依行數紀律自 editing.py 分檔（783→577 行守 800，先例 images／pdfx_meta／frame_editing；7 個 import 站點同步改）：
+  - undo／redo 快照擴為三元組 (document, template, cursor)＝樣式定義編輯與文件編輯共用同一歷史（快照層只存不解釋）。
+  - `update_para_style`／`update_char_style`：改樣式即全書重排入統一 undo；先重排快速失敗再入歷史（非法值不污染狀態）、樣式編輯不改文件游標保持、現態為框游標時回 FrameEditResult、打斷連續輸入合併序列；no-op 回 None 不記步。
+  - `_state_result` 自 `_restore` 抽共用（雙游標型別結果構造單一事實來源）。
+
+### 驗證
+
+- 核心基線 **506 passed / 0 failed**（491→506，+15：純模版層 7＋session 整合 8，新檔 tests/test_style_editing.py）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C11 全過 0 退步。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，自擬 samples/chapter-opening）：session 改「內文-明體直排」11.5→16pt → 全書重排（斷行移位、字級放大）render 前後 PNG 親 Read；頁腳（字元樣式）不受影響；undo 回 11.5、行數回原、0 違規。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #34）
+
+- [實作]：修改既有樣式參數的核心回路（模版層＋session 統一歷史）。
+- 未做：樣式改名／新增／刪除（需全書參照與面板、md_mapping 聯動）、樣式繼承（§4.3 基底＋覆寫，需解析層設計）、修改後模版落檔（save_template 屬「書系模版另存」半邊，session 內有效）、樣式編輯 UI（雙擊編輯參數面板，真視窗批次）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 同 v0.61.0 hands-on 批次（本 Sprint 為核心層，無新 UI 面）。
+
+### 下個 Sprint 預定範圍
+
+- 候選（依「最複雜架構先做」）：樣式繼承（基底＋覆寫，需 R2 評估動 template schema）、樣式新增／刪除＋save_template 落檔（書系模版另存半邊）、樣式編輯 UI 面板。
+
 ## v0.61.0（2026-07-17，Sprint 66）Phase 2 收尾判定（Owner 定案收尾轉 Phase 3）[Doc]
 
 ### 定案

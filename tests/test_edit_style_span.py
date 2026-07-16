@@ -16,11 +16,11 @@ from cjkfolio.editing import (
     DocCursor,
     DocRange,
     DocSpan,
-    EditSession,
     apply_char_style,
     apply_char_style_span,
     apply_style_span,
 )
+from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 
 ROOT = Path(__file__).resolve().parents[1]

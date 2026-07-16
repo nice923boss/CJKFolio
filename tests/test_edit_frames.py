@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from cjkfolio.document import document_from_dict
-from cjkfolio.editing import DocCursor, EditSession
+from cjkfolio.editing import DocCursor
 from cjkfolio.frame_editing import (
     FrameCursor,
     FrameEditResult,
@@ -21,6 +21,7 @@ from cjkfolio.frame_editing import (
 )
 from cjkfolio.frames import masters_for_layout, resolve_text_frames
 from cjkfolio.layout import layout_document
+from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 
 ROOT = Path(__file__).resolve().parents[1]
