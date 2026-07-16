@@ -8,10 +8,11 @@ cell 數切出剩餘 cells 續排下一框（行邊界禁則已解消＝合法�
 鏈尾仍排不下列違規（不沉默）。兩後端共用本層產出的 FramePlacement（同源紀律）；
 框可溢出版心（同 PlacedImage.rect：自由佈局層正當用法）。
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import floor
+from typing import Optional
 
-from .engine import break_cells, break_paragraph, normalize, tokenize
+from .engine import break_cells, normalize_with_offsets, tokenize
 from .layout import HORIZONTAL_MODE, style_advance_pt
 
 _EPS = 1e-6
@@ -31,6 +32,9 @@ class FramePlacement:
     style: str          # 段落樣式名（後端據此取字型）
     lines: tuple        # FrameLine 序列
     violations: list    # 溢出等違規訊息（應為空）
+    # 框 provenance（Sprint 58，resolve_text_frames 填；後端不讀）：
+    frame_idx: Optional[int] = None   # 自身框的 doc.text_frames 索引
+    source_idx: Optional[int] = None  # 文字來源框索引（串接鏈首；獨立框＝自身）＝cells span 座標的錨
 
 
 def frame_pitch_pt(style, grid) -> float:
@@ -83,7 +87,8 @@ def layout_text_frame(frame, template, grid) -> FramePlacement:
     """
     st = _frame_style(frame, template)
     advance, pitch, capacity, max_cols = _frame_metrics(st, frame.rect, grid)
-    lines = break_paragraph(frame.text, capacity, indent=0, vertical=True)
+    norm, offs = normalize_with_offsets(frame.text)
+    lines = break_cells(tokenize(norm, vertical=True, offsets=offs), capacity, indent=0)
     violations: list = []
     if len(lines) > max_cols:
         dropped = sum(sum(c.width for c in ln.cells) for ln in lines[max_cols:])
@@ -106,7 +111,8 @@ def layout_thread(frames, template, grids) -> list:
     """
     head = frames[0]
     st = _frame_style(head, template)
-    cells = tokenize(normalize(head.text), vertical=True)
+    norm, offs = normalize_with_offsets(head.text)
+    cells = tokenize(norm, vertical=True, offsets=offs)  # span＝鏈首 text 座標（全鏈共享）
     placements: list = []
     for tf, grid in zip(frames, grids):
         advance, pitch, capacity, max_cols = _frame_metrics(st, tf.rect, grid)
@@ -141,15 +147,18 @@ def resolve_text_frames(doc, template, masters_by_page: dict) -> dict:
             )
         if tf.thread is None:
             grid = masters_by_page[tf.page].grid
-            ordered.append((i, tf.page, layout_text_frame(tf, template, grid)))
+            ordered.append((i, tf.page, replace(
+                layout_text_frame(tf, template, grid), frame_idx=i, source_idx=i)))
         else:
             chains.setdefault(tf.thread, []).append((i, tf))
     for members in chains.values():
         placements = layout_thread(
             [tf for _, tf in members], template,
             [masters_by_page[tf.page].grid for _, tf in members])
+        head_idx = members[0][0]  # 文字掛鏈首＝全鏈 span 座標的錨
         ordered.extend(
-            (i, tf.page, pl) for (i, tf), pl in zip(members, placements))
+            (i, tf.page, replace(pl, frame_idx=i, source_idx=head_idx))
+            for (i, tf), pl in zip(members, placements))
     out: dict = {}
     for _, page, pl in sorted(ordered, key=lambda t: t[0]):
         out.setdefault(page, []).append(pl)

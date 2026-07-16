@@ -41,7 +41,12 @@ from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, apply_insert  # noqa: E402
 from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
-from editor.canvas import build_page_scene, resolve_hit  # noqa: E402
+from editor.canvas import (  # noqa: E402
+    build_page_scene,
+    page_frame_placements,
+    resolve_frame_hit,
+    resolve_hit,
+)
 
 DEFAULT_DOC = ROOT / "samples" / "case-divider.doc.json"
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -118,7 +123,11 @@ class EditorWindow(QMainWindow):
         self._highlight = None
 
     def _on_pick(self, item) -> None:
-        pi, ci = item.data(0)
+        key = item.data(0)
+        if key and key[0] == "frame":  # 文字框字格（Sprint 58）：顯示框游標，不設插入游標
+            self._on_pick_frame(item, *key[1:])
+            return
+        pi, ci = key
         hit = resolve_hit(self.doc, self.page, pi, ci)
         self.cursor = (pi, ci)
         src = ""
@@ -128,6 +137,23 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(
             f"游標｜段 {hit.para_idx}｜字 {hit.span}＝「{hit.text}」｜"
             f"樣式 {hit.style}／{hit.kind}｜段內文切片「{src}」"
+        )
+        self._draw_highlight(item.rect())
+
+    def _on_pick_frame(self, item, fi: int, li: int, ci: int) -> None:
+        """點文字框字格：反查框游標並顯示來源切片（框編輯待框編輯專項，IME 不入框）。"""
+        placements = page_frame_placements(
+            self.template, self.doc, self.layout_result, self.page)
+        placement = next(pl for pl in placements if pl.frame_idx == fi)
+        hit = resolve_frame_hit(self.page.number, placement, li, ci)
+        src = ""
+        if hit.span is not None:
+            s, e = hit.span
+            src = self.doc.text_frames[hit.source_idx].text[s:e]
+        self.statusBar().showMessage(
+            f"框游標｜框 {hit.frame_idx}（文字來源框 {hit.source_idx}）｜"
+            f"字 {hit.span}＝「{hit.text}」｜樣式 {hit.style}／{hit.kind}｜"
+            f"來源切片「{src}」｜框編輯待後續（IME 插入僅 body）"
         )
         self._draw_highlight(item.rect())
 

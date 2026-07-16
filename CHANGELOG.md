@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.53.0（2026-07-17，Sprint 58）框 provenance＋畫布框字格反查（GAPS #32 (d) 前半）
+
+### 新增
+
+- [實作] 框 provenance（框版的 Sprint 18＋Sprint 40 資料鏈）：
+  - frames.py 佈局改帶 offsets（`normalize_with_offsets`＋`tokenize(offsets=)` 對齊 body 慣例）：框 cells span＝來源 text（normalize 前）座標，Cc 剝除位移精確、latin／tcy 整串。
+  - `FramePlacement` 加 `frame_idx`（自身框的 doc.text_frames 索引）／`source_idx`（文字來源框＝串接鏈首；獨立框＝自身）＝span 座標的錨；`resolve_text_frames` 填、兩後端不讀（零影響）。
+  - editor/canvas.py：`page_frame_placements`（逐頁框 placements 單一事實來源）＋`iter_frame_cell_rects`（框字格矩形，與 render `_draw_text_frame` 逐項同源）＋`FrameCellHit`／`resolve_frame_hit`（點框字格 → 框游標）；`build_page_scene` 框字格入互動層（item data＝("frame", fi, li, ci)，body 鍵形不變）。
+  - editor/app.py：`_on_pick` 分流＝點框字格顯示框游標與來源切片（串接續框切鏈首 text）、不設 body 插入游標（IME 不入框）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **478 passed / 0 failed**（475→478，+3：Cc 位移與 latin span／串接鏈 span 錨鏈首 text／resolve frame_idx＋source_idx 雙索引）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke_check EXIT=0。
+- 離屏 smoke 新增 C6：自擬「串接雙框＋獨立框」文件 → 框字格 hit-test **28/28 全對**、FrameCellHit round-trip 28 格（續框首格 span＝(18, 19) 錨鏈首 text）、app 點框字格分流顯示框游標且不設 body 游標。
+- 真實素材驗收（R5）：以 Sprint 57 真實示範 out/thread-demo/demo.doc.json 逐格 round-trip **15 格全對**（框 1 續框 span (8, 9)＝接鏈首第 9 字）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋smoke＋R5 驗）：框 provenance 資料鏈（span／frame_idx／source_idx）＋畫布框字格反查全回路。
+- [Shell]／待 Owner（GAPS #19／#32 (d)）：真視窗點框字格視覺對位（離屏測不了）；框內插刪改（editing 游標入框）、拉線串框 UI 待框編輯專項。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗點框字格實測（啟動編輯器.bat 開任一含框文件）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 候選：框內編輯操作（insert／delete 入框＝GAPS #32 (d) 後半，串接鏈重佈局游標跟隨）、橫排框 v2、圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先下載全字庫 TW-Kai）。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.52.0（2026-07-17，Sprint 57）文字框串接（thread 跨框續排，§6「文字框建立／串接」補齊）
 
 ### 新增

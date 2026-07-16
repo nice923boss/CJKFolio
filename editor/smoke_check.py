@@ -7,10 +7,15 @@
   C2 互動層字格數 > 0、底圖 pixmap 存在
   C3 hit-test 反查 100%（每字格中心 itemAt → (placed_idx, cell_idx) 全對）
   C4 resolve_hit 反查文件游標與文件段 text 一致（cjk 字格 span 切片＝cell.text）
+  C5 編輯回路（IME 提交 → 插字 reflow → 游標跟隨）
+  C6 文字框互動層（Sprint 58）：框字格 hit-test 100%＋FrameCellHit round-trip
+     （含串接續框 span 錨鏈首 text）＋app 點框字格分流
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
+import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # 必須在 Qt import 前
@@ -26,11 +31,18 @@ from PySide6.QtWidgets import (  # noqa: E402
     QGraphicsScene,
 )
 
-from cjkfolio.document import load_document  # noqa: E402
+from cjkfolio.document import document_from_dict, load_document  # noqa: E402
 from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
-from editor.canvas import build_page_scene, iter_cell_rects, resolve_hit  # noqa: E402
+from editor.canvas import (  # noqa: E402
+    build_page_scene,
+    iter_cell_rects,
+    iter_frame_cell_rects,
+    page_frame_placements,
+    resolve_frame_hit,
+    resolve_hit,
+)
 
 DOC = ROOT / "samples" / "case-divider.doc.json"
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -122,9 +134,68 @@ def main() -> int:
         f"（{len(win.layout_result.pages)} 頁、0 違規），游標跟隨到「{landed.text}」"
     )
 
+    # C6 文字框互動層（Sprint 58）：框字格 hit-test＋FrameCellHit round-trip＋app 分流
+    frame_doc_dict = {
+        "schema": "cjkfolio/document@2",
+        "meta": {"title": "框示範（自擬）", "template": "neizai-zhengli",
+                 "master": "A-內文版"},
+        "paragraphs": [{"text": "留白是安放的開始。", "style": "內文-明體直排"}],
+        "text_frames": [
+            {"text": "安放選擇收納歸位" * 3, "style": "旁注-手札圖注", "page": 1,
+             "rect": [300.0, 120.0, 340.0, 200.0], "thread": "說"},  # 2 欄×9＝18 字
+            {"style": "旁注-手札圖注", "page": 1,
+             "rect": [200.0, 120.0, 240.0, 200.0], "thread": "說"},  # 串接續框接 6 字
+            {"text": "獨立圖說", "style": "旁注-手札圖注", "page": 1,
+             "rect": [260.0, 320.0, 290.0, 420.0]},
+        ],
+    }
+    fdoc = document_from_dict(frame_doc_dict)
+    flayout = layout_document(fdoc, template)
+    fpage = flayout.pages[0]
+    fscene = QGraphicsScene()
+    build_page_scene(fscene, template, fdoc, flayout, fpage, dpi=DPI)
+    placements = page_frame_placements(template, fdoc, flayout, fpage)
+    assert [pl.frame_idx for pl in placements] == [0, 1, 2], \
+        f"frame_idx 非文件序：{[pl.frame_idx for pl in placements]}"
+    ftotal = fhit = rt = 0
+    for fi, li, ci, x, y, w, h, _k in iter_frame_cell_rects(placements, scale):
+        ftotal += 1
+        found = fscene.itemAt(QPointF(x + w / 2, y + h / 2), QTransform())
+        if found is not None and found.data(0) == ("frame", fi, li, ci):
+            fhit += 1
+    assert ftotal == fhit == 28, f"框字格 hit-test 非全對：{fhit}/{ftotal}（預期 28）"
+    for pl in placements:
+        for li, fl in enumerate(pl.lines):
+            for ci, cell in enumerate(fl.line.cells):
+                fh = resolve_frame_hit(fpage.number, pl, li, ci)
+                s, e = fh.span
+                src = fdoc.text_frames[fh.source_idx].text[s:e]
+                assert src == cell.text, f"框 span 切片 {src!r} != {cell.text!r}"
+                rt += 1
+    tail = next(pl for pl in placements if pl.frame_idx == 1)
+    assert tail.source_idx == 0, "串接續框 source_idx 未錨鏈首"
+    assert tail.lines[0].line.cells[0].span == (18, 19), \
+        f"續框首格 span 非接續鏈首：{tail.lines[0].line.cells[0].span}"
+    with tempfile.TemporaryDirectory() as td:
+        fpath = Path(td) / "frame-demo.doc.json"
+        fpath.write_text(json.dumps(frame_doc_dict, ensure_ascii=False),
+                         encoding="utf-8")
+        fwin = EditorWindow(str(fpath))
+        frame_keys = [k for k in fwin._item_by_key if k and k[0] == "frame"]
+        assert len(frame_keys) == 28, f"app 框字格 item 數 {len(frame_keys)}（預期 28）"
+        fwin._on_pick(fwin._item_by_key[("frame", 1, 0, 0)])
+        msg = fwin.statusBar().currentMessage()
+        assert "框游標" in msg and "來源框 0" in msg, f"app 框分流訊息異常：{msg}"
+        assert fwin.cursor is None, "點框字格不應設 body 插入游標"
+    print(
+        f"C6 文字框互動層：框字格 hit-test {fhit}/{ftotal} 全對、"
+        f"{rt} 格 FrameCellHit round-trip（續框 span 錨鏈首 (18, 19)）、"
+        "app 點框字格分流顯示框游標"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
-        "（IME 直排組字與視覺對位待 Owner 真視窗）"
+        "＋框字格互動層（IME 直排組字與視覺對位待 Owner 真視窗）"
     )
     return 0
 

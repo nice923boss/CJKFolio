@@ -347,6 +347,49 @@ def test_thread_member_page_beyond_flow_fast_fail(template):
         resolve_text_frames(doc, template, masters_page1(template))
 
 
+# ---------- 框 provenance（Sprint 58）：cells span 掛框來源 text 座標 ----------
+
+def test_frame_cells_carry_source_span(template):
+    """框 cells span＝來源 text（normalize 前）座標：Cc 剝除位移、latin 整串。"""
+    src = "客\x07廳AB側寫"
+    doc = make_doc([{**FRAME, "text": src}])
+    placed = layout_text_frame(doc.text_frames[0], template, A_GRID(template))
+    cells = [c for fl in placed.lines for c in fl.line.cells]
+    assert [c.span for c in cells] == [(0, 1), (2, 3), (3, 5), (5, 6), (6, 7)]
+    assert all(src[a:b] == c.text for c, (a, b) in zip(cells, (c.span for c in cells)))
+
+
+def test_thread_cells_span_chain_head_text(template):
+    """串接鏈 cells span＝鏈首 text 座標：框 B 接續框 A 的半開區間（全鏈共享一份文字）。"""
+    doc = make_doc([FRAME_A, FRAME_B])
+    pl_a, pl_b = chain_placements(doc, template)
+    head_text = doc.text_frames[0].text
+    for pl in (pl_a, pl_b):
+        for fl in pl.lines:
+            for c in fl.line.cells:
+                a, b = c.span
+                assert head_text[a:b] == c.text
+    assert pl_b.lines[0].line.cells[0].span == (32, 33)
+
+
+def test_resolve_assigns_frame_idx(template):
+    """resolve 產物帶文件索引 frame_idx＋文字來源框 source_idx（span 座標的錨）。
+
+    串接續框文字掛鏈首（續框 text 空），span 切片須對鏈首 text＝source_idx 指向鏈首；
+    獨立框 source_idx＝自身。"""
+    doc = make_doc([
+        FRAME_A,
+        {**FRAME, "text": "獨立圖說", "rect": [260.0, 120.0, 290.0, 260.0]},
+        FRAME_B,
+    ])
+    placements = resolve_text_frames(doc, template, masters_page1(template))[1]
+    assert [pl.frame_idx for pl in placements] == [0, 1, 2]
+    assert [pl.source_idx for pl in placements] == [0, 1, 0]
+    tail = placements[2]
+    a, b = tail.lines[0].line.cells[0].span
+    assert doc.text_frames[tail.source_idx].text[a:b] == tail.lines[0].line.cells[0].text
+
+
 @needs_fonts
 def test_export_thread_geometry(template, tmp_path):
     """PDF：串接雙框字元恰各一次、各落其框（±3pt bearing）、cx＝各框行軸。"""
