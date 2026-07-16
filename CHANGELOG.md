@@ -2,6 +2,25 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.51.0（2026-07-17，Sprint 56）AI 設定檔層（§4.4 三欄位本機設定，金鑰紅線）
+
+### 新增
+
+- [實作] `cjkfolio/ai_config.py`（§6 Phase 2「AI 設定面板」的資料面半邊）：`AiConfig`（base_url／api_key／model，預設全空）＋`load_ai_config`（缺檔＝空預設不擋流程；壞 JSON／欄位型別不符明確錯誤，**錯誤訊息不回帶欄位值**＝金鑰不入 log；未知鍵容忍向前相容）＋`save_ai_config`（建父目錄、只序列化三欄位）。慣例路徑 local/ai-config.local.json（local/ 已入 .gitignore，GAPS #6 紅線複核）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **463 passed / 0 failed**（457→463，+6，新檔 tests/test_ai_config.py）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5）：以使用者既有本機設定檔實載，三欄位皆載入成功（值零輸出＝金鑰紅線）；金鑰紅線測試釘死（錯誤訊息不含祕密值）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：設定檔讀寫資料面。[Shell]／待 Owner：三欄位面板 UI（真視窗批次，GAPS #19）；LLM 呼叫端（Phase 3 AI 指派整合）尚未接此設定。
+
+### 下個 Sprint 預定範圍
+
+- 文字框串接（threading，§6「文字框建立／串接」的串接半邊，schema 演進型架構題，建議新場次開工）；或框編輯 provenance、圖說相對位置 R1 量測。app.py 真視窗 UI 接線待 Owner 真視窗回報批次。
+
 ## v0.50.0（2026-07-17，Sprint 55）獨立文字框 v1（任意矩形直排文字框：圖說自由位置等自由手排項的機制載體）
 
 ### 新增
