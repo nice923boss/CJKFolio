@@ -12,6 +12,7 @@
      （含串接續框 span 錨鏈首 text）＋app 點框字格分流
   C7〜C10 app session 接線／畫布鍵盤編輯／AI 設定面板／樣式面板（Sprint 61〜64）
   C11 拖曳範圍選取（Sprint 65）：跨段選取 → 刪除／套字元樣式／IME 替換
+  C12 樣式管理 UI（Sprint 71）：雙擊編輯／新增／刪除／另存模版、undo 同步面板
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -397,10 +398,56 @@ def main() -> int:
         "（皆 undo 可回）＋框拖曳不選取"
     )
 
+    # C12 樣式管理 UI（Sprint 71）：雙擊編輯對話框、新增／刪除、另存模版、undo 同步面板
+    from cjkfolio.styles import load_template as load_template_file
+    from editor.style_panel import StyleEditDialog
+
+    BODY12 = "內文-明體直排"
+    win12 = EditorWindow(str(DOC))
+    n_para_items = win12._style_panel.para_list.count()
+    dlg12 = StyleEditDialog(
+        "para", win12.template.paragraph_styles[BODY12],
+        lambda ch: win12._apply_style_definition("para", BODY12, ch))
+    dlg12._edits["size_pt"].setText("16")
+    dlg12._on_save()
+    assert win12.template.paragraph_styles[BODY12].size_pt == 16.0, "對話框編輯未套用"
+    dlg12b = StyleEditDialog(
+        "para", win12.template.paragraph_styles[BODY12],
+        lambda ch: win12._apply_style_definition("para", BODY12, ch))
+    dlg12b._edits["size_pt"].setText("十六")
+    dlg12b._on_save()
+    assert "無法套用" in dlg12b._notice.text(), "非法值未顯示於對話框警示列"
+    assert win12.template.paragraph_styles[BODY12].size_pt == 16.0, "非法值污染了現態"
+    item12 = win12._style_panel.para_list.findItems(
+        BODY12, Qt.MatchFlag.MatchExactly)[0]
+    win12._style_panel.para_list.setCurrentItem(item12)
+    win12._create_style("para", name="面板-自擬新樣式")
+    assert "面板-自擬新樣式" in win12.template.paragraph_styles, "選單新增未生效"
+    assert win12._style_panel.para_list.count() == n_para_items + 1, "面板清單未同步新增"
+    win12._remove_selected_style("para", name=BODY12)  # 文件使用中 → 快速失敗顯示訊息
+    assert BODY12 in win12.template.paragraph_styles
+    assert "無法刪除" in win12.statusBar().currentMessage()
+    win12._remove_selected_style("para", name="面板-自擬新樣式")
+    assert "面板-自擬新樣式" not in win12.template.paragraph_styles, "選單刪除未生效"
+    assert win12._style_panel.para_list.count() == n_para_items, "面板清單未同步刪除"
+    with tempfile.TemporaryDirectory() as td12:
+        tpath = Path(td12) / "面板另存.json"
+        win12._save_template_to(tpath)
+        assert load_template_file(tpath).paragraph_styles[BODY12].size_pt == 16.0, \
+            "另存模版未含樣式編輯結果"
+    for _ in range(3):  # 刪除 → 新增 → 編輯 依序回退
+        win12._on_undo()
+    assert win12.template.paragraph_styles[BODY12].size_pt == 11.5, "undo 未回樣式編輯前"
+    assert win12._style_panel.para_list.count() == n_para_items, "undo 後面板未同步"
+    print(
+        "C12 樣式管理 UI：雙擊編輯 16pt 全書重排（非法值留對話框警示）＋新增／刪除"
+        "（含文件使用中守門）＋面板清單同步＋另存模版重載 16pt＋三步 undo 回原"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
-        "＋樣式面板＋拖曳範圍選取（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
+        "＋樣式面板＋拖曳範圍選取＋樣式管理（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
     )
     return 0
 

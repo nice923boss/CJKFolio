@@ -1,38 +1,115 @@
-"""樣式面板（Sprint 64，§4.3「樣式面板：點選即套用」的 Phase 2 UI 半邊）。
+"""樣式面板（Sprint 64 點選套用＋Sprint 71 樣式管理，§4.3 的 Phase 2〜3 UI 半邊）。
 
 段落樣式：點選套用至游標所在段（session.apply_para_style，Sprint 46 核心）。
-字元樣式：點選套用至游標字（單字 DocRange，session.apply_style，Sprint 45 核心；
-拖曳範圍選取 UI 未建前的最小可用，範圍套用同一回呼可直接沿用）。
+字元樣式：點選套用至游標字或拖曳選取範圍（session.apply_style／apply_style_span）。
 「（清除字元樣式）」項＝套 None 回段落樣式預設。
-雙擊編輯樣式參數與樣式繼承屬 Phase 3 樣式系統（§4.3），本面板只做點選套用。
+雙擊樣式項＝開 StyleEditDialog 編輯樣式參數（session.update_*，改樣式即全書套用，
+Sprint 67〜68 核心）；新增／刪除／另存走 app「樣式」選單（Sprint 71）。
+樣式繼承的視覺化（樹狀清單）屬後續；本面板為平面清單。
 """
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QListWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from cjkfolio.styles import CHARACTER_STYLE_FIELDS, PARAGRAPH_STYLE_FIELDS
 
 CLEAR_CHAR_STYLE = "（清除字元樣式）"
 
 
-class StylePanel(QWidget):
-    """段落／字元樣式雙清單；點選回呼 on_para_style(name)／on_char_style(name|None)。"""
+class StyleEditDialog(QDialog):
+    """樣式參數編輯對話框（Sprint 71）：欄位取自 styles 欄位表，值預填現行效值。
 
-    def __init__(self, template, on_para_style, on_char_style, parent=None) -> None:
+    儲存時只回報「有改動的欄位」（changes dict，值為輸入字串，型別轉換由核心
+    style_editing 執行）；套用錯誤（型別／不可編輯）以內嵌警示列顯示（非 modal
+    訊息＝離屏可驗，同 AiConfigDialog 慣例）。
+    """
+
+    def __init__(self, kind: str, style, on_apply, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"編輯樣式：{style.name}")
+        self._style = style
+        self._on_apply = on_apply  # callable(changes: dict) -> 錯誤訊息 str 或 None
+        fields = PARAGRAPH_STYLE_FIELDS if kind == "para" else CHARACTER_STYLE_FIELDS
+        self._optional = {"source_font", "note"}
+        self._edits = {}
+
+        form = QFormLayout(self)
+        head = QLabel(f"{style.name}" + (f"（承 {style.based_on}）" if style.based_on else ""))
+        head.setStyleSheet("font-weight:bold;")
+        form.addRow(head)
+        self._notice = QLabel("")
+        self._notice.setStyleSheet("color:#b00; font-size:11px;")
+        self._notice.setWordWrap(True)
+        form.addRow(self._notice)
+        for fname in fields:
+            value = getattr(style, fname)
+            edit = QLineEdit("" if value is None else str(value))
+            self._edits[fname] = edit
+            form.addRow(fname, edit)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _changes(self) -> dict:
+        """收集有改動的欄位（與現行效值字串比較；選配欄位空字串＝清為 None）。"""
+        out = {}
+        for fname, edit in self._edits.items():
+            old = getattr(self._style, fname)
+            old_text = "" if old is None else str(old)
+            new_text = edit.text()
+            if new_text == old_text:
+                continue
+            if fname in self._optional and new_text == "":
+                out[fname] = None
+            else:
+                out[fname] = new_text
+        return out
+
+    def _on_save(self) -> None:
+        err = self._on_apply(self._changes())
+        if err:
+            self._notice.setText(err)  # 值型別錯誤等：留在對話框內修正
+            return
+        self.accept()
+
+
+class StylePanel(QWidget):
+    """段落／字元樣式雙清單；點選回呼 on_para_style(name)／on_char_style(name|None)；
+    雙擊回呼 on_edit_style(kind, name)（Sprint 71 編輯樣式參數）。"""
+
+    def __init__(self, template, on_para_style, on_char_style,
+                 on_edit_style=None, parent=None) -> None:
         super().__init__(parent)
         self._on_para_style = on_para_style
         self._on_char_style = on_char_style
+        self._on_edit_style = on_edit_style
 
         self.para_list = QListWidget()
-        self.para_list.addItems(sorted(template.paragraph_styles))
         self.para_list.itemClicked.connect(
             lambda item: self._on_para_style(item.text()))
         self.char_list = QListWidget()
-        self.char_list.addItem(CLEAR_CHAR_STYLE)
-        self.char_list.addItems(sorted(template.character_styles))
         self.char_list.itemClicked.connect(self._pick_char)
+        if on_edit_style is not None:
+            self.para_list.itemDoubleClicked.connect(
+                lambda item: self._on_edit_style("para", item.text()))
+            self.char_list.itemDoubleClicked.connect(
+                lambda item: self._edit_char(item))
+        self.refresh(template)
 
         box = QVBoxLayout(self)
         box.setContentsMargins(4, 4, 4, 4)
-        para_label = QLabel("段落樣式（點選套用至游標段）")
-        char_label = QLabel("字元樣式（點選套用至游標字）")
+        para_label = QLabel("段落樣式（點選套用至游標段；雙擊編輯）")
+        char_label = QLabel("字元樣式（點選套用至游標字／選取；雙擊編輯）")
         for w in (para_label, char_label):
             w.setStyleSheet("font-size:11px; color:#555;")
         box.addWidget(para_label)
@@ -40,9 +117,29 @@ class StylePanel(QWidget):
         box.addWidget(char_label)
         box.addWidget(self.char_list, 2)
 
+    def refresh(self, template) -> None:
+        """依現行模版重建清單（樣式新增／刪除／undo 後同步，Sprint 71）。"""
+        self.para_list.clear()
+        self.para_list.addItems(sorted(template.paragraph_styles))
+        self.char_list.clear()
+        self.char_list.addItem(CLEAR_CHAR_STYLE)
+        self.char_list.addItems(sorted(template.character_styles))
+
+    def selected_style(self, kind: str):
+        """目前選取的樣式名（無選取或選到清除項回 None）。"""
+        lst = self.para_list if kind == "para" else self.char_list
+        item = lst.currentItem()
+        if item is None or item.text() == CLEAR_CHAR_STYLE:
+            return None
+        return item.text()
+
     def _pick_char(self, item) -> None:
         name = item.text()
         self._on_char_style(None if name == CLEAR_CHAR_STYLE else name)
+
+    def _edit_char(self, item) -> None:
+        if item.text() != CLEAR_CHAR_STYLE:
+            self._on_edit_style("char", item.text())
 
     def pick_para_style(self, name: str) -> None:
         """程式化點選（離屏驗證用），與 itemClicked 同回呼。"""
