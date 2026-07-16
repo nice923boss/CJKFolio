@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.58.0（2026-07-17，Sprint 63）AI 設定面板 UI（§4.4 三欄位面板，金鑰紅線 UI 落實）
+
+### 新增
+
+- [實作]（離屏 smoke C9 驗）editor/ai_panel.py（79 行）＝`AiConfigDialog` 三欄位面板（Base URL／API Key／Model）：
+  - 載入既有本機設定帶入欄位；儲存走 cjkfolio.ai_config 資料面（單一事實來源），只寫 local/ai-config.local.json。
+  - 金鑰紅線 UI 落實：API Key 欄遮罩（QLineEdit Password）；載入／儲存錯誤以面板內嵌警示列顯示（非 modal＝離屏可驗，訊息不含欄位值）；statusBar 儲存訊息不含值。
+  - app.py「設定」選單接線（AI 設定…）。
+- Phase 2 §6 可自主收口項至此全數完成；剩 Owner hands-on 批次（GAPS #19）與拖曳範圍選取（#24）。
+
+### 驗證
+
+- 核心基線 **491 passed / 0 failed**（不變＝UI 層，資料面已於 Sprint 56 入基線）；typecheck EXIT=0（含 editor/*.py）；離屏 smoke C1〜C9 全過，新增 **C9**：tmp 路徑三欄位儲存 round-trip、既有值帶入、金鑰遮罩、壞檔空值開啟＋警示訊息不含欄位值。
+- 真實素材驗收（R5）：使用者既有本機設定檔實載（3/3 欄位非空、值零輸出＝金鑰紅線）。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：面板 UI 與資料面接線（離屏全回路驗證）。
+- [Shell]／待 Owner（GAPS #19）：真視窗面板外觀與輸入手感。
+- 註：面板僅管理設定；LLM 呼叫端（AI 樣式指派整合）屬 Phase 3（§4.4）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗開「設定 → AI 設定…」確認欄位帶入與遮罩；其餘同 v0.57.0 批次。
+
+### 下個 Sprint 預定範圍
+
+- 候選：圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先問 Owner 同意下載全字庫 TW-Kai 大包）、拖曳範圍選取 UI（真視窗批次）、Phase 3 開工首項（樣式新增／修改／繼承）。
+
 ## v0.57.0（2026-07-17，Sprint 62）畫布鍵盤編輯接線＋頁面切換（Backspace／Delete／Enter／PgUp・PgDn）
 
 ### 新增

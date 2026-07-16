@@ -262,9 +262,41 @@ def main() -> int:
         "PgUp／PgDn 換頁（含首末頁停留）"
     )
 
+    # C9 AI 設定面板（Sprint 63）：三欄位 round-trip、金鑰遮罩、壞檔警示不 crash
+    from PySide6.QtWidgets import QLineEdit
+
+    from cjkfolio.ai_config import load_ai_config
+    from editor.ai_panel import DEFAULT_CONFIG_PATH, AiConfigDialog
+
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ai-config.local.json"
+        dlg = AiConfigDialog(config_path=cfg_path)
+        assert dlg._api_key.echoMode() == QLineEdit.EchoMode.Password, "金鑰欄未遮罩"
+        assert dlg.current_config().base_url == "" and not dlg._notice.text()
+        dlg._base_url.setText("http://localhost:8000/v1")
+        dlg._api_key.setText("測試金鑰-abc")
+        dlg._model.setText("qwen3-32b")
+        dlg._on_save()
+        saved = load_ai_config(cfg_path)
+        assert (saved.base_url, saved.api_key, saved.model) == (
+            "http://localhost:8000/v1", "測試金鑰-abc", "qwen3-32b"), "面板儲存 round-trip 失敗"
+        dlg2 = AiConfigDialog(config_path=cfg_path)  # 既有值帶入
+        assert dlg2.current_config() == saved
+        cfg_path.write_text("{壞 JSON", encoding="utf-8")
+        dlg3 = AiConfigDialog(config_path=cfg_path)  # 壞檔＝空值開啟＋警示列（不 crash）
+        assert dlg3.current_config().api_key == ""
+        assert "無法解析" in dlg3._notice.text()
+        assert "測試金鑰" not in dlg3._notice.text(), "警示訊息不得回帶欄位值"
+    real_loaded = ""
+    if DEFAULT_CONFIG_PATH.exists():  # R5：使用者既有本機設定實載（值零輸出）
+        dlg4 = AiConfigDialog(config_path=DEFAULT_CONFIG_PATH)
+        cfg4 = dlg4.current_config()
+        real_loaded = f"；R5 真實設定檔載入欄位非空數＝{sum(bool(v) for v in (cfg4.base_url, cfg4.api_key, cfg4.model))}/3（值零輸出）"
+    print(f"C9 AI 設定面板：round-trip 三欄位全對、金鑰遮罩、壞檔警示不含值{real_loaded}")
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
-        "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）"
+        "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
         "（IME 直排組字與視覺對位待 Owner 真視窗）"
     )
     return 0

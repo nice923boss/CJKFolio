@@ -28,6 +28,7 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
+    QDialog,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
@@ -43,6 +44,7 @@ from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, EditSession  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
+from editor.ai_panel import AiConfigDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
     page_frame_placements,
@@ -124,9 +126,18 @@ class EditorWindow(QMainWindow):
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
 
+        ai_action = QAction("AI 設定…", self)
+        ai_action.triggered.connect(self._show_ai_config)
+        self.menuBar().addMenu("設定").addAction(ai_action)
+
         help_action = QAction("Owner IME 實測說明", self)
         help_action.triggered.connect(self._show_help)
         self.menuBar().addMenu("說明").addAction(help_action)
+
+    def _show_ai_config(self) -> None:
+        """開 AI 設定面板（§4.4 三欄位；儲存只到本機，statusBar 不含欄位值）。"""
+        if AiConfigDialog(self).exec() == QDialog.DialogCode.Accepted:
+            self.statusBar().showMessage("AI 設定已儲存（本機 local/ai-config.local.json）")
 
     @property
     def doc(self):
