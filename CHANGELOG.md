@@ -2,6 +2,39 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.57.0（2026-07-17，Sprint 62）畫布鍵盤編輯接線＋頁面切換（Backspace／Delete／Enter／PgUp・PgDn）
+
+### 新增
+
+- [實作]（離屏 smoke C8 驗）editor/app.py 畫布鍵盤編輯（GAPS #24 鍵盤子項關閉）：
+  - CanvasView 加 `keyPressEvent` 回呼；游標語意＝點選字格之後（與 IME 插入一致）。
+  - Backspace＝刪游標字、Delete＝刪其後一字（段末／框文末提示不刪）；body 與框皆走 session 入統一 undo 歷史；框刪空 ValueError 顯示訊息不 crash。
+  - Enter＝body 游標處分段（session.split）；文字框單段提示不分（設計行為）。
+  - PgUp／PgDn 換頁（首末頁停留、換頁清游標）；demo 自此可瀏覽多頁文件。
+  - 抽 `_follow_body_address`（IME 提交／undo redo／鍵盤刪除共用游標跟隨，消三處重複）。
+
+### 修正
+
+- PLAN 結構勘誤：Sprint 61 編輯時誤吞「- AI 設定面板」行首標籤（內容併入 Sprint 61 進度行），本版修復並以錨行掃描確認 §6 結構完整。
+
+### 驗證
+
+- 核心基線 **491 passed / 0 failed**（不變＝UI 接線層，核心 API 已於 Sprint 42／43／59／60 入基線）；typecheck EXIT=0（含 editor/*.py）；離屏 smoke C1〜C8 全過，新增 **C8**：body Backspace 刪字（undo 可回）、Enter 分段（段數 +1）、框 Backspace 刪鏈首字（undo 可回）、chapter-opening 兩頁樣張 PgDn／PgUp 換頁與首末頁停留。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：鍵盤編輯與換頁接線（離屏全回路驗證）。
+- [Shell]／待 Owner（GAPS #19）：真視窗鍵盤手感與焦點行為（畫布需先點選取得焦點）。
+- 剩（GAPS #24）：拖曳範圍選取 UI（真視窗工程）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗五項實測（說明選單已更新，含鍵盤編輯與換頁）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 候選：圖說與照片相對位置樣式化置放（真書 R1 量測）、目錄摘要層（需先問 Owner 同意下載全字庫 TW-Kai 大包）、拖曳範圍選取 UI（真視窗批次）。
+
 ## v0.56.0（2026-07-17，Sprint 61）app 真視窗接線批次（session＋IME 入框＋Ctrl+Z／Y）
 
 ### 新增

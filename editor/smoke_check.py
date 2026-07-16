@@ -23,8 +23,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # 必須在 Qt import 前
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtCore import QPointF  # noqa: E402
-from PySide6.QtGui import QTransform  # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QKeyEvent, QTransform  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QGraphicsPixmapItem,
@@ -222,6 +222,45 @@ def main() -> int:
             "C7 app session 接線：IME 提交入框（游標跨框跟隨）＋"
             "undo／redo 統一歷史（body、框依序回退）"
         )
+
+        # C8 畫布鍵盤編輯（Sprint 62）：Backspace 刪字（body／框）、Enter 分段
+        def key_event(k):
+            return QKeyEvent(QEvent.Type.KeyPress, k, Qt.KeyboardModifier.NoModifier)
+
+        body_key2 = next(
+            k for k in fwin._item_by_key
+            if k and k[0] != "frame"
+            and fwin.page.placed[k[0]].line.cells[k[1]].kind == "cjk")
+        fwin._on_pick(fwin._item_by_key[body_key2])
+        hit8 = resolve_hit(fwin.doc, fwin.page, *body_key2)
+        before_len = len(fwin.doc.paragraphs[hit8.para_idx].text)
+        assert fwin._on_key(key_event(Qt.Key.Key_Backspace)), "Backspace 未被處理"
+        assert len(fwin.doc.paragraphs[hit8.para_idx].text) == before_len - 1, \
+            "Backspace 未刪 body 游標字"
+        fwin._on_undo()
+        n_paras = len(fwin.doc.paragraphs)
+        fwin._on_pick(fwin._item_by_key[body_key2])
+        assert fwin._on_key(key_event(Qt.Key.Key_Return)), "Enter 未被處理"
+        assert len(fwin.doc.paragraphs) == n_paras + 1, "Enter 未分段"
+        fwin._on_undo()
+        fwin._on_pick(fwin._item_by_key[("frame", 0, 0, 0)])  # 鏈首首字「安」
+        head_before = fwin.doc.text_frames[0].text
+        assert fwin._on_key(key_event(Qt.Key.Key_Backspace)), "框 Backspace 未被處理"
+        assert fwin.doc.text_frames[0].text == head_before[1:], "Backspace 未刪框游標字"
+        fwin._on_undo()
+        assert fwin.doc.text_frames[0].text == head_before
+    win2 = EditorWindow(str(ROOT / "samples" / "chapter-opening.doc.json"))  # 2 頁樣張
+    assert win2.page.number == 1 and len(win2.layout_result.pages) == 2
+    win2._on_key(key_event(Qt.Key.Key_PageDown))
+    assert win2.page.number == 2, "PgDn 未換頁"
+    win2._on_key(key_event(Qt.Key.Key_PageDown))
+    assert win2.page.number == 2, "末頁 PgDn 應停留"
+    win2._on_key(key_event(Qt.Key.Key_PageUp))
+    assert win2.page.number == 1, "PgUp 未回頁"
+    print(
+        "C8 畫布鍵盤編輯：Backspace 刪字（body＋框，undo 可回）、Enter 分段、"
+        "PgUp／PgDn 換頁（含首末頁停留）"
+    )
 
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"

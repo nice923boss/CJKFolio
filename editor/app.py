@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -39,7 +40,7 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from cjkfolio.document import load_document  # noqa: E402
-from cjkfolio.editing import DocCursor, EditSession  # noqa: E402
+from cjkfolio.editing import DocCursor, DocRange, EditSession  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.canvas import (  # noqa: E402
@@ -56,11 +57,13 @@ AUTHOR = "製作者：黃政文"
 
 
 class CanvasView(QGraphicsView):
-    """點畫布 → 反查最上層帶 provenance 的字格 item，回呼 on_pick(item)。"""
+    """點畫布 → 反查最上層帶 provenance 的字格 item，回呼 on_pick(item)；
+    鍵盤事件（Backspace／Delete／Enter／PgUp／PgDn）回呼 on_key(event)（Sprint 62）。"""
 
-    def __init__(self, scene: QGraphicsScene, on_pick) -> None:
+    def __init__(self, scene: QGraphicsScene, on_pick, on_key=None) -> None:
         super().__init__(scene)
         self._on_pick = on_pick
+        self._on_key = on_key
 
     def mousePressEvent(self, event) -> None:
         pt = self.mapToScene(event.position().toPoint())
@@ -69,6 +72,11 @@ class CanvasView(QGraphicsView):
                 self._on_pick(item)
                 break
         super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        if self._on_key is not None and self._on_key(event):
+            return
+        super().keyPressEvent(event)
 
 
 class EditorWindow(QMainWindow):
@@ -84,7 +92,7 @@ class EditorWindow(QMainWindow):
         self._highlight = None
 
         self.scene, self._item_by_key = self._make_scene()
-        self.view = CanvasView(self.scene, self._on_pick)
+        self.view = CanvasView(self.scene, self._on_pick, self._on_key)
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
@@ -230,16 +238,8 @@ class EditorWindow(QMainWindow):
             self.statusBar().showMessage("此字格無文件游標（拉丁串／空格），無法定位插入")
             return
         res = self.session.insert(DocCursor(hit.para_idx, hit.span[1]), text)
-        if res.address is not None:
-            self.page = self.layout_result.pages[res.address.page_number - 1]
-            self.cursor = (res.address.placed_idx, res.address.cell_idx)
-        else:
-            self.page = self.layout_result.pages[0]
-            self.cursor = None
-        self._rebuild()
+        self._follow_body_address(res)
         self._ime.clear()
-        if self.cursor is not None and self.cursor in self._item_by_key:
-            self._draw_highlight(self._item_by_key[self.cursor].rect())
         self.statusBar().showMessage(
             f"已插入「{text}」→ reflow：{len(self.layout_result.pages)} 頁、"
             f"{len(self.layout_result.violations)} 禁則違規；"
@@ -273,6 +273,19 @@ class EditorWindow(QMainWindow):
         if self.frame_cursor is not None and self.frame_cursor in self._item_by_key:
             self._draw_highlight(self._item_by_key[self.frame_cursor].rect())
 
+    def _follow_body_address(self, res) -> None:
+        """body 編輯／還原後：重繪並讓 body 游標與高亮跟隨 address。"""
+        if res.address is not None:
+            self.page = self.layout_result.pages[res.address.page_number - 1]
+            self.cursor = (res.address.placed_idx, res.address.cell_idx)
+        else:
+            self.page = self.layout_result.pages[0]
+            self.cursor = None
+        self.frame_cursor = None
+        self._rebuild()
+        if self.cursor is not None and self.cursor in self._item_by_key:
+            self._draw_highlight(self._item_by_key[self.cursor].rect())
+
     def _on_undo(self) -> None:
         self._apply_history(self.session.undo(), "復原")
 
@@ -289,18 +302,94 @@ class EditorWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"已{verb} → 框{res.cursor.source_idx} 字位{res.cursor.caret}")
             return
-        if res.address is not None:
-            self.page = self.layout_result.pages[res.address.page_number - 1]
-            self.cursor = (res.address.placed_idx, res.address.cell_idx)
-        else:
-            self.page = self.layout_result.pages[0]
-            self.cursor = None
-        self.frame_cursor = None
-        self._rebuild()
-        if self.cursor is not None and self.cursor in self._item_by_key:
-            self._draw_highlight(self._item_by_key[self.cursor].rect())
+        self._follow_body_address(res)
         self.statusBar().showMessage(
             f"已{verb} → 段{res.cursor.para_idx} 字位{res.cursor.caret}")
+
+    def _on_key(self, event) -> bool:
+        """畫布鍵盤事件（Sprint 62）：Backspace／Delete 刪字、Enter 分段、PgUp／PgDn 換頁。
+
+        游標語意＝點選字格之後（與 IME 插入同）：Backspace 刪游標字、Delete 刪其後一字。
+        回 True＝已處理（未處理交回 QGraphicsView 預設行為）。"""
+        key = event.key()
+        if key in (Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
+            self._turn_page(1 if key == Qt.Key.Key_PageDown else -1)
+            return True
+        if key == Qt.Key.Key_Backspace:
+            return self._delete_at_cursor(before=True)
+        if key == Qt.Key.Key_Delete:
+            return self._delete_at_cursor(before=False)
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            return self._split_at_cursor()
+        return False
+
+    def _turn_page(self, step: int) -> None:
+        """PgUp／PgDn 換顯示頁（版面頁號連續，index＝number−1）；換頁清游標。"""
+        pages = self.layout_result.pages
+        new_idx = max(0, min(len(pages) - 1, self.page.number - 1 + step))
+        if new_idx == self.page.number - 1:
+            self.statusBar().showMessage(
+                f"已在{'末' if step > 0 else '首'}頁（{self.page.number}/{len(pages)}）")
+            return
+        self.page = pages[new_idx]
+        self.cursor = None
+        self.frame_cursor = None
+        self._rebuild()
+        self.statusBar().showMessage(f"頁 {self.page.number}/{len(pages)}")
+
+    def _delete_at_cursor(self, before: bool) -> bool:
+        """Backspace（刪游標字）／Delete（刪其後一字）：body 與框皆走 session 入歷史。"""
+        if self.frame_cursor is not None:
+            hit = self._frame_hit(*self.frame_cursor[1:])
+            if hit.span is None:
+                return False
+            s, e = hit.span
+            src_len = len(self.doc.text_frames[hit.source_idx].text)
+            start, end = (s, e) if before else (e, min(e + 1, src_len))
+            if start >= end:
+                self.statusBar().showMessage("已在框文末，無後一字可刪")
+                return True
+            try:
+                res = self.session.delete_frame(hit.source_idx, start, end)
+            except ValueError as err:  # 框不可刪空（document@2 不變式）
+                self.statusBar().showMessage(f"無法刪除：{err}")
+                return True
+            self._follow_frame_address(res)
+            self.statusBar().showMessage(
+                f"已刪框{hit.source_idx} 字位 [{start}, {end})")
+            return True
+        if self.cursor is None:
+            return False
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None or hit.span is None:
+            return False
+        s, e = hit.span
+        para_len = len(self.doc.paragraphs[hit.para_idx].text)
+        start, end = (s, e) if before else (e, min(e + 1, para_len))
+        if start >= end:
+            self.statusBar().showMessage("已在段末，無後一字可刪")
+            return True
+        res = self.session.delete(DocRange(hit.para_idx, start, end))
+        self._follow_body_address(res)
+        self.statusBar().showMessage(
+            f"已刪 段{hit.para_idx} 字位 [{start}, {end}) → 游標 字位{res.cursor.caret}")
+        return True
+
+    def _split_at_cursor(self) -> bool:
+        """Enter＝body 游標處分段（session.split）；文字框為單段不分段。"""
+        if self.frame_cursor is not None:
+            self.statusBar().showMessage("文字框為單段，不分段（Enter 僅 body）")
+            return True
+        if self.cursor is None:
+            return False
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None or hit.span is None:
+            return False
+        res = self.session.split(DocCursor(hit.para_idx, hit.span[1]))
+        self._follow_body_address(res)
+        self.statusBar().showMessage(
+            f"已分段 → 段{res.cursor.para_idx} 起（共 {len(self.doc.paragraphs)} 段）")
+        return True
 
     def _show_help(self) -> None:
         QMessageBox.information(
@@ -316,7 +405,9 @@ class EditorWindow(QMainWindow):
             "     確認頁面即時 reflow、游標跟到剛插入的字。\n"
             "  2. 點文字框字格（如圖說），組字按 Enter，確認文字入框並沿串接鏈流動。\n"
             "  3. Ctrl+Z／Ctrl+Y 連按，確認 body 與框編輯依序回退重做、高亮跟隨。\n"
-            "  4. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
+            "  4. 點畫布後按 Backspace（刪游標字）／Delete（刪後一字）／Enter（body 分段）、\n"
+            "     PgUp／PgDn 換頁，確認刪字 reflow 與換頁顯示。\n"
+            "  5. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
             "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、拖曳與範圍選取 UI。",
