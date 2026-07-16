@@ -30,27 +30,31 @@ def open_grayscale(path) -> Image.Image:
         raise ImageError(f"讀取圖檔失敗 {path}：{e}") from e
 
 
-def resolve_placed_images(doc, master, n_pages: int, base_dir=None) -> dict:
+def resolve_placed_images(doc, masters_by_page: dict, base_dir=None) -> dict:
     """把 doc.images 解析為 {版面頁號: (解析後路徑字串, PIL "L" 影像)}，供兩後端共用。
 
-    - 主版無 figure 保留區但文件有置入圖 → 快速失敗（無置入標的）
-    - page 超出排版頁數（1..n_pages）→ 快速失敗
+    masters_by_page＝{版面頁號: MasterPage}（節式主版指派後逐頁主版，Sprint 51）：
+    - page 超出排版頁數（不在 masters_by_page）→ 快速失敗
+    - 圖落點頁的主版無 figure 保留區 → 快速失敗（無置入標的）
     - 路徑相對 base_dir 解析（None＝相對 CWD）；同路徑只載一次（PDF 端 XObject 去重鍵）
 
     v1：每頁 figure 保留區置一張圖（document 已驗 page 不重複）。
     """
     if not doc.images:
         return {}
-    if master.figure is None:
-        raise ImageError(
-            f"文件有 {len(doc.images)} 張置入圖，但主版「{master.name}」無 figure 保留區配置"
-        )
     base = Path(base_dir) if base_dir is not None else Path.cwd()
     cache: dict = {}
     out: dict = {}
     for im in doc.images:
-        if not (1 <= im.page <= n_pages):
-            raise ImageError(f"置入圖 page {im.page} 超出排版頁數（共 {n_pages} 頁）")
+        master = masters_by_page.get(im.page)
+        if master is None:
+            raise ImageError(
+                f"置入圖 page {im.page} 超出排版頁數（共 {len(masters_by_page)} 頁）"
+            )
+        if master.figure is None:
+            raise ImageError(
+                f"置入圖 page {im.page} 的主版「{master.name}」無 figure 保留區配置"
+            )
         resolved = str((base / im.path).resolve())
         if resolved not in cache:
             cache[resolved] = open_grayscale(base / im.path)

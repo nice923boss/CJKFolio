@@ -2,6 +2,43 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.46.0（2026-07-17，Sprint 51）Phase 2 主版指派核心（節式多主版文件：一份文件部扉＋內文跨主版成書）
+
+### 新增
+
+- [實作] 節式主版指派（Owner「最複雜架構先做」下，§6 Phase 2「主版指派」，Sprint 50 預定三選項取最複雜架構項；對標 InDesign 主版體系，採內容錨定節式而非頁鍵式，PLAN §10 Sprint 51 決議）：
+  - `cjkfolio/document.py`：document@2 相容擴充 `Paragraph.master`（節首標記選配欄位：自本段起新頁並改用該主版，同名亦強制分頁＝顯式分頁原語；@1 使用即拒、非空字串驗證、序列化保留）；`doc.master` 降為首節預設主版（無標記文件＝單節，行為與現況完全一致）。
+  - `cjkfolio/layout.py`：`_sections` 依節首標記切節、每節獨立 `flow_pages`（用該節主版網格，樣式行容量逐節換算；flow_pages 本體不動）、頁號跨節連續、節間段後空槽歸零（承跨頁歸零慣例）、`first_para_continues` 僅首節；`LayoutPage.master` 載體、未知主版快速失敗；`_toc_marks`／`_rule_breaks`／齊行統計改逐頁主版。
+  - 兩後端逐頁主版：render `render_page`／pdf_writer `build_page` 依 `page.master` 解析主版，頁腳／frame／rule／figure 逐頁 gate（B 部扉頁自然無頁腳、A 頁頁碼書眉照常）。
+  - `cjkfolio/editing.py`：七類操作（insert／delete／replace／apply_char_style／change_paragraph_style／split／merge，含 span 系列共用路徑）保留 `master`；split head 承節首身分（同 page_no 慣例）tail None、merge 前段存活（節首標記隨併入消失＝節合併語意）。
+  - `editor/canvas.py`：互動層字格幾何依該頁主版（與 render 同源）。
+  - 樣張 `samples/chapter-opening.doc.json`（自擬章首文件）：單一文件頁 1＝B 部扉＋頁 2＝A 內文。
+
+### 變更
+
+- `cjkfolio/images.py` `resolve_placed_images` 簽名改 `(doc, masters_by_page, base_dir)`（{版面頁號: MasterPage}，逐頁 figure 驗證）：G 節照片頁與 A 節內文同文件可置入，圖落無 figure 頁快速失敗（呼叫端 render／pdf_writer／tests 同步更新）。
+- `LayoutPage` 註解勘正：「奇數＝右頁」為 Sprint 22 側別勘誤前殘留（正確為偶數書頁＝右頁），改為中性描述（版面頁號；書頁號另計）。
+
+### 驗證
+
+- 核心基線 `pytest spikes tests` **413 passed / 0 failed**（393→413，+20，新檔 tests/test_master_assign.py：document 欄位 3／layout 節式 8／editing 保留 4／兩後端 5）；typecheck EXIT=0；editor 離屏 smoke_check EXIT=0。
+- 真實素材驗收（R5，自擬章首樣張，非參考書內容）：render 兩頁 PNG 親 Read 目檢（頁 1 B 部扉：篇序小標＋大標兩直行、大標首字頂低 6.02pt 特徵、無頁腳；頁 2 A 內文：3 段縮排段間正確、句逗置中、頁腳頁碼 2＋書眉「整理練習」＝書頁 2 偶右頁側別）；export PDF preflight **12/12 全綠**、禁則 0 違規。
+- Gate 4 獨立驗證：PyMuPDF rawdict 字墨 cx 逐頁比對（頁 1 對 B 行軸 228.49／194.12〔Sprint 20 A 級量測值直接進斷言〕、頁 2 三行逐槽對 A 行軸，abs≤0.5pt）；頁腳 gate 以 PDF 文字抽取驗（B 頁無頁碼書眉、A 頁有）；直排逐字抽取逐字檢查。繁中標點 grep 無破折號。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]（基線＋離屏＋R5 驗）：節式主版指派全管線（document／layout／兩後端／images／editing／canvas）、單一文件多主版成書、逐頁頁腳與 figure gate。
+- [Shell]／待 Owner（GAPS #30／#19，離屏測不了）：選頁套主版的頁面面板 UI 未接線（app.py 真視窗工程）。
+- v1 已知限制（GAPS #30）：節式內容錨定（頁鍵式指派屬編輯 UI）；直排橫排仍不可混一文件（F 版權頁分文件）；md／txt 匯入不產節首標記（章節結構屬 Phase 3）；節首＝強制分頁（頁級幾何本質，與 InDesign 同語意）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 真視窗多主版文件的畫布切頁與視覺對位（GAPS #19 批次）；Spike 1 對比圖抽檢（#10）、斷行逐行一致率（#23）Owner-hands-on。
+
+### 下個 Sprint 預定範圍
+
+- 純邏輯離屏可驗項擇一：全書組裝管線（多章文件串接＝部扉＋內文＋目錄跨節成冊，直向產出全書級 PDF）、圖說與照片相對位置樣式化置放、或多圖／任意矩形置入模型。app.py 真視窗 UI 接線（含主版面板）待 Owner 真視窗回報批次。
+
 ## v0.45.0（2026-07-12，Sprint 50）Phase 2 圖片置入（灰階照片置入 G 圖文版 figure 保留區，兩後端 DeviceGray）
 
 ### 新增

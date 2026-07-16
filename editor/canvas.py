@@ -110,7 +110,8 @@ def build_page_scene(
     base.setZValue(0)
     scene.addItem(base)
 
-    master = template.masters[doc.master]
+    # 逐頁主版（節式主版指派，Sprint 51）：互動層幾何依該頁主版，與 render 同源
+    master = template.masters[getattr(page, "master", "") or doc.master]
     items: list = []
     for pi, ci, x, y, w, h, _kind in iter_cell_rects(
         template, master, page, book_number, scale

@@ -33,11 +33,14 @@ class Paragraph:
     """不變式：text ＝ 全段字面 ＝ runs 文字串接（__post_init__ 正規化）。
 
     page_no：目錄條目頁碼（選配，僅數字字串；@2 相容擴充，無欄位照載）。
+    master：節首標記（選配，@2 相容擴充）：自本段起新頁並改用該主版
+    （節式主版指派，Sprint 51）；同名主版亦強制分頁。None＝承前節。
     """
     text: str = ""
     style: str = ""
     runs: tuple = ()
     page_no: Optional[str] = None
+    master: Optional[str] = None
 
     def __post_init__(self):
         if self.runs:
@@ -114,13 +117,19 @@ def document_from_dict(data) -> "Document":
         page_no = p.get("page_no")
         if page_no is not None and not (isinstance(page_no, str) and page_no.isdigit()):
             raise DocumentError(f"paragraphs[{i}] page_no 需為數字字串，得到 {page_no!r}")
+        master = p.get("master")
+        if master is not None:
+            if schema == SCHEMA_V1:
+                raise DocumentError(f"paragraphs[{i}] 使用 master 需 schema document@2")
+            if not (isinstance(master, str) and master):
+                raise DocumentError(f"paragraphs[{i}] master 需為非空字串，得到 {master!r}")
         if "runs" in p:
             if schema == SCHEMA_V1:
                 raise DocumentError(f"paragraphs[{i}] 使用 runs 需 schema document@2")
             paragraphs.append(Paragraph(style=p["style"], runs=_runs_from_list(p["runs"], i),
-                                        page_no=page_no))
+                                        page_no=page_no, master=master))
         elif isinstance(p.get("text"), str):
-            paragraphs.append(Paragraph(p["text"], p["style"], page_no=page_no))
+            paragraphs.append(Paragraph(p["text"], p["style"], page_no=page_no, master=master))
         else:
             raise DocumentError(f"paragraphs[{i}] 需含 text 字串或 runs 陣列")
     raw_images = data.get("images", [])
@@ -140,7 +149,7 @@ def document_from_dict(data) -> "Document":
 class Document:
     title: str
     template: str  # 模版 id（檔名 stem）
-    master: str    # 主版名，v1 全文件單一主版
+    master: str    # 首節預設主版名（段落 master 節首標記起新節，Sprint 51）
     paragraphs: tuple
     language: str = "zh-TW"
     images: tuple = ()  # PlacedImage 序列（@2 相容擴充；置入主版 figure 保留區）
@@ -157,6 +166,8 @@ def _paragraph_to_dict(p: Paragraph) -> dict:
         out = {"style": p.style, "runs": runs}
     if p.page_no is not None:
         out["page_no"] = p.page_no
+    if p.master is not None:
+        out["master"] = p.master
     return out
 
 

@@ -622,6 +622,8 @@ class _PdfPageWriter:
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True, toc_marks=(), rule_breaks=(),
                    image=None) -> bytes:
+        if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
+            self.master = self.template.masters[page.master]
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
         content = _Content()
@@ -687,8 +689,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         )
     layout = layout_document(doc, template)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir)
+    masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
-        doc, writer.master, len(layout.pages), base_dir=image_base_dir)
+        doc, masters_by_page, base_dir=image_base_dir)
     selected = list(layout.pages)
     if pages is not None:
         wanted = set(pages)
@@ -700,7 +703,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     for page in selected:
         book_number = page.number + first_page - 1  # 書頁號（鏡像與頁腳奇偶依此）
         texts = None
-        if footer and writer.master.footer:
+        if footer and masters_by_page[page.number].footer:  # 頁腳依該頁主版 gate
             texts = {"number": str(book_number), "title": doc.title}
         contents.append(writer.build_page(
             page, footer_texts=texts, book_number=book_number, vertical=layout.vertical,

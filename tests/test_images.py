@@ -187,14 +187,14 @@ def test_resolve_no_figure_master_raises(tmp_path, template):
                    paragraphs=(Paragraph(text="內文", style="內文-明體直排"),),
                    images=(PlacedImage(path="g.png", page=1),))
     with pytest.raises(ImageError):
-        resolve_placed_images(doc, template.masters["A-內文版"], 1, base_dir=tmp_path)
+        resolve_placed_images(doc, {1: template.masters["A-內文版"]}, base_dir=tmp_path)
 
 
 def test_resolve_page_out_of_range_raises(tmp_path, template):
     _make_image(tmp_path / "g.png")
     doc = _figure_doc("g.png", page=5)
     with pytest.raises(ImageError):
-        resolve_placed_images(doc, template.masters[G_MASTER], 1, base_dir=tmp_path)
+        resolve_placed_images(doc, {1: template.masters[G_MASTER]}, base_dir=tmp_path)
 
 
 def test_resolve_dedup_same_path_shared_object(tmp_path, template):
@@ -202,14 +202,15 @@ def test_resolve_dedup_same_path_shared_object(tmp_path, template):
     doc = Document(title="t", template="x", master=G_MASTER,
                    paragraphs=(Paragraph(text="圖說", style="圖說-辰宇落雁"),),
                    images=(PlacedImage(path="same.png", page=1), PlacedImage(path="same.png", page=2)))
-    resolved = resolve_placed_images(doc, template.masters[G_MASTER], 2, base_dir=tmp_path)
+    g = template.masters[G_MASTER]
+    resolved = resolve_placed_images(doc, {1: g, 2: g}, base_dir=tmp_path)
     assert resolved[1][0] == resolved[2][0]  # 同解析路徑
     assert resolved[1][1] is resolved[2][1]  # 同 PIL 物件（cache）
 
 
 def test_resolve_empty_when_no_images(template):
     doc = Document(title="t", template="x", master=G_MASTER, paragraphs=())
-    assert resolve_placed_images(doc, template.masters[G_MASTER], 0) == {}
+    assert resolve_placed_images(doc, {}) == {}
 
 
 # ---------- EmbeddedImage（PDF XObject 形態單元） ----------

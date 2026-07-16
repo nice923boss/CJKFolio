@@ -78,8 +78,9 @@ def line_justified_advance(line, advance_pt: float):
 
 @dataclass(frozen=True)
 class LayoutPage:
-    number: int  # 1 起算；奇數＝右頁
+    number: int  # 1 起算（版面頁號；書頁號另計）
     placed: tuple
+    master: str = ""  # 本頁主版名（節式主版指派，Sprint 51；layout_document 必填）
 
 
 @dataclass(frozen=True)
@@ -122,17 +123,18 @@ class LayoutResult:
     rule_breaks: dict = field(default_factory=dict)  # page number → (RuleBreak, ...)
 
 
-def _toc_marks(pages, template: Template, master) -> tuple:
-    """依段末行的 page_no 產出 TocEntryMark（幾何確定性推導）。
+def _toc_marks(pages, template: Template) -> tuple:
+    """依段末行的 page_no 產出 TocEntryMark（幾何確定性推導，逐頁主版）。
 
-    回傳 ({page_number: (mark, ...)}, [違規訊息])；帶 page_no 但主版無 toc 配置
-    時快速失敗（系統邊界）。
+    回傳 ({page_number: (mark, ...)}, [違規訊息])；帶 page_no 但該頁主版無 toc
+    配置時快速失敗（系統邊界）。
     """
     marks: dict = {}
     violations: list = []
-    grid = master.grid
-    top_pt = master.margins.top_mm * PT_PER_MM
     for page in pages:
+        master = template.masters[page.master]
+        grid = master.grid
+        top_pt = master.margins.top_mm * PT_PER_MM
         for pl in page.placed:
             if not pl.page_no:
                 continue
@@ -171,18 +173,19 @@ def _toc_marks(pages, template: Template, master) -> tuple:
     return {n: tuple(ms) for n, ms in marks.items()}, violations
 
 
-def _rule_breaks(pages, template: Template, master) -> dict:
+def _rule_breaks(pages, template: Template) -> dict:
     """穿線行（行首字頂 y 高於虛線 y）→ RuleBreak（篇名嵌線斷開，Sprint 21）。
 
     行首字頂 y＝天頭＋start_slot×字距（縮排偏移維持網格字距，同 render 幾何）；
-    head_offset 縮退已含在 start_slot 內。無 rule 配置的主版回空。
+    head_offset 縮退已含在 start_slot 內。逐頁主版；無 rule 配置的頁回空。
     """
-    if master.rule is None:
-        return {}
-    grid = master.grid
-    top_pt = master.margins.top_mm * PT_PER_MM
     breaks: dict = {}
     for page in pages:
+        master = template.masters[page.master]
+        if master.rule is None:
+            continue
+        grid = master.grid
+        top_pt = master.margins.top_mm * PT_PER_MM
         for pl in page.placed:
             style = template.paragraph_styles[pl.style]
             # 穿線判定跟隨 body 實際位置：行首字頂含 lead_offset_pt（Sprint 30），
@@ -195,42 +198,68 @@ def _rule_breaks(pages, template: Template, master) -> dict:
     return {n: tuple(bs) for n, bs in breaks.items()}
 
 
-def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
-    master = template.masters[doc.master]
-    grid = master.grid
-    vertical = page_is_vertical(doc, template)
-    specs = []
+def _sections(doc) -> list:
+    """依 Paragraph.master 節首標記切節：回傳 [(master_name, lo, hi), ...]（半開段區間）。
+
+    節式主版指派（Sprint 51）：段帶 master＝自該段起新頁並改用該主版（同名亦分頁）；
+    首節（無標記前的段落）用 doc.master。段 0 帶 master 時直接蓋過預設（無空首節）。
+    """
+    sections: list = []
+    start, current = 0, doc.master
     for i, p in enumerate(doc.paragraphs):
-        if p.style not in template.paragraph_styles:
-            raise KeyError(f"文件引用未知段落樣式：{p.style}")
-        for r in p.runs:
-            if r.char_style and r.char_style not in template.character_styles:
-                raise KeyError(f"文件引用未知字元樣式：{r.char_style}")
-        st = template.paragraph_styles[p.style]
-        specs.append(
-            ParagraphSpec(
-                text=p.text,
-                style=p.style,
-                indent=st.indent_chars,
-                gap_after=st.para_gap_slots,
-                chars_per_line=style_line_capacity(st, grid),
-                line_slots=style_line_slots(st, grid),
-                runs=tuple((r.text, r.char_style) for r in p.runs),
-                page_no=p.page_no,
-                para_idx=i,
-                head_offset=st.head_offset_chars,
-                lead_offset_pt=st.lead_offset_pt,
+        if p.master is None:
+            continue
+        if i > start:
+            sections.append((current, start, i))
+        start, current = i, p.master
+    sections.append((current, start, len(doc.paragraphs)))
+    return sections
+
+
+def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
+    vertical = page_is_vertical(doc, template)
+    pages: list = []
+    for si, (master_name, lo, hi) in enumerate(_sections(doc)):
+        if master_name not in template.masters:
+            raise KeyError(f"文件引用未知主版：{master_name}")
+        grid = template.masters[master_name].grid
+        specs = []
+        for i in range(lo, hi):
+            p = doc.paragraphs[i]
+            if p.style not in template.paragraph_styles:
+                raise KeyError(f"文件引用未知段落樣式：{p.style}")
+            for r in p.runs:
+                if r.char_style and r.char_style not in template.character_styles:
+                    raise KeyError(f"文件引用未知字元樣式：{r.char_style}")
+            st = template.paragraph_styles[p.style]
+            specs.append(
+                ParagraphSpec(
+                    text=p.text,
+                    style=p.style,
+                    indent=st.indent_chars,
+                    gap_after=st.para_gap_slots,
+                    chars_per_line=style_line_capacity(st, grid),
+                    line_slots=style_line_slots(st, grid),
+                    runs=tuple((r.text, r.char_style) for r in p.runs),
+                    page_no=p.page_no,
+                    para_idx=i,
+                    head_offset=st.head_offset_chars,
+                    lead_offset_pt=st.lead_offset_pt,
+                )
             )
+        # 每節獨立流排（節首＝強制起新頁）；頁號跨節連續。節間段後空槽自然歸零
+        # （承「段後空槽跨頁歸零」慣例）；first_para_continues 僅首節有意義。
+        raw_pages = flow_pages(
+            specs, grid.chars_per_line, grid.lines_per_page,
+            first_para_continues=first_para_continues and si == 0, vertical=vertical,
         )
-    raw_pages = flow_pages(
-        specs, grid.chars_per_line, grid.lines_per_page,
-        first_para_continues=first_para_continues, vertical=vertical,
-    )
-    pages = tuple(LayoutPage(i + 1, tuple(page)) for i, page in enumerate(raw_pages))
+        for page in raw_pages:
+            pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name))
+    pages = tuple(pages)
     violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
-    toc_marks, toc_violations = _toc_marks(pages, template, master)
+    toc_marks, toc_violations = _toc_marks(pages, template)
     violations += toc_violations
-    rule_breaks = _rule_breaks(pages, template, master) if vertical else {}
+    rule_breaks = _rule_breaks(pages, template) if vertical else {}
     stats = {"squeezed": 0, "stretched": 0, "beyond": 0}
     if vertical:  # 齊行為直排內文特徵；橫排版權頁短行左齊、不字距縮放
         for page in pages:

@@ -73,7 +73,8 @@ def insert_text(doc: Document, cursor: DocCursor, text: str) -> Document:
         base = end
     else:  # caret ≤ len(text) 必落某 run，理論不可達；防禦性附加末 run
         runs[-1] = Run(runs[-1].text + text, runs[-1].char_style)
-    new_para = Paragraph(style=para.style, runs=tuple(runs), page_no=para.page_no)
+    new_para = Paragraph(style=para.style, runs=tuple(runs), page_no=para.page_no,
+                         master=para.master)
     new_paras = (
         doc.paragraphs[: cursor.para_idx]
         + (new_para,)
@@ -162,7 +163,8 @@ def delete_range(doc: Document, drange: DocRange) -> Document:
         if kept:
             new_runs.append(Run(kept, r.char_style))
         base += len(r.text)
-    new_para = Paragraph(style=para.style, runs=tuple(new_runs), page_no=para.page_no)
+    new_para = Paragraph(style=para.style, runs=tuple(new_runs), page_no=para.page_no,
+                         master=para.master)
     new_paras = (
         doc.paragraphs[: drange.para_idx]
         + (new_para,)
@@ -274,7 +276,8 @@ def delete_span(doc: Document, span: DocSpan) -> Document:
     merged_runs = _slice_runs(para_a.runs, 0, span.start.caret) + _slice_runs(
         para_b.runs, span.end.caret, len(para_b.text)
     )
-    merged = Paragraph(style=para_a.style, runs=tuple(merged_runs), page_no=para_a.page_no)
+    merged = Paragraph(style=para_a.style, runs=tuple(merged_runs), page_no=para_a.page_no,
+                       master=para_a.master)
     new_paras = doc.paragraphs[:a] + (merged,) + doc.paragraphs[b + 1 :]
     return replace(doc, paragraphs=new_paras)
 
@@ -352,7 +355,8 @@ def apply_char_style(
             else:
                 new_runs.append(Run(ch, style))
         base += len(r.text)
-    new_para = Paragraph(style=para.style, runs=tuple(new_runs), page_no=para.page_no)
+    new_para = Paragraph(style=para.style, runs=tuple(new_runs), page_no=para.page_no,
+                         master=para.master)
     new_paras = (
         doc.paragraphs[: drange.para_idx]
         + (new_para,)
@@ -441,7 +445,8 @@ def change_paragraph_style(doc: Document, para_idx: int, style: str) -> Document
     para = doc.paragraphs[para_idx]
     if para.style == style:  # 樣式無變化 no-op
         return doc
-    new_para = Paragraph(style=style, runs=para.runs, page_no=para.page_no)
+    new_para = Paragraph(style=style, runs=para.runs, page_no=para.page_no,
+                         master=para.master)
     new_paras = (
         doc.paragraphs[:para_idx]
         + (new_para,)
@@ -499,7 +504,8 @@ def split_paragraph(doc: Document, cursor: DocCursor) -> Document:
             if r.text[local:]:
                 tail_runs.append(Run(r.text[local:], r.char_style))
         base = end
-    head = Paragraph(style=para.style, runs=tuple(head_runs), page_no=para.page_no)
+    head = Paragraph(style=para.style, runs=tuple(head_runs), page_no=para.page_no,
+                     master=para.master)  # 節首身分留 head（同 page_no 慣例）
     tail = Paragraph(style=para.style, runs=tuple(tail_runs), page_no=None)
     new_paras = (
         doc.paragraphs[: cursor.para_idx]
@@ -523,7 +529,8 @@ def merge_paragraph(doc: Document, para_idx: int) -> Document:
     prev = doc.paragraphs[para_idx - 1]
     cur = doc.paragraphs[para_idx]
     merged_runs = tuple(r for r in (prev.runs + cur.runs) if r.text)
-    merged = Paragraph(style=prev.style, runs=merged_runs, page_no=prev.page_no)
+    merged = Paragraph(style=prev.style, runs=merged_runs, page_no=prev.page_no,
+                       master=prev.master)  # 前段存活：本段節首標記隨併入消失
     new_paras = (
         doc.paragraphs[: para_idx - 1]
         + (merged,)
