@@ -3,6 +3,7 @@
 用法（自 repo 根執行）：
   python -m cjkfolio.cli import-txt 稿.txt -o doc.json --title 書名
   python -m cjkfolio.cli import-md 稿.md -o doc.json --title 書名
+  python -m cjkfolio.cli import-docx 稿.docx -o doc.json --title 書名
   python -m cjkfolio.cli assemble book.json -o 全書.doc.json
   python -m cjkfolio.cli render doc.json -o out/樣張 --dpi 150 --first-page 30
   python -m cjkfolio.cli export-pdf doc.json -o out/書.pdf
@@ -19,6 +20,7 @@ from .document import (
     unknown_char_style_refs,
     unknown_style_refs,
 )
+from .docx_import import import_docx
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
 from .preflight import check_pdfx1a
@@ -44,6 +46,21 @@ def cmd_import_txt(args) -> int:
 def cmd_import_md(args) -> int:
     template = load_template(args.template)
     doc = import_markdown_file(
+        args.input,
+        mapping=template.md_mapping,
+        inline_mapping=template.md_inline_mapping,
+        title=args.title or Path(args.input).stem,
+    )
+    save_document(doc, args.output)
+    styles_used = sorted({p.style for p in doc.paragraphs})
+    print(f"匯入完成：{len(doc.paragraphs)} 段 → {args.output}")
+    print(f"對映樣式：{'、'.join(styles_used)}")
+    return 0
+
+
+def cmd_import_docx(args) -> int:
+    template = load_template(args.template)
+    doc = import_docx(
         args.input,
         mapping=template.md_mapping,
         inline_mapping=template.md_inline_mapping,
@@ -163,6 +180,13 @@ def main(argv=None) -> int:
     p_md.add_argument("--template", default=str(DEFAULT_TEMPLATE))
     p_md.add_argument("--title", default="")
     p_md.set_defaults(func=cmd_import_md)
+
+    p_docx = sub.add_parser("import-docx", help="docx 匯入（OOXML 標題層級直接對映模版樣式，不依賴 Word）")
+    p_docx.add_argument("input")
+    p_docx.add_argument("-o", "--output", required=True)
+    p_docx.add_argument("--template", default=str(DEFAULT_TEMPLATE))
+    p_docx.add_argument("--title", default="")
+    p_docx.set_defaults(func=cmd_import_docx)
 
     p_render = sub.add_parser("render", help="文件 JSON 渲染為多頁 PNG")
     p_render.add_argument("document")

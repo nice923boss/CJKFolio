@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.67.0（2026-07-17，Sprint 72）docx 匯入（OOXML 結構直接對映，stdlib 零新依賴）
+
+### 新增
+
+- [實作] cjkfolio/docx_import.py（163 行）：stdlib（zipfile＋ElementTree）解析 OOXML，不依賴 Word COM、產品碼零新依賴（§4.4 設計修正 1：標題層級由結構直接對映，不經 AI）：
+  - 標題偵測三層鏈：段落直掛 pPr/outlineLvl → pStyle 樣式鏈（basedOn 遞迴＋循環守門）outlineLvl → 樣式名（heading N／標題 N）；outlineLvl 0〜8 有效、9＝正文（Spike 11 TOC Heading 一手實測，鏈上首見即定）。
+  - 引文＝樣式名或 styleId 含 quote／引文；粗體→strong、斜體→em、粗斜並用→strong（md v1 不嵌套同構）；相鄰同樣式 run 併合；`w:val="0"/"false"` 關閉寫法正判；hyperlink 內 run 深走不漏；空段跳過；壞 zip／缺 document.xml 快速失敗。
+  - 對映復用模版 md_mapping／md_inline_mapping（h4+ 未對映退內文＝md 同構）＝零新模版 schema。
+- CLI `import-docx`（同 import-md 形：--template／--title，列印段數與對映樣式）。
+- [Spike] Spike 11（spikes/spike11-docx-import/：premortem＋probe_ooxml＋report）：PoC 通過（python-docx 產檔 stdlib 解析 8 段全對、三層鏈於樣式鏈層命中、TOCHeading lvl 9 邊界揭露）。
+
+### 驗證
+
+- 核心基線 **566 passed / 0 failed**（544→566，+22，新檔 tests/test_docx_import.py：python-docx 產生器路徑 9〔Gate 4 獨立路徑：python-docx 1.2.0 寫、stdlib 讀〕＋手工 OOXML 邊界 12〔val 關閉／直掛優先／lvl 9 正文／中文樣式名／循環守門／缺 styles.xml／壞檔〕＋CLI 1）；typecheck EXIT=0（含 editor/*.py）；離屏 smoke C1〜C12 全過 0 退步。docx_import.py 163 行、cli.py 232 行守 800。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，自擬章節書稿，紅線不取參考書內容）：python-docx 產 8 段 docx → import-docx（章名／個案／小標／引文／內文五樣式對映）→ render 2 頁親 Read（h1 明體 Heavy、h2 黑 Medium、h3 黑 Bold、粗體與斜體 run 皆映內文強調-明體W9、跨頁強調 run 延續、偶右奇左頁碼書眉正確）→ export PDF preflight **12/12**。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #35）
+
+- [實作]：docx 結構匯入核心＋CLI。
+- 未做：真 Word（中文「標題 1」）／LibreOffice 產檔一手實測（名稱 fallback 以手工 OOXML 模擬）；表格／圖片／註腳／追蹤修訂／w:br／tab；AI 指派整合（§4.4，另片）；節首標記（同 GAPS #30 (c)）。
+- 依賴誠實：python-docx 1.2.0（本機既裝）僅作測試素材產生器，非產品依賴。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 若有真 Word／WPS／LibreOffice 書稿 docx：import-docx 實測標題層級與粗斜強調對映（GAPS #35 (a)）；其餘同 v0.66.0 hands-on 批次。
+
+### 下個 Sprint 預定範圍
+
+- 候選：AI 輔助樣式指派整合（§4.4 txt 粗分類＋樣式清單候選集，Phase 3 DoD 後半）、從參考 PDF 萃取起始模版、模版庫管理面（清單／匯入）、樣式改名。
+
 ## v0.66.0（2026-07-17，Sprint 71）樣式管理 UI（雙擊編輯／新增／刪除／另存模版接線）
 
 ### 新增
