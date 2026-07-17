@@ -4,6 +4,7 @@
   python -m cjkfolio.cli import-txt 稿.txt -o doc.json --title 書名
   python -m cjkfolio.cli import-md 稿.md -o doc.json --title 書名
   python -m cjkfolio.cli import-docx 稿.docx -o doc.json --title 書名
+  python -m cjkfolio.cli assign-styles doc.json -o out.doc.json
   python -m cjkfolio.cli assemble book.json -o 全書.doc.json
   python -m cjkfolio.cli render doc.json -o out/樣張 --dpi 150 --first-page 30
   python -m cjkfolio.cli export-pdf doc.json -o out/書.pdf
@@ -13,6 +14,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from .ai_config import load_ai_config
+from .ai_style import apply_suggestions, suggest_styles
 from .book import assemble_book, load_book
 from .document import (
     load_document,
@@ -70,6 +73,35 @@ def cmd_import_docx(args) -> int:
     styles_used = sorted({p.style for p in doc.paragraphs})
     print(f"匯入完成：{len(doc.paragraphs)} 段 → {args.output}")
     print(f"對映樣式：{'、'.join(styles_used)}")
+    return 0
+
+
+def cmd_assign_styles(args) -> int:
+    """AI 樣式指派（§4.4）：txt 入口的初稿建議；md／docx 結構優先不經此。"""
+    doc = load_document(args.document)
+    template = load_template(args.template)
+    config = load_ai_config(args.config)
+    if not (config.base_url and config.model):
+        print(f"錯誤：AI 未設定（{args.config} 缺 base_url／model）。"
+              "AI 為選配：可跳過本步驟，直接以編輯器人工指派樣式。")
+        return 2
+    candidates = tuple(template.paragraph_styles)
+    default_style = template.md_mapping.get("paragraph", next(iter(candidates)))
+    result = suggest_styles(
+        [p.text for p in doc.paragraphs], candidates, config,
+        default_style=default_style, batch_char_limit=args.batch_chars,
+    )
+    for warning in result.warnings:
+        print(f"警告：{warning}")
+    out_doc = apply_suggestions(doc, result.assignments)
+    changed = sum(1 for a, b in zip(doc.paragraphs, out_doc.paragraphs) if a.style != b.style)
+    save_document(out_doc, args.output)
+    counts = {}
+    for p in out_doc.paragraphs:
+        counts[p.style] = counts.get(p.style, 0) + 1
+    print(f"指派完成：{len(doc.paragraphs)} 段（{result.batches} 批）、改派 {changed} 段 → {args.output}")
+    print("樣式分布：" + "、".join(f"{k}×{v}" for k, v in sorted(counts.items())))
+    print("定位提醒：AI 建議為初稿，請以編輯器逐段確認與批次改派（§4.4）。")
     return 0
 
 
@@ -187,6 +219,16 @@ def main(argv=None) -> int:
     p_docx.add_argument("--template", default=str(DEFAULT_TEMPLATE))
     p_docx.add_argument("--title", default="")
     p_docx.set_defaults(func=cmd_import_docx)
+
+    p_assign = sub.add_parser("assign-styles",
+                              help="AI 樣式指派（§4.4 初稿建議；失敗批降級維持原樣式）")
+    p_assign.add_argument("document")
+    p_assign.add_argument("-o", "--output", required=True)
+    p_assign.add_argument("--template", default=str(DEFAULT_TEMPLATE))
+    p_assign.add_argument("--config", default=str(ROOT / "local" / "ai-config.local.json"))
+    p_assign.add_argument("--batch-chars", type=int, default=3000,
+                          help="單批字數上限（長書稿分批送，段落不跨批）")
+    p_assign.set_defaults(func=cmd_assign_styles)
 
     p_render = sub.add_parser("render", help="文件 JSON 渲染為多頁 PNG")
     p_render.add_argument("document")

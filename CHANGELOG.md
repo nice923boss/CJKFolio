@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.68.0（2026-07-17，Sprint 73）AI 輔助樣式指派（txt 初稿建議，防禦降級不擋流程）
+
+### 新增
+
+- [實作] cjkfolio/ai_style.py（148 行，§4.4 分工鐵律照章：AI 只回「段落 → 樣式名」，版面幾何零採用）：
+  - `suggest_styles`：OpenAI 相容 chat/completions（stdlib urllib，transport 可注入＝基線零網路）；候選集＝模版實際段落樣式清單（修正 3）、prompt 引導不確定選預設內文（修正 2 粗分類）；長稿分批（單批預設 3000 字，段落不跨批）。
+  - 回應防禦鏈：剝 `<think>` 殼 → 抽 JSON 陣列 → index 越界與非候選集樣式忽略列警告（幻覺守門）；批次失敗（網路／解析）該批降級 None 維持原樣式，警告不沉默、不擋流程；警告訊息金鑰值遮蔽（紅線）。
+  - `apply_suggestions`：不可變套回（None 維持原樣式、runs／page_no／master 保留、長度不符快速失敗）。
+- CLI `assign-styles`（--config 預設 local/ai-config.local.json；AI 未設定明確訊息 exit 2＝顯式呼叫誠實失敗；列印改派數、樣式分布與「初稿請人工校正」定位提醒）。
+
+### 驗證
+
+- 核心基線 **580 passed / 0 failed**（566→580，+14，新檔 tests/test_ai_style.py 全離線 transport 注入：對映／剝殼／幻覺守門／壞 JSON 與網路錯誤降級／金鑰不入警告／分批全域索引／CLI 2）；typecheck EXIT=0（含 editor/*.py）；smoke C1〜C12 全過 0 退步。ai_style.py 148 行、cli.py 274 行守 800。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，自擬 10 段無結構 txt＋使用者私有 endpoint 實測）：import-txt 全內文 → assign-styles（1 批、改派 6 段）→ **嚴格 8/10、粗分類 10/10**（錯 2 段皆標題層級混淆＝Spike 5 錯誤解剖複現、§4.4「初稿＋人工校正」設計預期；訪談發言標籤 2/2 全對）→ render 2 頁 0 違規親 Read（樣式落位、偶右奇左正確）。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #36）
+
+- [實作]：AI 指派核心＋CLI（§6 Phase 3「docx 匯入與 AI 輔助樣式指派整合」至此兩半皆落地；Phase 3 DoD「匯入 txt／md／docx 經 AI 指派＋人工校正產出排版初稿」的管線面完備，人工校正走編輯器樣式面板）。
+- 未做：編輯器內「逐段確認與批次改派」校正 UI、editor 內 AI 指派入口（面板僅設定）、md／docx 的 AI 補充建議（結構優先＝設計行為）。
+- 誠實宣稱：正確率數字僅適用自擬素材（嚴格 8/10），不外推為產品宣稱（§4.4 修正 4）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 以自己的真實書稿 txt 跑 assign-styles（層級混淆屬預期，重點驗粗分類與訪談標籤實用性）；其餘同 v0.66.0 hands-on 批次。
+
+### 下個 Sprint 預定範圍
+
+- 候選：從參考 PDF 萃取起始模版（§4.3，scan_reference_styles 產品化）、模版庫管理面（清單／匯入）、樣式改名、色票管理（§6 Phase 3）。
+
 ## v0.67.0（2026-07-17，Sprint 72）docx 匯入（OOXML 結構直接對映，stdlib 零新依賴）
 
 ### 新增
