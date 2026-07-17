@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.69.0（2026-07-17，Sprint 74）從參考 PDF 萃取起始樣式（§4.3 從參考萃取產品化）
+
+### 新增
+
+- [實作] cjkfolio/reference_extract.py（173 行，§1 分析流程產品化；版面幾何不從掃描推測＝§4.4 分工鐵律）：
+  - `scan_pdf`：(font, size) 分布＋用色統計（只聚合，不留 PDF 文句＝版權紅線）。
+  - `map_font`：§8 可散布字型組對映（仿宋先於宋判、字重 W3〜W9／Bold／Medium／Heavy 就近收斂家族可用集、未識別暫映思源宋體 TC 警告不沉默）。
+  - `propose_styles`：主力＝內文候選、≥1.1 倍標題候選、≤0.85 小字候選、其餘同級候選；名稱衝突加序號；門檻／上限濾除列 skipped 不沉默。
+  - `extract_draft`：草稿 paragraph_styles 片段與模版欄位五欄同形（font_family／font_weight／size_pt／source_font／note），可逐條經樣式管理 UI 新增。
+- CLI `extract-styles`（--min-chars 預設 60／--max-styles 預設 20，列印提案表＋濾除數＋用色統計）。
+
+### 驗證
+
+- 核心基線 **602 passed / 0 failed**（580→602，+22，新檔 tests/test_reference_extract.py：map_font 參數化 12＋提案純邏輯 6＋fitz 造 PDF 掃描整合 3〔Gate 4 獨立路徑：fitz 寫、本模組掃〕＋CLI 1）；typecheck EXIT=0（含 editor/*.py）；smoke C1〜C12 全過 0 退步。reference_extract.py 173 行、cli.py 305 行守 800。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，真書 PDF 本機紅線、草稿 out/ 不入 repo）：179 頁 → 20 提案＋30 skipped，與歷史**獨立工具**量測逐字吻合五處（內文 DFMingStd-W3 11.5pt **57,536 字**＝§1 原始數字、PepitaMT 9pt **153 頁**＝Sprint 36、NotoSans 17.9pt **42 頁**＝Sprint 33、辰宇 15.9pt **31 頁**＝Sprint 27、用色 **#231f20**）；草稿親驗零書中文句（6 字以上連續中文串全為系統詞彙）；部扉 W9 21.9pt（21 字）落 skipped 明細（不沉默、--min-chars 可撈回）。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #37）
+
+- [實作]：萃取核心＋CLI（§6 Phase 3「從參考 PDF 萃取起始模版」的樣式清單半邊；§4.3 承諾原文即「提出起始段落樣式清單供使用者命名與調整」）。
+- 未做：一鍵併入模版（草稿逐條經樣式管理 UI 新增）、字元樣式／主版／色票命名萃取（角色語意命名屬使用者＝設計行為）、色票管理（另片）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 以自己的其他參考 PDF 跑 extract-styles 看提案品質；其餘同 v0.66.0 hands-on 批次。
+
+### 下個 Sprint 預定範圍
+
+- 候選：模版庫管理面（清單／匯入／一鍵併入草稿）、色票管理、樣式改名。
+
 ## v0.68.0（2026-07-17，Sprint 73）AI 輔助樣式指派（txt 初稿建議，防禦降級不擋流程）
 
 ### 新增

@@ -5,6 +5,7 @@
   python -m cjkfolio.cli import-md 稿.md -o doc.json --title 書名
   python -m cjkfolio.cli import-docx 稿.docx -o doc.json --title 書名
   python -m cjkfolio.cli assign-styles doc.json -o out.doc.json
+  python -m cjkfolio.cli extract-styles 參考.pdf -o draft.json
   python -m cjkfolio.cli assemble book.json -o 全書.doc.json
   python -m cjkfolio.cli render doc.json -o out/樣張 --dpi 150 --first-page 30
   python -m cjkfolio.cli export-pdf doc.json -o out/書.pdf
@@ -27,6 +28,7 @@ from .docx_import import import_docx
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
 from .preflight import check_pdfx1a
+from .reference_extract import extract_draft
 from .render import render_document
 from .styles import load_template
 from .txt_import import DEFAULT_BODY_STYLE, import_txt_file
@@ -102,6 +104,26 @@ def cmd_assign_styles(args) -> int:
     print(f"指派完成：{len(doc.paragraphs)} 段（{result.batches} 批）、改派 {changed} 段 → {args.output}")
     print("樣式分布：" + "、".join(f"{k}×{v}" for k, v in sorted(counts.items())))
     print("定位提醒：AI 建議為初稿，請以編輯器逐段確認與批次改派（§4.4）。")
+    return 0
+
+
+def cmd_extract_styles(args) -> int:
+    """從參考 PDF 萃取起始樣式草稿（§4.3）；草稿只含量測參數，不含 PDF 文句。"""
+    import json as _json
+
+    draft = extract_draft(args.input, min_chars=args.min_chars,
+                          max_styles=args.max_styles)
+    Path(args.output).write_text(
+        _json.dumps(draft, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"萃取完成：{draft['pages']} 頁 → {len(draft['paragraph_styles'])} 個樣式提案 → {args.output}")
+    for name, s in draft["paragraph_styles"].items():
+        print(f"  {name:<24} ← {s['source_font']:<28} {s['note']}")
+    if draft["skipped"]:
+        print(f"濾除 {len(draft['skipped'])} 組（門檻／上限，草稿 skipped 段列明細）")
+    if draft["colors"]:
+        top = "、".join(f"{c['hex']}（{c['chars']:,} 字）" for c in draft["colors"][:3])
+        print(f"用色統計：{top}")
+    print("定位提醒：草稿供命名與調整（§4.3），可經樣式管理 UI 逐條新增至模版。")
     return 0
 
 
@@ -229,6 +251,15 @@ def main(argv=None) -> int:
     p_assign.add_argument("--batch-chars", type=int, default=3000,
                           help="單批字數上限（長書稿分批送，段落不跨批）")
     p_assign.set_defaults(func=cmd_assign_styles)
+
+    p_ext = sub.add_parser("extract-styles",
+                           help="從參考 PDF 萃取起始樣式草稿（§4.3 從參考萃取）")
+    p_ext.add_argument("input")
+    p_ext.add_argument("-o", "--output", required=True)
+    p_ext.add_argument("--min-chars", type=int, default=60,
+                       help="納入提案的最少字數（低於門檻列 skipped 不沉默）")
+    p_ext.add_argument("--max-styles", type=int, default=20)
+    p_ext.set_defaults(func=cmd_extract_styles)
 
     p_render = sub.add_parser("render", help="文件 JSON 渲染為多頁 PNG")
     p_render.add_argument("document")
