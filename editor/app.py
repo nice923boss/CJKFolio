@@ -43,11 +43,14 @@ from PySide6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
+from cjkfolio.ai_config import load_ai_config  # noqa: E402
+from cjkfolio.ai_style import suggest_styles  # noqa: E402
 from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
+from editor.ai_assign import AssignReviewDialog  # noqa: E402
 from editor.ai_panel import AiConfigDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -169,6 +172,7 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
             ("刪除選取的字元樣式", lambda: self._remove_selected_style("char")),
             ("新增色票…", self._create_swatch),
             ("刪除選取的色票", self._remove_selected_swatch),
+            ("AI 樣式指派（初稿，逐段校正）…", lambda: self._run_ai_assign()),
             ("另存模版…", self._save_template_dialog),
         ):
             action = QAction(label, self)
@@ -187,6 +191,46 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
         """開 AI 設定面板（§4.4 三欄位；儲存只到本機，statusBar 不含欄位值）。"""
         if AiConfigDialog(self).exec() == QDialog.DialogCode.Accepted:
             self.statusBar().showMessage("AI 設定已儲存（本機 local/ai-config.local.json）")
+
+    def _run_ai_assign(self, suggest=None) -> None:
+        """AI 樣式指派入口（§4.4「初稿＋人工校正」；#36 (b)）。
+
+        suggest 注入＝離屏可驗（callable(texts, candidates) -> SuggestResult）；
+        None＝真呼叫使用者私有 endpoint（未設定顯示訊息不擋流程＝誠實失敗，
+        同 CLI assign-styles exit 2 語意）。v1 同步呼叫（全書級約數分鐘會凍
+        視窗，背景執行緒屬後續）。
+        """
+        texts = [p.text for p in self.doc.paragraphs]
+        candidates = sorted(self.template.paragraph_styles)
+        default_style = self.template.md_mapping.get("paragraph", candidates[0])
+        if suggest is None:
+            config = load_ai_config()
+            if not (config.base_url and config.model):
+                self.statusBar().showMessage(
+                    "尚未設定 AI（「設定」選單填 Base URL 與 Model；AI 為選配增強）")
+                return
+            self.statusBar().showMessage("AI 指派連線中（全書級約數分鐘，視窗暫凍）…")
+            result = suggest_styles(texts, candidates, config,
+                                    default_style=default_style)
+        else:
+            result = suggest(texts, candidates)
+        dlg = AssignReviewDialog(self.doc, self.template, result.assignments,
+                                 self._apply_assignments,
+                                 warnings=result.warnings, parent=self)
+        dlg.exec()
+
+    def _apply_assignments(self, assignments):
+        """批次改派套用（session.apply_para_styles 單一 undo 步）；回錯誤訊息或 None。"""
+        if not assignments:
+            self.statusBar().showMessage("未採用任何建議（文件未變更）")
+            return None
+        try:
+            res = self.session.apply_para_styles(assignments)
+        except (KeyError, ValueError, IndexError) as err:
+            return f"無法套用：{err}"
+        self._after_template_change(
+            res, f"AI 批次改派 {len(assignments)} 段（單一 undo 步可整批回退）")
+        return None
 
     @property
     def doc(self):
@@ -651,7 +695,9 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
             "     「樣式」選單試新增（基於選取）／重新命名／刪除／另存模版。\n"
             "  7. 雙擊面板色票項改值（如暖黑 k 改 0.5）確認全書變色；\n"
             "     「樣式」選單試新增色票（樣式 color 欄可引用）／刪除色票（引用中會擋）。\n"
-            "  8. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
+            "  8. 「樣式」選單「AI 樣式指派…」（需先於「設定」填好 AI 三欄位）：\n"
+            "     逐段勾選採用建議後套用，確認一步 Ctrl+Z 可整批回退。\n"
+            "  9. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
             "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、\n"

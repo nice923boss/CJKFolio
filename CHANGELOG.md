@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.74.0（2026-07-17，Sprint 79）AI 指派校正 UI（逐段確認與批次改派，單一 undo 步）
+
+### 新增
+
+- [實作] 多段批次改派核心（入 pytest 基線；關 GAPS #24「多段單一 undo API」子項＝AI 校正與跨段套段落樣式共同地基）：
+  - editing.`change_paragraph_styles`（多段純文件層：逐段委派單段版、全等值 no-op、越界／空名快速失敗）。
+  - session.`apply_para_styles`（批次入**單一 undo 步**＝復用 _commit_pair；未知樣式名重排 KeyError 快速失敗）。
+- [實作]／[Shell] AI 指派校正 UI（§4.4「逐段確認與批次改派」介面承諾，關 #36 (a)(b)）：
+  - 新檔 editor/ai_assign.py（104 行）`AssignReviewDialog`：逐段表格（採用勾選〔預設勾「有建議且異於現行」〕／段首文字／現行樣式／建議下拉〔候選集＝模版實際段落樣式〕）＋全部採用／不採＋批次降級警告列不沉默；確定只回報勾選且異於現行載荷。
+  - app `_run_ai_assign`（suggest 注入離屏可驗；真呼叫 load_ai_config＋suggest_styles，未設定顯示訊息不擋流程）＋「樣式」選單「AI 樣式指派…」＋說明實測步驟九項。
+
+### 驗證
+
+- 核心基線 **659 passed / 0 failed**（655→659，+4，新檔 tests/test_edit_multi_para_style.py）；typecheck EXIT=0（含 editor/*.py）；smoke 擴 **C14**（注入建議 2 段→預設勾選正確→人工否決＋改建議→批次改派 1 段單步整批回退→空載荷 no-op→警告顯示），C1〜C14 全過。app.py 719／ai_assign.py 104 行守 800。繁中標點 grep 無破折號。
+- R5＝smoke C14 即席全回路＋核心 4 測試；UI 與 CLI 同 suggest_styles 核心（私有 endpoint 已於 Sprint 73 實測）。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：批次改派核心＋校正對話框＋入口（離屏全回路）。
+- [Shell]／待 Owner：真視窗表格手感＋真 endpoint 連線操作（GAPS #19 批次）。
+- 未做：背景執行緒（v1 同步呼叫凍視窗誠實記錄）、md／docx 後的 AI 補充建議（#36 (c)）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 說明選單第 8 項：設定 AI 三欄位後跑「AI 樣式指派…」，逐段勾選採用，確認一步 Ctrl+Z 整批回退。
+
+### 下個 Sprint 預定範圍
+
+- 候選：模版庫面板 UI（#39 (a)）、樣式繼承視覺化、Phase 3 收尾判定。
+
 ## v0.73.0（2026-07-17，Sprint 78）樣式 UI 補全批次（改名入口＋色票面板）
 
 ### 新增

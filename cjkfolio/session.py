@@ -37,6 +37,7 @@ from .editing import (
     apply_split,
     apply_style,
     apply_style_span,
+    change_paragraph_styles,
     locate_cell,
     rename_char_style_refs,
     rename_paragraph_style_refs,
@@ -215,6 +216,13 @@ class EditSession:
         return self._commit(
             apply_para_style(self._document, self._template, cursor, style)
         )
+
+    def apply_para_styles(self, assignments):
+        """多段批次改派段落樣式入**單一 undo 步**（Sprint 79，§4.4 逐段校正批次
+        改派＝AI 建議採用與跨段套段落樣式的共同地基；復用 _commit_pair＝文件變
+        模版不變）。未知樣式名全文重排 KeyError 快速失敗；全數等值 no-op 回 None。"""
+        return self._commit_pair(
+            change_paragraph_styles(self._document, assignments), self._template)
 
     def update_para_style(self, name: str, changes: Mapping):
         """改段落樣式定義（§4.3「改樣式即全書套用」，Sprint 67）：全書重排入統一歷史。

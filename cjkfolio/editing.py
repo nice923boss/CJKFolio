@@ -455,6 +455,19 @@ def change_paragraph_style(doc: Document, para_idx: int, style: str) -> Document
     return replace(doc, paragraphs=new_paras)
 
 
+def change_paragraph_styles(doc: Document, assignments) -> Document:
+    """多段批次改派段落樣式（Sprint 79，§4.4 逐段校正的核心半邊）。
+
+    assignments＝{para_idx: 樣式名}；逐段委派 change_paragraph_style（越界
+    IndexError／空名 ValueError 同守門），全數等值 no-op 回原物件。樣式名
+    存在性由 session 全文重排守門（同單段慣例）。
+    """
+    out = doc
+    for para_idx in sorted(assignments):
+        out = change_paragraph_style(out, para_idx, assignments[para_idx])
+    return out
+
+
 def apply_para_style(
     doc: Document, template: Template, cursor: DocCursor, style: str
 ) -> EditResult:

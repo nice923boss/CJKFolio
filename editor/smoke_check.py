@@ -14,6 +14,7 @@
   C11 拖曳範圍選取（Sprint 65）：跨段選取 → 刪除／套字元樣式／IME 替換
   C12 樣式管理 UI（Sprint 71）：雙擊編輯／新增／刪除／另存模版、undo 同步面板
   C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
+  C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派（單一 undo 步）、警告不沉默
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -501,10 +502,58 @@ def main() -> int:
         "＋面板同步＋六步 undo 回原"
     )
 
+    # C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派、單一 undo 步、警告不沉默
+    from cjkfolio.ai_style import SuggestResult
+
+    win14 = EditorWindow(str(DOC))
+    n14 = len(win14.doc.paragraphs)
+    orig_styles = [p.style for p in win14.doc.paragraphs]
+
+    def fake_suggest(texts, candidates):
+        assert len(texts) == n14 and "內文-明體直排" in candidates
+        assign = [None] * n14
+        assign[2], assign[3] = "章節小標-黑體", "引文-仿宋語錄"  # 兩段建議、其餘降級 None
+        return SuggestResult(assignments=tuple(assign),
+                             warnings=("自擬警告：第 2 批降級",), batches=2)
+
+    captured = {}
+    from editor.ai_assign import AssignReviewDialog as _ARD
+
+    def _capture_exec(dlg):  # 離屏不進事件圈：截取對話框供程式化操作
+        captured["dlg"] = dlg
+        return 0
+
+    _orig_exec = _ARD.exec
+    _ARD.exec = _capture_exec
+    try:
+        win14._run_ai_assign(suggest=fake_suggest)
+    finally:
+        _ARD.exec = _orig_exec
+    dlg14 = captured["dlg"]
+    assert dlg14._notice.text() == "自擬警告：第 2 批降級", "警告未顯示於對話框"
+    assert dlg14.table.rowCount() == n14
+    checked = [i for i in range(n14)
+               if dlg14.table.item(i, 0).checkState() == Qt.CheckState.Checked]
+    assert checked == [2, 3], f"預設勾選應為有建議且異於現行者，得到 {checked}"
+    dlg14.table.item(3, 0).setCheckState(Qt.CheckState.Unchecked)  # 人工否決一段
+    dlg14._combos[2].setCurrentText("引文-仿宋語錄")               # 人工改建議
+    assert dlg14._assignments() == {2: "引文-仿宋語錄"}, "校正後載荷不符"
+    dlg14._on_confirm()
+    assert win14.doc.paragraphs[2].style == "引文-仿宋語錄", "批次改派未套用"
+    assert win14.doc.paragraphs[3].style == orig_styles[3], "否決段被誤改"
+    win14._on_undo()  # 單一 undo 步整批回退
+    assert [p.style for p in win14.doc.paragraphs] == orig_styles, "undo 未整批回原"
+    win14._apply_assignments({})  # 空載荷 no-op
+    assert "未採用" in win14.statusBar().currentMessage()
+    print(
+        "C14 AI 指派校正 UI：注入建議 2 段（降級警告顯示）→ 預設勾選＝有建議且異於"
+        "現行 → 人工否決一段＋改建議 → 批次改派 1 段（單一 undo 步整批回退）＋空載荷 no-op"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
-        "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票"
+        "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正"
         "（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
     )
     return 0
