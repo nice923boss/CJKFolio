@@ -58,8 +58,11 @@ from .style_editing import (
     rename_character_style,
     rename_paragraph_style,
     set_character_style,
+    set_color,
     set_paragraph_style,
 )
+from .style_editing import add_color as add_color_swatch
+from .style_editing import remove_color as remove_color_swatch
 from .styles import Template
 
 
@@ -247,6 +250,23 @@ class EditSession:
         """刪除字元樣式（對稱 remove_para_style）。"""
         return self._commit_template(
             remove_character_style(self._template, name))
+
+    def update_color(self, name: str, changes: Mapping):
+        """改色票定義（§4.3 色票管理，Sprint 76）：改值即全書變色，入統一 undo 歷史。
+
+        文字色只在渲染層取值（不動斷行幾何），重排仍照 _commit_template 紀律
+        （先重排快速失敗再入歷史）；等值變更 no-op 回 None。
+        """
+        return self._commit_template(set_color(self._template, name, changes))
+
+    def add_color(self, name: str, *, cmyk=None, hex=None, note=None):
+        """新增色票：入統一 undo 歷史，新色票立即可被樣式 color 引用。"""
+        return self._commit_template(
+            add_color_swatch(self._template, name, cmyk=cmyk, hex=hex, note=note))
+
+    def remove_color(self, name: str):
+        """刪除色票：被樣式引用即 TemplateError（純模版層守門），狀態不變不入歷史。"""
+        return self._commit_template(remove_color_swatch(self._template, name))
 
     def rename_para_style(self, old: str, new: str):
         """段落樣式改名（Sprint 75）：模版引用（鍵／based_on／md_mapping）與文件參照

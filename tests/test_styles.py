@@ -137,7 +137,10 @@ def test_master_a_geometry_from_measurements(template):
 def test_template_page_size_and_colors(template):
     assert template.page_width_mm == 148.0
     assert template.page_height_mm == 210.0
-    assert template.colors["暖黑"] == "#231f20"
+    warm = template.colors["暖黑"]  # Sprint 76 結構化色票（§1 量測＋§9 印刷 K92）
+    assert warm.hex == "#231f20"
+    assert warm.cmyk == (0.0, 0.0, 0.0, 0.92)
+    assert template.colors["虛線灰"].cmyk == (0.0, 0.0, 0.0, 0.57)  # p003 一手（Sprint 15）
 
 
 def test_template_md_mapping_present(template):

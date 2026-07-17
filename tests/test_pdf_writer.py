@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from cjkfolio.document import document_from_dict
-from cjkfolio.pdf_writer import export_pdf, page_boxes_pt, subset_tag
+from cjkfolio.pdf_fonts import subset_tag
+from cjkfolio.pdf_writer import export_pdf, page_boxes_pt
 from cjkfolio.render import (
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,

@@ -8,11 +8,17 @@
 based_on／declared 為簿記欄位（供編輯級聯 style_editing 與後續模版序列化）。
 """
 import json
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
 SCHEMA_ID = "cjkfolio/template@1"
+
+# 文字預設填色：暖黑單 K92（§9 內文 K90〜92 區間取 92，§10 Sprint 8 決議）
+DEFAULT_TEXT_CMYK = (0.0, 0.0, 0.0, 0.92)
+
+_HEX_RE = re.compile(r"#[0-9a-fA-F]{6}\Z")
 
 
 def _opt_str(value) -> Optional[str]:
@@ -21,6 +27,20 @@ def _opt_str(value) -> Optional[str]:
 
 class TemplateError(ValueError):
     """模版 JSON 不合 schema。"""
+
+
+@dataclass(frozen=True)
+class ColorSwatch:
+    """命名色票（§4.2／§4.3，Sprint 76）。
+
+    cmyk 為印刷值 (c,m,y,k) 各 0〜1（§9 全 CMYK；文字填色引用取此值）；
+    hex 為螢幕量測參考（如 §1 暖黑 #231f20），不參與印刷輸出。cmyk 為 None
+    的色票（含舊形態 hex 字串照載）屬純記錄，不可被樣式 color 引用。
+    """
+    name: str
+    cmyk: Optional[tuple] = None
+    hex: Optional[str] = None
+    note: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +54,7 @@ class ParagraphStyle:
     writing_mode: str = "vertical-rl"
     head_offset_chars: int = 0  # 段級天頭縮退（字格）：目錄條目相對篇名的縮退（Sprint 21）
     lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調（Sprint 29）
+    color: Optional[str] = None  # 文字色票名（Sprint 76）；None＝預設暖黑 K92
     source_font: Optional[str] = None
     note: Optional[str] = None
     based_on: Optional[str] = None  # 繼承基底樣式名（Sprint 68；效值已扁平化）
@@ -46,6 +67,7 @@ class CharacterStyle:
     font_family: str
     font_weight: str
     size_pt: float
+    color: Optional[str] = None  # 文字色票名（Sprint 76）；None＝承段落樣式解析鏈
     source_font: Optional[str] = None
     note: Optional[str] = None
     based_on: Optional[str] = None  # 繼承基底樣式名（Sprint 68；效值已扁平化）
@@ -63,6 +85,7 @@ PARAGRAPH_STYLE_FIELDS: Mapping[str, Callable] = {
     "writing_mode": str,
     "head_offset_chars": int,
     "lead_offset_pt": float,
+    "color": _opt_str,
     "source_font": _opt_str,
     "note": _opt_str,
 }
@@ -71,9 +94,64 @@ CHARACTER_STYLE_FIELDS: Mapping[str, Callable] = {
     "font_family": str,
     "font_weight": str,
     "size_pt": float,
+    "color": _opt_str,
     "source_font": _opt_str,
     "note": _opt_str,
 }
+
+
+def _swatch_cmyk(value, ctx: str) -> tuple:
+    """色票 cmyk 驗證（載入與編輯共用）：4 元素、各 0〜1。"""
+    try:
+        cmyk = tuple(float(v) for v in value)
+    except (TypeError, ValueError):
+        raise TemplateError(f"{ctx}.cmyk 須為 4 元素 [c,m,y,k]，得到 {value!r}") from None
+    if len(cmyk) != 4:
+        raise TemplateError(f"{ctx}.cmyk 須為 4 元素 [c,m,y,k]，得到 {value!r}")
+    if any(not 0.0 <= v <= 1.0 for v in cmyk):
+        raise TemplateError(f"{ctx}.cmyk 各分量須在 0〜1，得到 {value!r}")
+    return cmyk
+
+
+def _swatch_hex(value, ctx: str) -> str:
+    text = str(value)
+    if not _HEX_RE.match(text):
+        raise TemplateError(f"{ctx}.hex 須為 #RRGGBB，得到 {value!r}")
+    return text
+
+
+# 色票欄位 → 型別轉換器（style_editing.set_color 編輯層同用）
+COLOR_FIELDS: Mapping[str, Callable] = {
+    "cmyk": lambda v: None if v is None else _swatch_cmyk(v, "色票"),
+    "hex": lambda v: None if v is None else _swatch_hex(v, "色票"),
+    "note": _opt_str,
+}
+
+
+def check_color_ref(colors: Mapping, style, ctx: str) -> None:
+    """樣式 color 引用守門（載入與編輯共用）：色票須存在且帶 cmyk 印刷值。"""
+    if style.color is None:
+        return
+    swatch = colors.get(style.color)
+    if swatch is None:
+        raise TemplateError(f"{ctx}.color 引用不存在的色票「{style.color}」")
+    if swatch.cmyk is None:
+        raise TemplateError(
+            f"{ctx}.color 色票「{style.color}」無 cmyk 印刷值，"
+            "不可作文字色（§9 全 CMYK）")
+
+
+def resolve_text_cmyk(template, *styles) -> tuple:
+    """文字填色解析（兩後端單一事實來源，Sprint 76）。
+
+    依序取第一個帶 color 的樣式（呼叫端以「字元樣式, 段落樣式」序傳入＝字元覆寫
+    段落，同 run 覆寫字型慣例；None 項略過），查色票 cmyk；皆無 color 回預設暖黑
+    K92。色票存在性與可印刷性由載入／編輯層守門，此處不再驗。
+    """
+    for style in styles:
+        if style is not None and style.color is not None:
+            return template.colors[style.color].cmyk
+    return DEFAULT_TEXT_CMYK
 
 
 @dataclass(frozen=True)
@@ -229,6 +307,7 @@ def _paragraph_style(name: str, d: dict) -> ParagraphStyle:
         writing_mode=str(d.get("writing_mode", "vertical-rl")),
         head_offset_chars=int(d.get("head_offset_chars", 0)),
         lead_offset_pt=float(d.get("lead_offset_pt", 0.0)),
+        color=_opt_str(d.get("color")),
         source_font=d.get("source_font"),
         note=d.get("note"),
     )
@@ -241,6 +320,7 @@ def _character_style(name: str, d: dict) -> CharacterStyle:
         font_family=str(_require(d, "font_family", ctx)),
         font_weight=str(_require(d, "font_weight", ctx)),
         size_pt=float(_require(d, "size_pt", ctx)),
+        color=_opt_str(d.get("color")),
         source_font=d.get("source_font"),
         note=d.get("note"),
     )
@@ -407,6 +487,23 @@ def _resolve_styles(raw: dict, fields: Mapping, build, kind: str) -> dict:
     return resolved
 
 
+def _color_swatch(name: str, value) -> ColorSwatch:
+    """色票載入：dict 形（cmyk／hex／note）；舊形態 hex 字串照載為純記錄色票。"""
+    ctx = f"colors[{name}]"
+    if isinstance(value, str):
+        return ColorSwatch(name=name, hex=_swatch_hex(value, ctx))
+    if not isinstance(value, dict):
+        raise TemplateError(f"{ctx} 須為 hex 字串或色票物件，得到 {value!r}")
+    cmyk = value.get("cmyk")
+    hex_value = value.get("hex")
+    return ColorSwatch(
+        name=name,
+        cmyk=None if cmyk is None else _swatch_cmyk(cmyk, ctx),
+        hex=None if hex_value is None else _swatch_hex(hex_value, ctx),
+        note=value.get("note"),
+    )
+
+
 def template_from_dict(data) -> Template:
     if not isinstance(data, dict):
         raise TemplateError("模版必須是 JSON 物件")
@@ -420,7 +517,8 @@ def template_from_dict(data) -> Template:
         name=str(data["name"]),
         page_width_mm=float(_require(page, "width_mm", "page")),
         page_height_mm=float(_require(page, "height_mm", "page")),
-        colors=dict(data.get("colors", {})),
+        colors={name: _color_swatch(name, v)
+                for name, v in data.get("colors", {}).items()},
         paragraph_styles=_resolve_styles(
             data["paragraph_styles"], PARAGRAPH_STYLE_FIELDS,
             _paragraph_style, "paragraph_styles"),
@@ -437,6 +535,10 @@ def template_from_dict(data) -> Template:
                 f"masters[{mname}].toc 引用的頁碼字元樣式"
                 f"「{master.toc.page_no_style}」不存在於 character_styles"
             )
+    for kind, styles_map in (("paragraph_styles", template.paragraph_styles),
+                             ("character_styles", template.character_styles)):
+        for sname, style in styles_map.items():
+            check_color_ref(template.colors, style, f"{kind}[{sname}]")
     return template
 
 
@@ -455,6 +557,18 @@ def _style_to_dict(style) -> dict:
         out["based_on"] = style.based_on
     for f in style.declared:
         out[f] = getattr(style, f)
+    return out
+
+
+def _swatch_to_dict(swatch: ColorSwatch) -> dict:
+    """色票 → dict（一律結構化形；舊字串形載入後另存即單向升級）。"""
+    out = {}
+    if swatch.cmyk is not None:
+        out["cmyk"] = list(swatch.cmyk)
+    if swatch.hex is not None:
+        out["hex"] = swatch.hex
+    if swatch.note is not None:
+        out["note"] = swatch.note
     return out
 
 
@@ -540,7 +654,7 @@ def template_to_dict(template: Template) -> dict:
         "name": template.name,
         "page": {"width_mm": template.page_width_mm,
                  "height_mm": template.page_height_mm},
-        "colors": dict(template.colors),
+        "colors": {n: _swatch_to_dict(sw) for n, sw in template.colors.items()},
         "paragraph_styles": {n: _style_to_dict(st)
                              for n, st in template.paragraph_styles.items()},
         "character_styles": {n: _style_to_dict(st)

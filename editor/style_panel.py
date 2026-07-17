@@ -38,7 +38,7 @@ class StyleEditDialog(QDialog):
         self._style = style
         self._on_apply = on_apply  # callable(changes: dict) -> 錯誤訊息 str 或 None
         fields = PARAGRAPH_STYLE_FIELDS if kind == "para" else CHARACTER_STYLE_FIELDS
-        self._optional = {"source_font", "note"}
+        self._optional = {"source_font", "note", "color"}  # 空字串＝清 None
         self._edits = {}
 
         form = QFormLayout(self)

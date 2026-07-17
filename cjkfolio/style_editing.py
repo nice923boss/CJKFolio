@@ -16,15 +16,18 @@ based_on 本身不可經 set_* 編輯（結構變更屬後續片）。
 全書重排與統一 undo 歷史的 session 整合見 cjkfolio/session.py。
 """
 from dataclasses import replace
-from typing import Mapping
+from typing import Mapping, Optional
 
 from .styles import (
     CHARACTER_STYLE_FIELDS,
+    COLOR_FIELDS,
     PARAGRAPH_STYLE_FIELDS,
     CharacterStyle,
+    ColorSwatch,
     ParagraphStyle,
     Template,
     TemplateError,
+    check_color_ref,
 )
 
 _REQUIRED_STYLE_FIELDS = ("font_family", "font_weight", "size_pt")  # 根樣式必填（同載入層）
@@ -141,12 +144,14 @@ def set_paragraph_style(template: Template, name: str, changes: Mapping) -> Temp
 
     未知樣式 KeyError（同 layout 慣例）；不可編輯欄位 TemplateError；
     空變更或等值變更 no-op 回原物件；未覆寫該欄位的子孫樣式同步級聯。
+    color 為模版內參照，就地守門（色票存在且可印刷，同 remove_* 參照守門慣例）。
     """
     style = template.paragraph_styles[name]
     new_style = _edited_style(
         style, PARAGRAPH_STYLE_FIELDS, changes, f"paragraph_styles[{name}]")
     if new_style is style:
         return template
+    check_color_ref(template.colors, new_style, f"paragraph_styles[{name}]")
     return replace(
         template,
         paragraph_styles=_with_cascade(
@@ -161,6 +166,7 @@ def set_character_style(template: Template, name: str, changes: Mapping) -> Temp
         style, CHARACTER_STYLE_FIELDS, changes, f"character_styles[{name}]")
     if new_style is style:
         return template
+    check_color_ref(template.colors, new_style, f"character_styles[{name}]")
     return replace(
         template,
         character_styles=_with_cascade(
@@ -201,6 +207,7 @@ def add_paragraph_style(template: Template, name: str, decl: Mapping) -> Templat
     """新增段落樣式（§4.3 模版管理「可新增」的資料面，Sprint 69）。"""
     style = _added_style(template.paragraph_styles, PARAGRAPH_STYLE_FIELDS,
                          name, decl, "paragraph_styles", ParagraphStyle)
+    check_color_ref(template.colors, style, f"paragraph_styles[{name}]")
     return replace(
         template, paragraph_styles={**template.paragraph_styles, name: style})
 
@@ -209,6 +216,7 @@ def add_character_style(template: Template, name: str, decl: Mapping) -> Templat
     """新增字元樣式（對稱 add_paragraph_style）。"""
     style = _added_style(template.character_styles, CHARACTER_STYLE_FIELDS,
                          name, decl, "character_styles", CharacterStyle)
+    check_color_ref(template.colors, style, f"character_styles[{name}]")
     return replace(
         template, character_styles={**template.character_styles, name: style})
 
@@ -263,3 +271,54 @@ def remove_character_style(template: Template, name: str) -> Template:
         character_styles={n: st for n, st in template.character_styles.items()
                           if n != name},
     )
+
+
+def add_color(template: Template, name: str, *, cmyk=None,
+              hex: Optional[str] = None, note: Optional[str] = None) -> Template:
+    """新增色票（§4.3 色票管理，Sprint 76）：cmyk 與 hex 至少其一（全空無意義）。
+
+    名稱空或衝突 TemplateError；cmyk／hex 驗證同載入層（COLOR_FIELDS）。
+    """
+    if not isinstance(name, str) or not name:
+        raise TemplateError("色票名不可為空")
+    if name in template.colors:
+        raise TemplateError(f"已存在同名色票「{name}」")
+    if cmyk is None and hex is None:
+        raise TemplateError(f"色票「{name}」須至少帶 cmyk 或 hex 其一")
+    swatch = ColorSwatch(
+        name=name,
+        cmyk=COLOR_FIELDS["cmyk"](cmyk),
+        hex=COLOR_FIELDS["hex"](hex),
+        note=COLOR_FIELDS["note"](note),
+    )
+    return replace(template, colors={**template.colors, name: swatch})
+
+
+def set_color(template: Template, name: str, changes: Mapping) -> Template:
+    """改色票定義（「改值即全書變色」的純模版層）：未知色票 KeyError；不可編輯
+    欄位 TemplateError；空或等值變更 no-op 回原物件（同 set_*_style 慣例）。"""
+    swatch = template.colors[name]
+    coerced = {}
+    for key, value in changes.items():
+        if key not in COLOR_FIELDS:
+            raise TemplateError(f"colors[{name}] 不可編輯的欄位：{key}")
+        coerced[key] = COLOR_FIELDS[key](value)
+    if not coerced:
+        return template
+    new_swatch = replace(swatch, **coerced)
+    if new_swatch == swatch:
+        return template
+    return replace(template, colors={**template.colors, name: new_swatch})
+
+
+def remove_color(template: Template, name: str) -> Template:
+    """刪除色票：未知 KeyError；被任一樣式 color 引用即拒（模版內參照守門，
+    同 remove_*_style 慣例）。"""
+    template.colors[name]
+    for kind, styles_map in (("段落樣式", template.paragraph_styles),
+                             ("字元樣式", template.character_styles)):
+        used = sorted(n for n, st in styles_map.items() if st.color == name)
+        if used:
+            raise TemplateError(f"色票「{name}」被{kind}引用，不可刪除：{used}")
+    return replace(
+        template, colors={n: sw for n, sw in template.colors.items() if n != name})

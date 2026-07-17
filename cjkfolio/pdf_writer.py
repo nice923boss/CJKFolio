@@ -22,12 +22,10 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
-from fontTools import subset as ft_subset
-from fontTools.ttLib import TTFont
-
-from .fonts import DEFAULT_FONT_DIR, FontError, FontRegistry
+from .fonts import DEFAULT_FONT_DIR, FontRegistry
 from .frames import resolve_text_frames
 from .images import EmbeddedImage, resolve_placed_images
+from .pdf_fonts import EmbeddedFont
 from .pdfx_meta import xmp_packet
 from .layout import (
     layout_document,
@@ -59,9 +57,10 @@ from .render import (
     mm_to_pt,
     rule_break_ranges,
 )
+from .styles import DEFAULT_TEXT_CMYK, resolve_text_cmyk
 
 BLEED_MM = 3.0
-TEXT_K = 0.92  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92）
+TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92；styles 單一來源）
 
 PDFX_VERSION = "PDF/X-1:2001"       # Info /GTS_PDFXVersion（ISO 15930-1）
 PDFX_CONFORMANCE = "PDF/X-1a:2001"  # Info /GTS_PDFXConformance
@@ -83,17 +82,15 @@ def page_boxes_pt(template, bleed_mm: float = BLEED_MM):
     return (0.0, 0.0, w + 2 * b, h + 2 * b), (b, b, b + w, b + h)
 
 
-def subset_tag(name: str, cids) -> str:
-    """子集前綴（6 大寫字母）：由字型名＋碼位集決定，可重現。"""
-    digest = hashlib.sha1(
-        (name + ":" + ",".join(map(str, sorted(set(cids))))).encode("utf-8")
-    ).digest()
-    return "".join(chr(ord("A") + b % 26) for b in digest[:6])
-
-
 def _fmt(v: float) -> str:
     s = f"{v:.3f}".rstrip("0").rstrip(".")
     return s if s else "0"
+
+
+def _fill_op(cmyk) -> str:
+    """DeviceCMYK 文字填色算符（小寫 k）。"""
+    c, m, y, k = cmyk
+    return f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} k"
 
 
 def _pdf_text_string(s: str) -> str:
@@ -184,150 +181,22 @@ class _PdfBuilder:
         return out.getvalue()
 
 
-# ---------- 字型子集嵌入 ----------
-
-def _to_unicode_stream(code_chars: dict) -> bytes:
-    pairs = "\n".join(
-        f"<{code:04X}> <{''.join(f'{ord(c):04X}' for c in ch)}>"
-        for code, ch in sorted(code_chars.items()) if ch
-    )
-    n = sum(1 for ch in code_chars.values() if ch)
-    return (
-        "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n"
-        "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"
-        "/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n"
-        "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n"
-        f"{n} beginbfchar\n{pairs}\nendbfchar\n"
-        "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend"
-    ).encode("latin-1")
-
-
-def _cidset_bytes(cids) -> bytes:
-    top = max(cids)
-    buf = bytearray(top // 8 + 1)
-    for cid in cids:
-        buf[cid // 8] |= 0x80 >> (cid % 8)
-    return bytes(buf)
-
-
-class _EmbeddedFont:
-    """單一字型檔的使用收集與 PDF 字型物件組產出。
-
-    code（內容流 2 byte 碼）＝CID：CFF 取原字型 charset 的 cidNNNNN（思源
-    CID==GID，Sprint 8 探針實證）；TTF 取 GID（retain_gids 子集後不變）。
-    """
-
-    def __init__(self, path: Path, res_name: str):
-        self.path = Path(path)
-        self.res_name = res_name
-        self._font = TTFont(str(self.path), lazy=True)
-        self.is_cff = "CFF " in self._font
-        self._order = self._font.getGlyphOrder()
-        if self.is_cff and not hasattr(self._font["CFF "].cff[0], "ROS"):
-            raise FontError(f"{self.path.name} 非 CID-keyed CFF，v1 寫出層不支援")
-        self._gid_code: dict = {}
-        self._used_gids: set = set()
-        self.code_chars: dict = {}
-
-    def _code_for(self, gid: int) -> int:
-        if gid == 0:
-            return 0  # .notdef 的 CID 依定義為 0
-        if gid not in self._gid_code:
-            if self.is_cff:
-                name = self._order[gid]
-                if not name.startswith("cid"):
-                    raise FontError(
-                        f"{self.path.name} glyph {gid} 名稱 {name!r} 非 cidNNNNN，無法取 CID"
-                    )
-                self._gid_code[gid] = int(name[3:])
-            else:
-                self._gid_code[gid] = gid
-        return self._gid_code[gid]
-
-    def use(self, gid: int, ch: str) -> int:
-        code = self._code_for(gid)
-        self._used_gids.add(gid)
-        if ch and not self.code_chars.get(code):
-            self.code_chars[code] = ch
-        return code
-
-    def _subset_data(self) -> bytes:
-        font = TTFont(str(self.path))
-        opts = ft_subset.Options()
-        opts.retain_gids = not self.is_cff
-        opts.notdef_outline = True
-        opts.drop_tables += ["GSUB", "GPOS", "GDEF", "BASE", "JSTF", "MATH"]
-        subsetter = ft_subset.Subsetter(opts)
-        subsetter.populate(gids=sorted(self._used_gids | {0}))
-        subsetter.subset(font)
-        if self.is_cff:
-            return font["CFF "].compile(font)
-        buf = BytesIO()
-        font.save(buf)
-        return buf.getvalue()
-
-    def emit(self, pdf: _PdfBuilder):
-        """產出 Type0 字型物件組，回傳（物件號, 統計 dict）。"""
-        font = self._font
-        upem = font["head"].unitsPerEm
-        scale = 1000.0 / upem
-        ps_name = font["name"].getDebugName(6) or self.path.stem
-        hmtx = font["hmtx"]
-        widths = {
-            self._code_for(g): round(hmtx[self._order[g]][0] * scale)
-            for g in sorted(self._used_gids)
-        }
-        head = font["head"]
-        bbox = [round(v * scale) for v in (head.xMin, head.yMin, head.xMax, head.yMax)]
-        hhea = font["hhea"]
-        ascent, descent = round(hhea.ascent * scale), round(hhea.descent * scale)
-        cap_height = 700
-        if "OS/2" in font and getattr(font["OS/2"], "sCapHeight", 0):
-            cap_height = round(font["OS/2"].sCapHeight * scale)
-
-        data = self._subset_data()
-        tag = subset_tag(ps_name, widths)
-        base = f"{tag}+{ps_name}"
-        if self.is_cff:
-            file_num = pdf.stream(" /Subtype /CIDFontType0C", data)
-            file_key, subtype, cid_extra = "FontFile3", "CIDFontType0", ""
-        else:
-            file_num = pdf.stream(f" /Length1 {len(data)}", data)
-            file_key, subtype, cid_extra = "FontFile2", "CIDFontType2", " /CIDToGIDMap /Identity"
-        cidset_num = pdf.stream("", _cidset_bytes(set(widths) | {0}))
-        desc_num = pdf.add(
-            f"<< /Type /FontDescriptor /FontName /{base} /Flags 4 "
-            f"/FontBBox [{bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}] /ItalicAngle 0 "
-            f"/Ascent {ascent} /Descent {descent} /CapHeight {cap_height} /StemV 80 "
-            f"/CIDSet {cidset_num} 0 R /{file_key} {file_num} 0 R >>"
-        )
-        w_arr = " ".join(f"{c} [{w}]" for c, w in sorted(widths.items()))
-        cid_num = pdf.add(
-            f"<< /Type /Font /Subtype /{subtype} /BaseFont /{base} "
-            f"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
-            f"/FontDescriptor {desc_num} 0 R /DW 1000 /W [{w_arr}]{cid_extra} >>"
-        )
-        tounicode_num = pdf.stream("", _to_unicode_stream(self.code_chars))
-        type0_num = pdf.add(
-            f"<< /Type /Font /Subtype /Type0 /BaseFont /{base} /Encoding /Identity-H "
-            f"/DescendantFonts [{cid_num} 0 R] /ToUnicode {tounicode_num} 0 R >>"
-        )
-        stats = {
-            "base": base,
-            "file": self.path.name,
-            "glyphs": len(self._used_gids),
-            "bytes": len(data),
-        }
-        return type0_num, stats
-
-
 # ---------- 內容流 ----------
 
 class _Content:
     def __init__(self):
         self.prologue: list = []  # 圖形（path／影像）算符，置於文字塊（BT／ET）之前
-        self.ops = ["q", f"0 0 0 {_fmt(TEXT_K)} k", "BT"]
+        self.ops = ["q", _fill_op(DEFAULT_TEXT_CMYK), "BT"]
         self._cur = None
+        self._fill = DEFAULT_TEXT_CMYK  # 現行文字填色（預設暖黑 K92）
+
+    def set_fill(self, cmyk) -> None:
+        """切換文字填色（Sprint 76 色票）：與現行相同不發算符（預設輸出形態不變）；
+        `k` 為 DeviceCMYK 填色算符，於文字物件（BT 內）合法且不觸 preflight rg/RG。"""
+        cmyk = tuple(cmyk)
+        if cmyk != self._fill:
+            self.ops.append(_fill_op(cmyk))
+            self._fill = cmyk
 
     def stroke_rect(self, cmyk, line_width_pt: float,
                     x_ll: float, y_ll: float, w: float, h: float) -> None:
@@ -412,9 +281,9 @@ class _PdfPageWriter:
         self.fonts_used.add(str(resolved.path))
         return key, self._shapers[key]
 
-    def _font_for(self, key) -> _EmbeddedFont:
+    def _font_for(self, key) -> EmbeddedFont:
         if key not in self._fonts:
-            self._fonts[key] = _EmbeddedFont(Path(key[0]), f"F{len(self._fonts) + 1}")
+            self._fonts[key] = EmbeddedFont(Path(key[0]), f"F{len(self._fonts) + 1}")
         return self._fonts[key]
 
     def _emit(self, content: _Content, key, placements) -> None:
@@ -450,6 +319,7 @@ class _PdfPageWriter:
                 pen_x = page_w - item.outer_offset_pt - width
             else:
                 pen_x = item.outer_offset_pt
+            content.set_fill(resolve_text_cmyk(template, style))
             self._emit(content, key, horizontal_placements(
                 shaper, text, pen_x, item.baseline_from_top_pt, style.size_pt))
 
@@ -475,6 +345,7 @@ class _PdfPageWriter:
                     use_key, use_shaper = self._shaper_for(cstyle)
                     use_size = cstyle.size_pt
                 else:
+                    cstyle = None
                     use_key, use_shaper, use_size = key, shaper, style.size_pt
                 if cell.kind == "cjk":
                     pls = ttb_char_placements(use_shaper, cell.text, axis, cell_top, use_size)
@@ -484,6 +355,7 @@ class _PdfPageWriter:
                     pls = rotated_latin_placements(use_shaper, cell.text, axis, cell_top, use_size)
                 else:
                     pls = []
+                content.set_fill(resolve_text_cmyk(template, cstyle, style))
                 self._emit(content, use_key, pls)
                 content_i += cell.width
 
@@ -508,8 +380,10 @@ class _PdfPageWriter:
                     use_key, use_shaper = self._shaper_for(cstyle)
                     use_size = cstyle.size_pt
                 else:
+                    cstyle = None
                     use_key, use_shaper, use_size = key, shaper, style.size_pt
                 if cell.kind != "space":
+                    content.set_fill(resolve_text_cmyk(template, cstyle, style))
                     self._emit(content, use_key, horizontal_placements(
                         use_shaper, cell.text, pen_x, baseline_y, use_size))
                 pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
@@ -577,6 +451,7 @@ class _PdfPageWriter:
         同源），逐字格 emit 復用直排 placements 助手（框內不齊行、等距）。"""
         style = self.template.paragraph_styles[placement.style]
         key, shaper = self._shaper_for(style)
+        content.set_fill(resolve_text_cmyk(self.template, style))
         for fl in placement.lines:
             content_i = 0
             for cell in fl.line.cells:
@@ -610,6 +485,7 @@ class _PdfPageWriter:
                 )
             cstyle = self.template.character_styles[m.char_style]
             key, shaper = self._shaper_for(cstyle)
+            content.set_fill(resolve_text_cmyk(self.template, cstyle))
             for i, digit in enumerate(m.digits):
                 cell_top = m.page_no_top_pt + i * m.digit_advance_pt
                 self._emit(content, key, tcy_placements(

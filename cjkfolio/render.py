@@ -31,7 +31,7 @@ from .primitives import (
     fit_image_rect,
     toc_rule_segments,
 )
-from .styles import MasterPage, Template
+from .styles import MasterPage, Template, resolve_text_cmyk
 
 PT_PER_MM = 72.0 / 25.4
 
@@ -143,7 +143,13 @@ def _missing_chars(text: str, infos) -> list:
     return [text[i.cluster] for i in infos if i.codepoint == 0 and i.cluster < len(text)]
 
 
-def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale):
+def _ink_gray(cmyk) -> int:
+    """文字填色 → PNG 灰值：255×(1−k) 只取 k 分量（灰階預覽限制，同 Sprint 15
+    線條慣例；c/m/y 不表達）。預設暖黑 K92 → 20。"""
+    return round(255 * (1 - cmyk[3]))
+
+
+def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale, ink=0):
     """單一 CJK 字以 TTB 塑形置於字槽（行軸置中、槽頂對齊）。回傳缺字來源字元。"""
     sf = shaper.set_size(size_pt)
     infos, poss = shaper.shape(ch, "ttb")
@@ -153,7 +159,7 @@ def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale):
         if tile is not None:
             gx = round(pen_x + pos.x_offset * sf) + g.bitmap_left
             gy = round(pen_y - pos.y_offset * sf) - g.bitmap_top
-            img.paste(0, (gx, gy), tile)
+            img.paste(ink, (gx, gy), tile)
         pen_x += pos.x_advance * sf
         pen_y += -pos.y_advance * sf
     return _missing_chars(ch, infos)
@@ -179,7 +185,8 @@ def _render_horizontal_strip(shaper, text, size_pt, scale):
     return strip, _missing_chars(text, infos)
 
 
-def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, scale):
+def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, scale,
+              ink=0):
     """縱中橫：短數字串橫排塞進一個字槽，行軸置中。回傳缺字來源字元。"""
     strip, missing = _render_horizontal_strip(shaper, text, size_pt * 0.92, scale)
     em_px = round(size_pt * scale)
@@ -187,17 +194,18 @@ def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, sc
         strip = strip.resize((em_px, round(strip.height * em_px / strip.width)))
     x = round(axis_x_pt * scale - strip.width / 2)
     y = round(cell_top_pt * scale + (advance_pt * scale - strip.height) / 2)
-    img.paste(0, (x, y), strip)
+    img.paste(ink, (x, y), strip)
     return missing
 
 
-def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scale):
+def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scale,
+                        ink=0):
     """長串拉丁／數字：橫排塑形後順時針轉 90 度，沿行軸向下。回傳缺字來源字元。"""
     strip, missing = _render_horizontal_strip(shaper, text, size_pt, scale)
     rot = strip.transpose(Image.Transpose.ROTATE_270)
     x = round(axis_x_pt * scale - rot.width / 2)
     y = round(cell_top_pt * scale)
-    img.paste(0, (x, y), rot)
+    img.paste(ink, (x, y), rot)
     return missing
 
 
@@ -240,7 +248,8 @@ def _draw_stroke_line(img, line, scale):
         t += on + off
 
 
-def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, scale):
+def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, scale,
+                          ink=0):
     """橫排一個 cell：LTR 塑形直接落在頁面 (pen_x, baseline)。回傳缺字來源字元。
 
     與 pdf_writer 橫排路徑同源：字形擺放走 hb ltr，頁面 pen 推進由 layout 決定
@@ -254,7 +263,7 @@ def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, s
         if tile is not None:
             gx = round(pen_x + pos.x_offset * sf) + g.bitmap_left
             gy = round(base_y - pos.y_offset * sf) - g.bitmap_top
-            img.paste(0, (gx, gy), tile)
+            img.paste(ink, (gx, gy), tile)
         pen_x += pos.x_advance * sf
     return _missing_chars(text, infos)
 
@@ -310,7 +319,7 @@ class PageRenderer:
                 x = round((page_w_pt - item.outer_offset_pt) * self.scale) - strip.width
             else:
                 x = round(item.outer_offset_pt * self.scale)
-            img.paste(0, (x, y), strip)
+            img.paste(_ink_gray(resolve_text_cmyk(template, style)), (x, y), strip)
 
     def _draw_vertical_body(self, img, page, book_number: int) -> None:
         master, template = self.master, self.template
@@ -333,13 +342,15 @@ class PageRenderer:
                     cstyle = template.character_styles[cell.char_style]
                     use_shaper, use_size = self._shaper_for(cstyle), cstyle.size_pt
                 else:
+                    cstyle = None
                     use_shaper, use_size = shaper, style.size_pt
+                ink = _ink_gray(resolve_text_cmyk(template, cstyle, style))
                 if cell.kind == "cjk":
-                    missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
+                    missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale, ink)
                 elif cell.kind == "tcy":
-                    missing = _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, adv, self.scale)
+                    missing = _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, adv, self.scale, ink)
                 elif cell.kind == "latin":
-                    missing = _draw_rotated_latin(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale)
+                    missing = _draw_rotated_latin(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale, ink)
                 else:
                     missing = []
                 self._note_missing(use_shaper, missing)
@@ -362,10 +373,12 @@ class PageRenderer:
                     cstyle = template.character_styles[cell.char_style]
                     use_shaper, use_size = self._shaper_for(cstyle), cstyle.size_pt
                 else:
+                    cstyle = None
                     use_shaper, use_size = shaper, style.size_pt
                 if cell.kind != "space":
                     missing = _draw_horizontal_cell(
-                        img, use_shaper, cell.text, pen_x, baseline_y, use_size, self.scale)
+                        img, use_shaper, cell.text, pen_x, baseline_y, use_size, self.scale,
+                        _ink_gray(resolve_text_cmyk(template, cstyle, style)))
                     self._note_missing(use_shaper, missing)
                 pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
 
@@ -417,19 +430,20 @@ class PageRenderer:
         同源），逐字格繪製復用直排 body 的 cell 繪製助手（框內不齊行、等距）。"""
         style = self.template.paragraph_styles[placement.style]
         shaper = self._shaper_for(style)
+        ink = _ink_gray(resolve_text_cmyk(self.template, style))
         for fl in placement.lines:
             content_i = 0
             for cell in fl.line.cells:
                 cell_top = fl.top_pt + content_i * fl.advance_pt
                 if cell.kind == "cjk":
                     missing = _draw_ttb_char(img, shaper, cell.text, fl.axis_x_pt,
-                                             cell_top, fl.size_pt, self.scale)
+                                             cell_top, fl.size_pt, self.scale, ink)
                 elif cell.kind == "tcy":
                     missing = _draw_tcy(img, shaper, cell.text, fl.axis_x_pt, cell_top,
-                                        fl.size_pt, fl.advance_pt, self.scale)
+                                        fl.size_pt, fl.advance_pt, self.scale, ink)
                 elif cell.kind == "latin":
                     missing = _draw_rotated_latin(img, shaper, cell.text, fl.axis_x_pt,
-                                                  cell_top, fl.size_pt, self.scale)
+                                                  cell_top, fl.size_pt, self.scale, ink)
                 else:
                     missing = []
                 self._note_missing(shaper, missing)
@@ -449,10 +463,11 @@ class PageRenderer:
                 ), self.scale)
             cstyle = self.template.character_styles[m.char_style]
             shaper = self._shaper_for(cstyle)
+            ink = _ink_gray(resolve_text_cmyk(self.template, cstyle))
             for i, digit in enumerate(m.digits):
                 cell_top = m.page_no_top_pt + i * m.digit_advance_pt
                 missing = _draw_tcy(img, shaper, digit, axis, cell_top,
-                                    m.digit_size_pt, m.digit_advance_pt, self.scale)
+                                    m.digit_size_pt, m.digit_advance_pt, self.scale, ink)
                 self._note_missing(shaper, missing)
 
     def render_page(self, page, footer_texts=None, book_number=None,

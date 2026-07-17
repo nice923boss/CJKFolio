@@ -2,6 +2,40 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.71.0（2026-07-17，Sprint 76）色票管理核心（結構化色票＋樣式文字色引用＋雙後端同源）
+
+### 新增
+
+- [實作] 色票管理資料面＋渲染鏈（§4.3／§6 Phase 3「色票管理」，GAPS #37 (e) 關閉、新 #38）：
+  - styles.py：`ColorSwatch`（名稱→cmyk 印刷值〔4 元素 0〜1〕＋hex 螢幕參考〔#RRGGBB〕＋note；舊形態 hex 字串照載為純記錄）＋段落／字元樣式選配 `color` 欄位（入欄位表＝繼承級聯／declared 序列化／樣式編輯對話框自動涵蓋）＋`check_color_ref`（引用未知或無 cmyk 色票 TemplateError，載入編輯雙層守門）＋`resolve_text_cmyk`（文字填色單一事實來源：字元 > 段落 > 預設暖黑 K92）＋色票序列化 round-trip（舊字串形另存單向升級結構化）。
+  - style_editing.py：`add_color`／`set_color`／`remove_color`（衝突／空名／全空值／越界拒、等值 no-op、被樣式引用不可刪）；session：`update_color`／`add_color`／`remove_color` 入統一 undo（「改色票值即全書變色」）。
+  - 兩後端文字色同源：pdf_writer `_Content.set_fill`（BT 內 `k` 算符切色，與現行同值不發＝無 color 文件內容流形態不變）五寫出點全接；render `_ink_gray`（灰值 255×(1−k) 只取 k）五繪製路徑全接。
+  - 內建模版 colors 結構化：暖黑（cmyk 0,0,0,0.92＋hex #231f20＝§1 量測）、紙白、虛線灰（K57＝p003 Sprint 15），皆帶出處 note。
+- 行數紀律分檔：pdf_writer 逾 800 行，字型子集嵌入抽 `cjkfolio/pdf_fonts.py`（`EmbeddedFont`＋`subset_tag` 公名；pdf_writer 812→672，行為不變，test import 站點同步）。
+
+### 行為變更（誠實記錄）
+
+- PNG 預設文字自純黑 0 改 K92 灰值 20（兩後端同一色彩解析鏈；視覺近黑，墨跡斷言門檻不受影響）。
+
+### 驗證
+
+- 核心基線 **642 passed / 0 failed**（617→642，+25，新檔 tests/test_colors.py：載入 7／解析 1／序列化 2／樣式 color 編輯 4／色票 CRUD 3／session 2／兩後端 3＋test_styles 色票斷言同步）；typecheck EXIT=0（含 editor/*.py）；smoke C1〜C12 全過 0 退步。styles.py 673／pdf_writer.py 672／pdf_fonts.py 159 行守 800。繁中標點 grep 無破折號。
+- Gate 4 雙路：PDF 內容流算符逐值（0.92／0.57／0.3 `k`）＋PyMuPDF texttrace 獨立回報三種填色暗序；PNG 帶內最深墨值＝20（K92）／110（K57）精確。
+- 真實素材驗收（R5，自擬色票示範 out/color-demo/）：session 全鏈（add_color 淡墨 K57＋點灰 K30 → add_para_style 註記-淡墨 → update_char_style 強調掛點灰）→ render＋export＋preflight 12/12；PNG 親 Read（段落色全段 K57、run 覆寫「安放選擇」K30、文字框同走色票、頁碼預設近黑）；update_color K57→K30 全書變色重渲染親 Read（僅引用者變淡）、undo 回 K57。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #38）
+
+- [實作]：色票資料面＋樣式引用＋雙後端＋session undo。§6 Phase 3「色票管理」核心落地。
+- 未做：色票管理面板 UI（清單／新增／改值入口；樣式對話框 color 欄位已自動出現）、主版 spec cmyk 引用色票、色票改名、PNG c/m/y 分量表達（灰階預覽限制）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 同 v0.66.0 hands-on 批次（本 Sprint 為核心層；樣式編輯對話框多 color 欄位可順手試）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：模版庫管理面（清單／匯入／萃取草稿一鍵併入）、改名與 AI 指派的 editor UI 批次、色票面板。
+
 ## v0.70.0（2026-07-17，Sprint 75）樣式改名核心（模版＋文件雙層同步，成對單一 undo 步）
 
 ### 新增
