@@ -13,6 +13,7 @@
   C7〜C10 app session 接線／畫布鍵盤編輯／AI 設定面板／樣式面板（Sprint 61〜64）
   C11 拖曳範圍選取（Sprint 65）：跨段選取 → 刪除／套字元樣式／IME 替換
   C12 樣式管理 UI（Sprint 71）：雙擊編輯／新增／刪除／另存模版、undo 同步面板
+  C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -444,10 +445,67 @@ def main() -> int:
         "（含文件使用中守門）＋面板清單同步＋另存模版重載 16pt＋三步 undo 回原"
     )
 
+    # C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門、undo 回原
+    from editor.style_panel import SwatchEditDialog
+
+    BODY13 = "內文-明體直排"
+    win13 = EditorWindow(str(DOC))
+    win13._style_panel.select_style("para", BODY13)
+    win13._rename_selected_style("para", new_name="內文-改名測試")
+    assert "內文-改名測試" in win13.template.paragraph_styles, "選單改名未生效"
+    assert BODY13 not in win13.template.paragraph_styles
+    assert all(p.style != BODY13 for p in win13.doc.paragraphs), "文件段落參照未同步改名"
+    assert win13._style_panel.para_list.findItems(
+        "內文-改名測試", Qt.MatchFlag.MatchExactly), "面板清單未同步新名"
+    win13._style_panel.select_style("para", "內文-改名測試")
+    win13._rename_selected_style("para", new_name="引文-仿宋語錄")  # 同名衝突 → 守門
+    assert "無法改名" in win13.statusBar().currentMessage(), "衝突改名未顯示訊息"
+    assert "內文-改名測試" in win13.template.paragraph_styles, "衝突改名污染了現態"
+
+    n_swatch = win13._style_panel.swatch_list.count()
+    win13._create_swatch(name="測試灰")
+    assert win13.template.colors["測試灰"].cmyk == (0.0, 0.0, 0.0, 1.0), "新增色票未生效"
+    assert win13._style_panel.swatch_list.count() == n_swatch + 1, "面板色票清單未同步"
+    assert win13._apply_style_definition(
+        "para", "內文-改名測試", {"color": "測試灰"}) is None  # 樣式掛色（UI 路徑）
+    dlg13 = SwatchEditDialog(
+        win13.template.colors["測試灰"],
+        lambda ch: win13._apply_swatch_definition("測試灰", ch))
+    dlg13._cmyk.setText("0, 0, 0, 0.4")
+    dlg13._on_save()
+    assert win13.template.colors["測試灰"].cmyk == (0.0, 0.0, 0.0, 0.4), "色票改值未套用"
+    dlg13b = SwatchEditDialog(
+        win13.template.colors["測試灰"],
+        lambda ch: win13._apply_swatch_definition("測試灰", ch))
+    dlg13b._cmyk.setText("2, 0, 0, 0")  # 越界 → 留對話框警示、現態不污染
+    dlg13b._on_save()
+    assert "無法套用" in dlg13b._notice.text(), "色票非法值未顯示於警示列"
+    assert win13.template.colors["測試灰"].cmyk == (0.0, 0.0, 0.0, 0.4), "非法值污染了色票"
+    win13._remove_selected_swatch(name="測試灰")  # 樣式引用中 → 守門
+    assert "測試灰" in win13.template.colors and \
+        "無法刪除" in win13.statusBar().currentMessage(), "引用中色票刪除未守門"
+    assert win13._apply_style_definition(
+        "para", "內文-改名測試", {"color": None}) is None  # 清引用
+    win13._remove_selected_swatch(name="測試灰")
+    assert "測試灰" not in win13.template.colors, "解引用後刪除色票未生效"
+    assert win13._style_panel.swatch_list.count() == n_swatch, "面板色票清單未同步刪除"
+    for _ in range(6):  # 刪色票→清引用→改值→掛色→新增色票→改名 依序回退
+        win13._on_undo()
+    assert BODY13 in win13.template.paragraph_styles, "undo 未回改名前"
+    assert all(p.style != "內文-改名測試" for p in win13.doc.paragraphs), \
+        "undo 後文件段落未回原樣式名"
+    assert "測試灰" not in win13.template.colors, "undo 未回新增色票前"
+    print(
+        "C13 改名入口＋色票面板：選單改名全書同步（衝突守門）＋色票新增（K100）→"
+        "樣式掛色→雙擊改值 0.4 全書變色（越界留警示）→引用中刪除守門→解引用刪除"
+        "＋面板同步＋六步 undo 回原"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
-        "＋樣式面板＋拖曳範圍選取＋樣式管理（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
+        "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票"
+        "（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
     )
     return 0
 

@@ -32,11 +32,9 @@ from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QDialog,
     QDockWidget,
-    QFileDialog,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsView,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -49,7 +47,7 @@ from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.session import EditSession  # noqa: E402
-from cjkfolio.styles import TemplateError, load_template, save_template  # noqa: E402
+from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_panel import AiConfigDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -57,7 +55,8 @@ from editor.canvas import (  # noqa: E402
     resolve_frame_hit,
     resolve_hit,
 )
-from editor.style_panel import StyleEditDialog, StylePanel  # noqa: E402
+from editor.style_actions import StyleActionsMixin  # noqa: E402
+from editor.style_panel import StylePanel  # noqa: E402
 
 DEFAULT_DOC = ROOT / "samples" / "case-divider.doc.json"
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -103,7 +102,7 @@ class CanvasView(QGraphicsView):
         super().keyPressEvent(event)
 
 
-class EditorWindow(QMainWindow):
+class EditorWindow(StyleActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
@@ -155,7 +154,8 @@ class EditorWindow(QMainWindow):
         dock = QDockWidget("樣式", self)
         self._style_panel = StylePanel(
             self.template, self._apply_para_style_at_cursor,
-            self._apply_char_style_at_cursor, on_edit_style=self._edit_style)
+            self._apply_char_style_at_cursor, on_edit_style=self._edit_style,
+            on_edit_swatch=self._edit_swatch)
         dock.setWidget(self._style_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
@@ -163,8 +163,12 @@ class EditorWindow(QMainWindow):
         for label, handler in (
             ("新增段落樣式（基於選取）…", lambda: self._create_style("para")),
             ("新增字元樣式（基於選取）…", lambda: self._create_style("char")),
+            ("重新命名選取的段落樣式…", lambda: self._rename_selected_style("para")),
+            ("重新命名選取的字元樣式…", lambda: self._rename_selected_style("char")),
             ("刪除選取的段落樣式", lambda: self._remove_selected_style("para")),
             ("刪除選取的字元樣式", lambda: self._remove_selected_style("char")),
+            ("新增色票…", self._create_swatch),
+            ("刪除選取的色票", self._remove_selected_swatch),
             ("另存模版…", self._save_template_dialog),
         ):
             action = QAction(label, self)
@@ -605,82 +609,8 @@ class EditorWindow(QMainWindow):
         self.statusBar().showMessage(
             f"段{hit.para_idx} 字位 [{s}, {e}) 字元樣式 → {name if name else '（清除）'}")
 
-    def _edit_style(self, kind: str, name: str) -> None:
-        """雙擊樣式項 → 編輯樣式參數對話框（session.update_*，改樣式即全書套用）。"""
-        styles = (self.template.paragraph_styles if kind == "para"
-                  else self.template.character_styles)
-        dlg = StyleEditDialog(
-            kind, styles[name],
-            lambda changes: self._apply_style_definition(kind, name, changes), self)
-        dlg.exec()
-
-    def _apply_style_definition(self, kind: str, name: str, changes):
-        """套用樣式定義變更；回錯誤訊息（留在對話框修正）或 None（成功／無變更）。"""
-        if not changes:
-            return None
-        try:
-            res = (self.session.update_para_style(name, changes) if kind == "para"
-                   else self.session.update_char_style(name, changes))
-        except (TemplateError, KeyError, ValueError) as err:
-            return f"無法套用：{err}"
-        self._after_template_change(res, f"樣式「{name}」已更新（全書重排）")
-        return None
-
-    def _create_style(self, kind: str, name=None) -> None:
-        """新增樣式（基於面板選取樣式為基底；name None＝真視窗跳輸入框）。"""
-        base = self._style_panel.selected_style(kind)
-        if base is None:
-            self.statusBar().showMessage("先在面板選取一個樣式作為新樣式的基底")
-            return
-        if name is None:
-            name, ok = QInputDialog.getText(
-                self, "新增樣式", f"新樣式名稱（承 {base}）：")
-            if not ok or not name:
-                return
-        try:
-            res = (self.session.add_para_style(name, {"based_on": base})
-                   if kind == "para"
-                   else self.session.add_char_style(name, {"based_on": base}))
-        except TemplateError as err:
-            self.statusBar().showMessage(f"無法新增：{err}")
-            return
-        self._after_template_change(res, f"已新增樣式「{name}」（承 {base}）")
-
-    def _remove_selected_style(self, kind: str, name=None) -> None:
-        """刪除選取樣式；參照守門（模版內引用）與文件使用中皆顯示訊息不 crash。"""
-        name = name or self._style_panel.selected_style(kind)
-        if name is None:
-            self.statusBar().showMessage("先在面板選取要刪除的樣式")
-            return
-        try:
-            res = (self.session.remove_para_style(name) if kind == "para"
-                   else self.session.remove_char_style(name))
-        except (TemplateError, KeyError) as err:
-            self.statusBar().showMessage(f"無法刪除：{err}")
-            return
-        self._after_template_change(res, f"已刪除樣式「{name}」")
-
-    def _save_template_dialog(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "另存模版", "", "模版 JSON (*.json)")
-        if path:
-            self._save_template_to(path)
-
-    def _save_template_to(self, path) -> None:
-        """另存現行模版（含樣式編輯結果）為人類可讀 JSON（Sprint 70 核心）。"""
-        save_template(self.session.template, path)
-        self.statusBar().showMessage(f"模版已另存：{path}")
-
-    def _after_template_change(self, res, message: str) -> None:
-        """模版變更（樣式編輯／新增／刪除）後：重繪＋游標跟隨＋面板清單同步。"""
-        if res is None:
-            self.statusBar().showMessage("樣式無變更")
-            return
-        if isinstance(res, FrameEditResult):
-            self._follow_frame_address(res)
-        else:
-            self._follow_body_address(res)
-        self.statusBar().showMessage(message)
+    # 樣式選單域回呼（雙擊編輯／新增／刪除／改名／色票／另存）見 StyleActionsMixin
+    # （editor/style_actions.py，Sprint 78 行數紀律分檔）。
 
     def _split_at_cursor(self) -> bool:
         """Enter＝body 游標處分段（session.split）；文字框為單段不分段。"""
@@ -718,8 +648,10 @@ class EditorWindow(QMainWindow):
             "  5. 按住左鍵拖曳選取多字（可跨段、可反向），確認藍色 shading 跟手；\n"
             "     試 Backspace 刪除選取、點字元樣式套用至選取、組字 Enter 替換選取。\n"
             "  6. 雙擊面板樣式項編輯參數（如內文 size_pt 改 16）確認全書即時重排；\n"
-            "     「樣式」選單試新增（基於選取）／刪除／另存模版。\n"
-            "  7. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
+            "     「樣式」選單試新增（基於選取）／重新命名／刪除／另存模版。\n"
+            "  7. 雙擊面板色票項改值（如暖黑 k 改 0.5）確認全書變色；\n"
+            "     「樣式」選單試新增色票（樣式 color 欄可引用）／刪除色票（引用中會擋）。\n"
+            "  8. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
             "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、\n"

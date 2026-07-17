@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.73.0（2026-07-17，Sprint 78）樣式 UI 補全批次（改名入口＋色票面板）
+
+### 新增
+
+- [實作]／[Shell] 樣式 UI 補全（關 GAPS #34 改名 UI 子項＋#38 (a)；核心 Sprint 75〜76 已入基線，本版為 UI 接線）：
+  - editor/style_panel.py：`SwatchEditDialog`（cmyk 逗號分隔／hex／note，只送有改動欄位、錯誤留內嵌警示列；值驗證一律由核心 COLOR_FIELDS 執行）＋StylePanel 色票清單（標籤帶 cmyk 值、雙擊改值＝全書變色）＋select_style／selected_swatch／select_swatch（程式化選取）。
+  - 「樣式」選單五項→九項：重新命名段落／字元樣式（Sprint 75 成對單一 undo）、新增色票（K100 起始，雙擊改值）、刪除選取色票（引用守門）。
+  - 行數紀律：app.py 樣式選單域回呼抽 editor/style_actions.py mixin（166 行，搬移行為不變；app.py 741→673）。說明選單實測步驟七→八項。
+
+### 驗證
+
+- 核心基線 **655 passed / 0 failed**（UI 層不變 0 退步）；typecheck EXIT=0（含 editor/*.py）；smoke 擴 **C13**（選單改名全書同步〔面板＋文件段落參照＋衝突守門〕＋色票新增→樣式掛色→雙擊改值 0.4 全書變色〔越界留警示不污染〕→引用中刪除守門→解引用刪除＋面板同步＋六步 undo 回原），C1〜C13 全過。app.py 673／style_panel.py 256／style_actions.py 166 行守 800。繁中標點 grep 無破折號。
+- R5＝smoke C13 即席全回路（真視窗對話框與選單手感 Owner-hands-on 不代行，承 Sprint 71 慣例）。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：改名入口＋色票面板（離屏可驗全回路）。
+- [Shell]／待 Owner：真視窗手感（GAPS #19 批次）。
+- 未做：模版庫面板 UI（#39 (a)）、AI 指派 editor 入口與校正 UI（#36）、樣式繼承視覺化。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 說明選單八項實測步驟（新增第 7 項：雙擊色票改值看全書變色、選單新增／刪除色票）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：AI 指派 editor 入口與逐段校正 UI（#36 (a)(b)）、模版庫面板（#39 (a)）。
+
 ## v0.72.0（2026-07-17，Sprint 77）模版庫管理面資料層（清單＋草稿一鍵併入＋套用模版）
 
 ### 新增
