@@ -6,6 +6,7 @@
   python -m cjkfolio.cli import-docx 稿.docx -o doc.json --title 書名
   python -m cjkfolio.cli assign-styles doc.json -o out.doc.json
   python -m cjkfolio.cli extract-styles 參考.pdf -o draft.json
+  python -m cjkfolio.cli merge-styles 模版.json draft.json -o 新模版.json
   python -m cjkfolio.cli assemble book.json -o 全書.doc.json
   python -m cjkfolio.cli render doc.json -o out/樣張 --dpi 150 --first-page 30
   python -m cjkfolio.cli export-pdf doc.json -o out/書.pdf
@@ -30,7 +31,8 @@ from .pdf_writer import export_pdf
 from .preflight import check_pdfx1a
 from .reference_extract import extract_draft
 from .render import render_document
-from .styles import load_template
+from .styles import load_template, save_template
+from .template_library import merge_draft_styles
 from .txt_import import DEFAULT_BODY_STYLE, import_txt_file
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +126,25 @@ def cmd_extract_styles(args) -> int:
         top = "、".join(f"{c['hex']}（{c['chars']:,} 字）" for c in draft["colors"][:3])
         print(f"用色統計：{top}")
     print("定位提醒：草稿供命名與調整（§4.3），可經樣式管理 UI 逐條新增至模版。")
+    return 0
+
+
+def cmd_merge_styles(args) -> int:
+    """萃取草稿一鍵併入模版（§4.3 模版庫；extract-styles → merge-styles 全鏈）。"""
+    import json as _json
+
+    template = load_template(args.template)
+    draft = _json.loads(Path(args.draft).read_text(encoding="utf-8"))
+    merged, report = merge_draft_styles(template, draft)
+    save_template(merged, args.output)
+    print(f"併入完成：新增 {len(report.added)} 個段落樣式 → {args.output}")
+    for name in report.added:
+        print(f"  ＋ {name}")
+    if report.skipped:
+        print(f"跳過 {len(report.skipped)} 個（同名既有優先，不覆蓋）：")
+        for s in report.skipped:
+            print(f"  － {s.name}")
+    print("定位提醒：併入樣式為草稿命名（§4.3），可經樣式管理 UI 改名與調整。")
     return 0
 
 
@@ -260,6 +281,13 @@ def main(argv=None) -> int:
                        help="納入提案的最少字數（低於門檻列 skipped 不沉默）")
     p_ext.add_argument("--max-styles", type=int, default=20)
     p_ext.set_defaults(func=cmd_extract_styles)
+
+    p_merge = sub.add_parser("merge-styles",
+                             help="萃取草稿一鍵併入模版（同名跳過不覆蓋）")
+    p_merge.add_argument("template")
+    p_merge.add_argument("draft")
+    p_merge.add_argument("-o", "--output", required=True)
+    p_merge.set_defaults(func=cmd_merge_styles)
 
     p_render = sub.add_parser("render", help="文件 JSON 渲染為多頁 PNG")
     p_render.add_argument("document")

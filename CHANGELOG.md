@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.72.0（2026-07-17，Sprint 77）模版庫管理面資料層（清單＋草稿一鍵併入＋套用模版）
+
+### 新增
+
+- [實作] 模版庫管理面資料層（§4.3「模版庫」／§6 Phase 3「書系模版匯入」半邊；GAPS #37 (b) 一鍵併入關閉、新 #39）：
+  - 新檔 cjkfolio/template_library.py（82 行）：`list_templates`（目錄掃 *.json 淺讀 schema 與 name 成清單、檔名排序；壞 JSON／非模版 schema 列 entry.error 不沉默不擋清單）＋`merge_draft_styles`（reference_extract 草稿逐條 add_paragraph_style；同名跳過列 skipped 不覆蓋＝既有定義優先、全跳過 no-op、缺鍵 TemplateError）。
+  - session：`apply_template`（整模版替換入統一 undo＝§4.3「套用到新書」；文件引用缺樣式重排 KeyError 快速失敗）＋`merge_draft`（併入入 undo，回 (result, report)）。
+  - CLI `merge-styles`（extract-styles → merge-styles 全鏈：草稿到可用模版一鍵，added／skipped 列報不沉默）。
+
+### 驗證
+
+- 核心基線 **655 passed / 0 failed**（642→655，+13，新檔 tests/test_template_library.py：清單 3／併入 5／session 3／CLI 2）；typecheck EXIT=0（含 editor/*.py）；smoke C1〜C12 全過 0 退步。template_library.py 82／session.py 379／cli.py 333 行守 800。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，真書 PDF 本機紅線、產物 out/ 不入 repo）：真書 179 頁 extract-styles 20 提案 → merge-styles 全數併入內建模版（含衝突序號 -2 命名者）→ list_templates 清單（merged 讀出模版名、draft.json 列 schema 錯誤不沉默）→ 掛「內文候選-宋11.5pt」（57,536 字＝§1 交叉命中）自擬文件 render 親 Read（與既有內文同模版共存、0 違規）＋export preflight 12/12。
+
+### 誠實範圍（honest-planning R3／R7，GAPS #39）
+
+- [實作]：庫清單／草稿併入／套用模版資料層＋CLI 全鏈。
+- 未做：庫面板 UI（清單／開啟／套用入口）、使用者模版目錄慣例、併入「覆蓋」選項、樣式級選擇性匯入。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 以自己的參考 PDF 走 extract-styles → merge-styles 看併入品質；其餘同 v0.66.0 hands-on 批次。
+
+### 下個 Sprint 預定範圍
+
+- 候選：editor UI 批次（庫面板／色票面板／改名入口／AI 指派入口）、AI 指派校正介面（#36 (a)）。
+
 ## v0.71.0（2026-07-17，Sprint 76）色票管理核心（結構化色票＋樣式文字色引用＋雙後端同源）
 
 ### 新增

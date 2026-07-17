@@ -63,6 +63,7 @@ from .style_editing import (
 )
 from .style_editing import add_color as add_color_swatch
 from .style_editing import remove_color as remove_color_swatch
+from .template_library import merge_draft_styles
 from .styles import Template
 
 
@@ -250,6 +251,22 @@ class EditSession:
         """刪除字元樣式（對稱 remove_para_style）。"""
         return self._commit_template(
             remove_character_style(self._template, name))
+
+    def apply_template(self, template: Template):
+        """套用整個模版（§4.3 模版庫「套用到新書」，Sprint 77）：整份替換入統一 undo。
+
+        文件引用的樣式在新模版缺失 → 全文重排 KeyError 快速失敗（狀態不變）；
+        同一模版物件 no-op 回 None。
+        """
+        return self._commit_template(template)
+
+    def merge_draft(self, draft: Mapping):
+        """萃取草稿一鍵併入現行模版（GAPS #37 (b)，Sprint 77）：回 (result, report)。
+
+        全跳過（模版不變）＝no-op 回 (None, report) 不入歷史；新增樣式入統一 undo。
+        """
+        merged, report = merge_draft_styles(self._template, draft)
+        return self._commit_template(merged), report
 
     def update_color(self, name: str, changes: Mapping):
         """改色票定義（§4.3 色票管理，Sprint 76）：改值即全書變色，入統一 undo 歷史。
