@@ -2,6 +2,34 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.75.0（2026-07-17，Sprint 80）模版庫面板 UI（清單套用＋草稿併入入口）
+
+### 新增
+
+- [實作]／[Shell] 模版庫面板（§4.3「模版庫」UI 半邊，關 GAPS #39 (a)；核心 Sprint 77 已入基線）：
+  - 新檔 editor/library_panel.py（77 行）`TemplateLibraryDialog`：list_templates 清單（壞檔標註 error 且套用守門警示）、「套用選取模版」＝session.apply_template 一步 undo（文件引用缺樣式擋下、錯誤留內嵌警示列）。
+  - app 新「模版」選單：「模版庫（套用整份模版）…」（v1 目錄＝內建 templates/）＋「併入萃取草稿…」（session.merge_draft 一步 undo，added／skipped 列 statusBar）。
+
+### 驗證
+
+- 核心基線 **659 passed / 0 failed**（UI 層不變 0 退步）；typecheck EXIT=0（含 editor/*.py）；smoke 擴 **C15**（草稿併入 2 樣式列報 → 另存演進模版 → 庫清單 2 項與壞檔套用守門 → 套用整份模版 → 一步 undo 回原），C1〜C15 全過。app.py 774／library_panel.py 77 行守 800。繁中標點 grep 無破折號。
+- R5＝smoke C15 即席全回路（真視窗手感 Owner-hands-on 不代行）。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：庫對話框＋套用＋併入入口（離屏全回路）。
+- [Shell]／待 Owner：真視窗選單與對話框手感（GAPS #19 批次）。
+- 未做：使用者模版庫目錄慣例（#39 (b)）、併入「覆蓋」選項（#39 (c)）、樣式繼承視覺化。
+- **Phase 3 可自主項至此全數收口**；收尾判定待 Owner（先例 Sprint 39／66 AskUserQuestion 定案）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 「模版」選單試模版庫套用與草稿併入；連同 v0.66.0 起 hands-on 批次（說明選單九項）。
+
+### 下個 Sprint 預定範圍
+
+- 待 Owner：Phase 3 收尾判定（轉 Phase 4 或補 Phase 3 細項）；hands-on 批次（GAPS #19／#10／#23）。
+
 ## v0.74.0（2026-07-17，Sprint 79）AI 指派校正 UI（逐段確認與批次改派，單一 undo 步）
 
 ### 新增

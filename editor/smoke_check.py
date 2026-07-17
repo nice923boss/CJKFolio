@@ -15,6 +15,7 @@
   C12 樣式管理 UI（Sprint 71）：雙擊編輯／新增／刪除／另存模版、undo 同步面板
   C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
   C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派（單一 undo 步）、警告不沉默
+  C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -550,10 +551,57 @@ def main() -> int:
         "現行 → 人工否決一段＋改建議 → 批次改派 1 段（單一 undo 步整批回退）＋空載荷 no-op"
     )
 
+    # C15 模版庫面板（Sprint 80）：草稿併入入口＋清單套用整份模版（壞檔守門）＋undo 回原
+    from editor.library_panel import TemplateLibraryDialog
+
+    win15 = EditorWindow(str(DOC))
+    n15_styles = len(win15.template.paragraph_styles)
+    with tempfile.TemporaryDirectory() as td15:
+        draft15 = Path(td15) / "draft.json"
+        draft15.write_text(json.dumps({
+            "paragraph_styles": {
+                "庫測-內文候選": {"font_family": "思源宋體 TC", "font_weight": "regular",
+                                  "size_pt": 11.5},
+                "庫測-標題候選": {"font_family": "思源黑體 TC", "font_weight": "bold",
+                                  "size_pt": 21.9},
+            }}, ensure_ascii=False), encoding="utf-8")
+        win15._merge_draft_dialog(path=str(draft15))
+        assert "已併入 2 個樣式" in win15.statusBar().currentMessage(), "草稿併入未生效"
+        assert len(win15.template.paragraph_styles) == n15_styles + 2
+
+        lib_dir = Path(td15) / "library"
+        lib_dir.mkdir()
+        win15._save_template_to(lib_dir / "演進模版.json")
+        (lib_dir / "壞檔.json").write_text("{ 不是 JSON", encoding="utf-8")
+        win15._on_undo()  # 回併入前（現行模版無庫測樣式）
+        assert len(win15.template.paragraph_styles) == n15_styles
+
+        cap15 = {}
+        _orig15 = TemplateLibraryDialog.exec
+        TemplateLibraryDialog.exec = lambda dlg: cap15.setdefault("dlg", dlg) or 0
+        try:
+            win15._open_library(directory=lib_dir)
+        finally:
+            TemplateLibraryDialog.exec = _orig15
+        dlg15 = cap15["dlg"]
+        assert dlg15.listing.count() == 2, "庫清單應含演進模版＋壞檔"
+        dlg15.select_path("壞檔.json")
+        dlg15._on_apply_clicked()
+        assert "壞檔不可套用" in dlg15._notice.text(), "壞檔套用未守門"
+        dlg15.select_path("演進模版.json")
+        dlg15._on_apply_clicked()  # 套用整份模版（含庫測樣式）
+        assert "庫測-內文候選" in win15.template.paragraph_styles, "套用模版未生效"
+        win15._on_undo()
+        assert "庫測-內文候選" not in win15.template.paragraph_styles, "undo 未回套用前"
+    print(
+        "C15 模版庫面板：草稿併入 2 樣式（statusBar 列報）→ 另存演進模版 → 庫清單 2 項"
+        "（壞檔套用守門警示）→ 套用整份模版（樣式回來）→ 一步 undo 回原"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
-        "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正"
+        "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
         "（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
     )
     return 0

@@ -52,6 +52,7 @@ from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_assign import AssignReviewDialog  # noqa: E402
 from editor.ai_panel import AiConfigDialog  # noqa: E402
+from editor.library_panel import TemplateLibraryDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
     page_frame_placements,
@@ -179,6 +180,15 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
             action.triggered.connect(handler)
             style_menu.addAction(action)
 
+        library_menu = self.menuBar().addMenu("模版")
+        for label, handler in (
+            ("模版庫（套用整份模版）…", lambda: self._open_library()),
+            ("併入萃取草稿…", lambda: self._merge_draft_dialog()),
+        ):
+            action = QAction(label, self)
+            action.triggered.connect(handler)
+            library_menu.addAction(action)
+
         ai_action = QAction("AI 設定…", self)
         ai_action.triggered.connect(self._show_ai_config)
         self.menuBar().addMenu("設定").addAction(ai_action)
@@ -218,6 +228,51 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
                                  self._apply_assignments,
                                  warnings=result.warnings, parent=self)
         dlg.exec()
+
+    def _open_library(self, directory=None) -> None:
+        """模版庫對話框（§4.3；v1 目錄＝內建 templates/，使用者庫目錄慣例後續）。"""
+        from cjkfolio.template_library import list_templates
+        entries = list_templates(directory or TEMPLATE.parent)
+        dlg = TemplateLibraryDialog(entries, self._apply_template_path, parent=self)
+        dlg.exec()
+
+    def _apply_template_path(self, path):
+        """載入並套用整份模版（session.apply_template 一步 undo）；回錯誤訊息或 None。"""
+        from cjkfolio.styles import TemplateError
+
+        try:
+            res = self.session.apply_template(load_template(path))
+        except (TemplateError, KeyError) as err:
+            return f"無法套用：{err}"
+        self._after_template_change(res, f"已套用模版：{Path(path).name}（一步 undo 可回）")
+        return None
+
+    def _merge_draft_dialog(self, path=None) -> None:
+        """併入萃取草稿（extract-styles 產物；session.merge_draft 一步 undo）。"""
+        import json as _json
+
+        from PySide6.QtWidgets import QFileDialog
+
+        from cjkfolio.styles import TemplateError
+
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(
+                self, "選取萃取草稿", "", "草稿 JSON (*.json)")
+            if not path:
+                return
+        try:
+            draft = _json.loads(Path(path).read_text(encoding="utf-8"))
+            res, report = self.session.merge_draft(draft)
+        except (TemplateError, OSError, ValueError) as err:
+            self.statusBar().showMessage(f"無法併入：{err}")
+            return
+        if res is None:
+            self.statusBar().showMessage(
+                f"未新增樣式（{len(report.skipped)} 個同名跳過，既有定義優先）")
+            return
+        self._after_template_change(
+            res, f"已併入 {len(report.added)} 個樣式"
+                 f"（跳過 {len(report.skipped)} 個同名；一步 undo 可回）")
 
     def _apply_assignments(self, assignments):
         """批次改派套用（session.apply_para_styles 單一 undo 步）；回錯誤訊息或 None。"""
