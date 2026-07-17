@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.70.0（2026-07-17，Sprint 75）樣式改名核心（模版＋文件雙層同步，成對單一 undo 步）
+
+### 新增
+
+- [實作] 樣式改名資料面（§4.3「可修改」改名半邊，關 GAPS #34 (a) 改名子項）：
+  - 模版層 cjkfolio/style_editing.py：`rename_paragraph_style`／`rename_character_style`（樣式鍵**原位**改名＋樣式物件自身 name＋子樣式 based_on 跟隨；段落名同步 md_mapping、字元名同步 md_inline_mapping＋主版 footer 元素樣式＋toc.page_no_style；未知 KeyError、空名／衝突 TemplateError、同名 no-op）。
+  - 文件層 cjkfolio/editing.py：`rename_paragraph_style_refs`（段落＋文字框）／`rename_char_style_refs`（run 級；正規化不變式自然保持；無參照回原物件）。
+  - session：`rename_para_style`／`rename_char_style` 走新 `_commit_pair`＝文件與模版**成對單一 undo 步**（先重排快速失敗再入歷史、雙 no-op 不入 undo；快照三元組 Sprint 67 已備，快照層零變更）。
+
+### 驗證
+
+- 核心基線 **617 passed / 0 failed**（602→617，+15，新檔 tests/test_style_rename.py：模版層 7＋文件層 4＋session 4）；typecheck EXIT=0（含 editor/*.py）；smoke C1〜C12 全過 0 退步。style_editing.py 265／editing.py 609／session.py 342 行守 800。繁中標點 grep 無破折號。
+- 真實素材驗收（R5，committed 樣張 chapter-opening＋內建模版全鏈探針）：session 雙改名（內文段落＋頁碼字元）→ save_template 另存 → load_template 重載（**交叉引用驗證**：footer／toc 指到缺樣式即 TemplateError，重載成功＝同步完整）→ 重排幾何逐行等價（頁數 2→2、樣式名還原後完全相等）→ undo 兩步回原（模版與文件同步）。
+
+### 誠實範圍（honest-planning R3／R7）
+
+- [實作]：改名資料面（模版＋文件＋session）。§4.3 樣式管理（新增／修改／繼承／刪除／改名／另存）資料面至此全備。
+- 未做：改名 UI（面板重新命名入口，承 GAPS #19 真視窗批次模式）。
+
+### 待 Owner 真實素材驗收（R5）
+
+- 同 v0.66.0 hands-on 批次（本 Sprint 為核心層，無新 UI 面）。
+
+### 下個 Sprint 預定範圍
+
+- 候選：模版庫管理面（清單／匯入／萃取草稿一鍵併入）、色票管理、改名與 AI 指派的 editor UI 批次。
+
 ## v0.69.0（2026-07-17，Sprint 74）從參考 PDF 萃取起始樣式（§4.3 從參考萃取產品化）
 
 ### 新增

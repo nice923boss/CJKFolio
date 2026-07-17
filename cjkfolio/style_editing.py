@@ -10,8 +10,10 @@ set_paragraph_style／set_character_style 對既有樣式改參數，回傳新 T
 （依 based_on 依賴序迭代至穩定）；被編輯欄位併入該樣式 declared＝自此成為覆寫。
 based_on 本身不可經 set_* 編輯（結構變更屬後續片）。
 
-樣式改名與新增／刪除屬後續片（改名需全書段落參照同步）；全書重排與統一 undo 歷史
-的 session 整合見 cjkfolio/session.py（EditSession.update_para_style／update_char_style）。
+樣式改名（Sprint 75）：rename_*_style 同步模版內所有名稱引用（樣式鍵原位改名、
+子樣式 based_on、md_mapping／md_inline_mapping、主版 footer 與 toc 頁碼樣式）；
+文件層參照同步在 editing.rename_*_refs，兩者由 session 成對入單一 undo 步。
+全書重排與統一 undo 歷史的 session 整合見 cjkfolio/session.py。
 """
 from dataclasses import replace
 from typing import Mapping
@@ -69,6 +71,69 @@ def _with_cascade(styles: dict, name: str, new_style, fields: Mapping) -> dict:
                 updated.add(child_name)
                 progressed = True
     return out
+
+
+def _rename_in_styles(styles: dict, old: str, new: str, kind: str) -> dict:
+    """樣式集鍵原位改名＋子樣式 based_on 跟隨；守門（未知／空名／衝突）。"""
+    if old not in styles:
+        raise KeyError(f"未知{kind}：{old}")
+    if not new.strip():
+        raise TemplateError(f"{kind}新名稱不可為空")
+    if new in styles:
+        raise TemplateError(f"{kind}名已存在：{new}")
+    renamed = {}
+    for name, style in styles.items():
+        if name == old:
+            style = replace(style, name=new)
+            name = new
+        if style.based_on == old:
+            style = replace(style, based_on=new)
+        renamed[name] = style
+    return renamed
+
+
+def rename_paragraph_style(template: Template, old: str, new: str) -> Template:
+    """段落樣式改名（模版層）：鍵原位改名＋based_on＋md_mapping 同步；同名 no-op。
+
+    文件層段落／文字框參照同步在 editing.rename_paragraph_style_refs（session 成對）。
+    """
+    if new == old:
+        return template
+    return replace(
+        template,
+        paragraph_styles=_rename_in_styles(
+            template.paragraph_styles, old, new, "段落樣式"),
+        md_mapping={k: (new if v == old else v)
+                    for k, v in template.md_mapping.items()},
+    )
+
+
+def rename_character_style(template: Template, old: str, new: str) -> Template:
+    """字元樣式改名（模版層）：鍵＋based_on＋md_inline_mapping＋主版引用
+    （footer 元素樣式、toc 頁碼樣式）同步；同名 no-op。"""
+    if new == old:
+        return template
+    renamed = _rename_in_styles(template.character_styles, old, new, "字元樣式")
+    masters = {}
+    for mname, master in template.masters.items():
+        footer = {
+            fname: (replace(item, style=new) if item.style == old else item)
+            for fname, item in master.footer.items()
+        }
+        toc = master.toc
+        if toc is not None and toc.page_no_style == old:
+            toc = replace(toc, page_no_style=new)
+        if toc is not master.toc or any(
+                footer[f] is not master.footer[f] for f in footer):
+            master = replace(master, footer=footer, toc=toc)
+        masters[mname] = master
+    return replace(
+        template,
+        character_styles=renamed,
+        md_inline_mapping={k: (new if v == old else v)
+                           for k, v in template.md_inline_mapping.items()},
+        masters=masters,
+    )
 
 
 def set_paragraph_style(template: Template, name: str, changes: Mapping) -> Template:

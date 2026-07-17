@@ -568,3 +568,42 @@ def apply_merge(doc: Document, template: Template, para_idx: int) -> EditResult:
         document=new_doc, layout=new_layout, cursor=new_cursor, address=address
     )
 
+
+
+def rename_paragraph_style_refs(doc: Document, old: str, new: str) -> Document:
+    """全文件段落樣式參照改名（段落＋文字框，Sprint 75）；無參照回原物件。
+
+    模版側鍵／based_on／md_mapping 同步在 style_editing.rename_paragraph_style，
+    兩側由 session.rename_para_style 成對入單一 undo 步。
+    """
+    if new == old:
+        return doc
+    if not any(p.style == old for p in doc.paragraphs) and not any(
+            f.style == old for f in doc.text_frames):
+        return doc
+    return replace(
+        doc,
+        paragraphs=tuple(
+            replace(p, style=new) if p.style == old else p
+            for p in doc.paragraphs),
+        text_frames=tuple(
+            replace(f, style=new) if f.style == old else f
+            for f in doc.text_frames),
+    )
+
+
+def rename_char_style_refs(doc: Document, old: str, new: str) -> Document:
+    """全文件字元樣式參照改名（run 級，Sprint 75）；無參照回原物件。文字不動、
+    Paragraph 正規化不變式（text＝runs 串接）自然保持。"""
+    if new == old or not any(
+            r.char_style == old for p in doc.paragraphs for r in p.runs):
+        return doc
+    return replace(
+        doc,
+        paragraphs=tuple(
+            replace(p, runs=tuple(
+                replace(r, char_style=new) if r.char_style == old else r
+                for r in p.runs))
+            if any(r.char_style == old for r in p.runs) else p
+            for p in doc.paragraphs),
+    )

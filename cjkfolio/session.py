@@ -38,6 +38,8 @@ from .editing import (
     apply_style,
     apply_style_span,
     locate_cell,
+    rename_char_style_refs,
+    rename_paragraph_style_refs,
 )
 from .frame_editing import (
     FrameCursor,
@@ -53,6 +55,8 @@ from .style_editing import (
     add_paragraph_style,
     remove_character_style,
     remove_paragraph_style,
+    rename_character_style,
+    rename_paragraph_style,
     set_character_style,
     set_paragraph_style,
 )
@@ -243,6 +247,34 @@ class EditSession:
         """刪除字元樣式（對稱 remove_para_style）。"""
         return self._commit_template(
             remove_character_style(self._template, name))
+
+    def rename_para_style(self, old: str, new: str):
+        """段落樣式改名（Sprint 75）：模版引用（鍵／based_on／md_mapping）與文件參照
+        （段落／文字框）成對改名，單一 undo 步；同名 no-op 回 None。"""
+        return self._commit_pair(
+            rename_paragraph_style_refs(self._document, old, new),
+            rename_paragraph_style(self._template, old, new))
+
+    def rename_char_style(self, old: str, new: str):
+        """字元樣式改名（對稱 rename_para_style）：模版引用（鍵／based_on／
+        md_inline_mapping／主版 footer 與 toc 頁碼樣式）與文件 run 參照成對改名。"""
+        return self._commit_pair(
+            rename_char_style_refs(self._document, old, new),
+            rename_character_style(self._template, old, new))
+
+    def _commit_pair(self, document: Document, template: Template):
+        """文件＋模版成對變更入單一 undo 步（改名共用）：先重排快速失敗再入歷史；
+        兩側皆無變更＝no-op 不入 undo（同 _commit_template 慣例）。"""
+        if document is self._document and template is self._template:
+            return None
+        new_layout = layout_document(document, template)  # 套用前快速失敗
+        self._undo.append((self._document, self._template, self._cursor))
+        self._redo.clear()
+        self._document = document
+        self._template = template
+        self._layout = new_layout
+        self._pending_insert = None
+        return self._state_result()
 
     def _commit_template(self, template: Template):
         """模版變更入歷史（樣式編輯共用）：先重排快速失敗，再推快照切換現態。"""
