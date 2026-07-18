@@ -2,6 +2,58 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.98.0（2026-07-18，Sprint 104）AI 指派背景執行緒（關 GAPS #36 (b)、#56 甲(5)）
+
+### 問題
+
+AI 樣式指派的核心（Sprint 73）與逐段校正 UI（Sprint 79）都完備，但呼叫一直跑在 GUI 執行緒上。全書級指派是數分鐘的網路往返，期間整個視窗無回應：拖不動、打不了字、連捲動都停住。Gate 4 實測（20ms 心跳計時器）：同步呼叫的 25.59 秒內，主執行緒心跳跳了 **0** 次。
+
+### 新增
+
+- [實作] `editor/ai_assign_core.py`：AI 指派的判定層（Qt 無關，故背景執行緒與 pytest 皆可跑，同 Sprint 100 `preflight_core` 的分層）。`paragraph_texts` 取送檢當下的逐段文字快照；`assignments_still_apply` 逐段比對現行文件是否仍對得上。
+- [實作] `editor/ai_actions.py`：`AiAssignThread`（QThread 子類，跑不吃外部可變狀態的無參呼叫）＋`AiActionsMixin`（`_show_ai_config`／`_run_ai_assign`／`_apply_assignments` 自 `app.py` 搬入，同 StyleActionsMixin 慣例控管行數）；`_ai_assign_wait` 供離屏驗證等待派送；`closeEvent` 關窗前收掉 worker。
+- [實作] `editor/smoke_ai.py`：C21 離屏煙霧驗證（抽為獨立模組，同 Sprint 101／102 的行數紀律）。
+
+### 變更
+
+- [實作] `editor/app.py`：`EditorWindow` 加繼承 `AiActionsMixin`（置於 `PreflightActionsMixin` 前，`closeEvent` 鏈為 AiActionsMixin → PreflightActionsMixin → QWidget）；移除搬走的三個方法與隨之成為孤兒的 `QDialog`／`AiConfigDialog`／`AssignReviewDialog`／`load_ai_config`／`suggest_styles` import。
+
+### 修正
+
+- [實作] **真呼叫路徑 `load_ai_config()` 漏傳 `path` 參數**（自 Sprint 79 起即存在）：`load_ai_config` 是必填位置參數，故 editor 內不注入替身的 AI 指派一觸即 `TypeError`，從未真正連過線。因 smoke 一律注入 `suggest` 替身而從未走到這條路徑。改為 `load_ai_config(DEFAULT_CONFIG_PATH)`（設定面板寫的同一份本機檔），並於 smoke C21 (5) 以間諜攔在送出前釘死真路徑（不外連 endpoint、不輸出欄位值）。**流程教訓：注入式離屏驗證未覆蓋真路徑的參數組裝。**
+
+### 行為
+
+- **建議索引繫於送檢當下的段落文字**：`suggest_styles` 回的是位置列（第 i 項＝第 i 段），位置只在文字序列不變時有意義。改跑背景後使用者可邊等邊編輯，故送檢前取文字快照，回來時逐段比對；增刪、改寫或對調即**不套用**並據實請重跑，不猜對映。照索引硬套會把建議安到別的段落上，屬沉默的錯派。
+- **只改樣式不使快照失效**：建議只依段落文字得出，校正對話框逐列讀的是現行樣式。
+- **不提供取消**：底層為 urllib 阻塞請求，無可中斷點。v1 取「等待期間可繼續編輯」而非「可喊停」。
+- **單輪執行**：執行中再觸發只提示「AI 指派進行中，請稍候…」，不起第二輪（同 Sprint 100 不重入處置）。
+- **失敗據實提示不擋流程**：連線或解析失敗於 statusBar 列出原因，不 crash（同 CLI `assign-styles` 誠實失敗語意）。
+
+### 驗證
+
+- 基線 **931 → 938 passed（+7）/ 0 failed**、typecheck（含 editor）EXIT_CODE=0、smoke C1〜C21 全過（C1〜C20 0 退步）。
+- 新增 7 測試（`tests/test_ai_assign_core.py`，Qt 無關）：快照為有序不可變 tuple／未變放行／只改樣式仍放行／段落改寫不放行／插入不放行／刪除不放行／順序對調不放行（文字集合相同但位置已異，比對須依序）。
+- smoke 擴 C21（真實執行緒探針，非假時序）：呼叫跑於非 GUI 執行緒（tid 相異）→ 執行中再觸發不重入 → 等待期間主執行緒完成一次插字編輯 → 段序失效不開對話框且 0 段樣式被改、statusBar 據實聲明 → 文件未變照常開且建議帶進下拉 → 連線失敗據實提示不 crash → 真設定路徑讀得到本機檔。
+- **R5 真實素材驗收**（自撰原創 `samples/paiban-xiaoji-ch1.md` 41 段＋使用者私有 endpoint，位址與金鑰零輸出＝PLAN §8 紅線）：走 editor 真路徑（`_run_ai_assign()` 不注入替身）→ 29.05 秒回傳、校正對話框開出 41 列、5 種樣式建議、預設勾選 4 段（其餘與 md 匯入既有樣式相同故不勾）、0 降級警告。
+- **Gate 4 獨立驗證**（不呼叫本專案任何斷言或探針；A/B 為同一份真實呼叫各跑一次）：主執行緒 20ms QTimer 心跳計次，**背景執行緒版跳 1452 次**（29.05 秒），**同步呼叫版跳 0 次**（25.59 秒），即改動前的行為確實整段凍住 GUI 執行緒。另獨立複驗 MRO 與資源收尾：`closeEvent` 定義於 AiActionsMixin／PreflightActionsMixin／QWidget，關窗後兩條 worker 皆為 `None`。
+- 回歸：本 Sprint 零排版程式碼改動（新增模組皆為 editor 層與 Qt 無關判定層），938 全綠涵蓋既有版面與輸出測試。
+
+### 未做
+
+- **無取消鈕**：等待期間可繼續編輯，但無法喊停（GAPS #58 (a)）。
+- **段序失效即整批作廢**：不做文字比對重新對映到新段序，使用者須重跑。長呼叫後被作廢的代價由使用者承擔，換得的是絕不錯派（(b)）。
+- **單輪執行，不排隊不並行**（(c)）。
+
+### 待 Owner（真視窗，離屏測不了）
+
+- 背景指派期間繼續編輯的順暢度。
+- 段序失效訊息的可讀性（使用者是否看得懂為何白等一場、該怎麼辦）。
+
+### 待 Owner 真實素材驗收
+
+- 真視窗（非離屏）走一次完整 AI 指派並抽檢建議品質，屬 GAPS #19 批次。
+
 ## v0.97.0（2026-07-18，Sprint 103）文繞圖參數 UI 與畫布繞排（關 GAPS #49 (e)、#56 甲(4)）
 
 ### 問題

@@ -30,7 +30,6 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
-    QDialog,
     QDockWidget,
     QGraphicsRectItem,
     QGraphicsScene,
@@ -42,16 +41,13 @@ from PySide6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
-from cjkfolio.ai_config import load_ai_config  # noqa: E402
-from cjkfolio.ai_style import suggest_styles  # noqa: E402
 from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.images import ImageError  # noqa: E402
 from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
-from editor.ai_assign import AssignReviewDialog  # noqa: E402
-from editor.ai_panel import AiConfigDialog  # noqa: E402
+from editor.ai_actions import AiActionsMixin  # noqa: E402
 from editor.library_panel import TemplateLibraryDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -72,8 +68,8 @@ DPI = 150
 AUTHOR = "製作者：黃政文"
 
 
-class EditorWindow(StyleActionsMixin, PreflightActionsMixin, ImageActionsMixin,
-                   QMainWindow):
+class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
+                   ImageActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
@@ -186,38 +182,6 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, ImageActionsMixin,
         help_action.triggered.connect(self._show_help)
         self.menuBar().addMenu("說明").addAction(help_action)
 
-    def _show_ai_config(self) -> None:
-        """開 AI 設定面板（§4.4 三欄位；儲存只到本機，statusBar 不含欄位值）。"""
-        if AiConfigDialog(self).exec() == QDialog.DialogCode.Accepted:
-            self.statusBar().showMessage("AI 設定已儲存（本機 local/ai-config.local.json）")
-
-    def _run_ai_assign(self, suggest=None) -> None:
-        """AI 樣式指派入口（§4.4「初稿＋人工校正」；#36 (b)）。
-
-        suggest 注入＝離屏可驗（callable(texts, candidates) -> SuggestResult）；
-        None＝真呼叫使用者私有 endpoint（未設定顯示訊息不擋流程＝誠實失敗，
-        同 CLI assign-styles exit 2 語意）。v1 同步呼叫（全書級約數分鐘會凍
-        視窗，背景執行緒屬後續）。
-        """
-        texts = [p.text for p in self.doc.paragraphs]
-        candidates = sorted(self.template.paragraph_styles)
-        default_style = self.template.md_mapping.get("paragraph", candidates[0])
-        if suggest is None:
-            config = load_ai_config()
-            if not (config.base_url and config.model):
-                self.statusBar().showMessage(
-                    "尚未設定 AI（「設定」選單填 Base URL 與 Model；AI 為選配增強）")
-                return
-            self.statusBar().showMessage("AI 指派連線中（全書級約數分鐘，視窗暫凍）…")
-            result = suggest_styles(texts, candidates, config,
-                                    default_style=default_style)
-        else:
-            result = suggest(texts, candidates)
-        dlg = AssignReviewDialog(self.doc, self.template, result.assignments,
-                                 self._apply_assignments,
-                                 warnings=result.warnings, parent=self)
-        dlg.exec()
-
     def _open_library(self, directory=None) -> None:
         """模版庫對話框（§4.3；v1 目錄＝內建 templates/，使用者庫目錄慣例後續）。"""
         from cjkfolio.template_library import list_templates
@@ -262,19 +226,6 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, ImageActionsMixin,
         self._after_template_change(
             res, f"已併入 {len(report.added)} 個樣式"
                  f"（跳過 {len(report.skipped)} 個同名；一步 undo 可回）")
-
-    def _apply_assignments(self, assignments):
-        """批次改派套用（session.apply_para_styles 單一 undo 步）；回錯誤訊息或 None。"""
-        if not assignments:
-            self.statusBar().showMessage("未採用任何建議（文件未變更）")
-            return None
-        try:
-            res = self.session.apply_para_styles(assignments)
-        except (KeyError, ValueError, IndexError) as err:
-            return f"無法套用：{err}"
-        self._after_template_change(
-            res, f"AI 批次改派 {len(assignments)} 段（單一 undo 步可整批回退）")
-        return None
 
     @property
     def doc(self):
