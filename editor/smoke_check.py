@@ -16,7 +16,8 @@
   C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
   C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派（單一 undo 步）、警告不沉默
   C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
-  C16 preflight 面板（Sprint 87）：匯出臨時 PDF → 機械 check_pdfx → 結果面板列規則＋摘要
+  C16 preflight 面板（Sprint 87；Sprint 94 三分區）：匯出臨時 PDF → check_pdfx
+     ＋check_image_resolution＋check_ink_coverage → 面板三分頁列規則與逐筆判定＋三行摘要
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -599,35 +600,71 @@ def main() -> int:
         "（壞檔套用守門警示）→ 套用整份模版（樣式回來）→ 一步 undo 回原"
     )
 
-    # C16 preflight 面板（Sprint 87）：匯出臨時 PDF → check_pdfx → 結果面板顯示
-    from cjkfolio.preflight import Finding, PreflightReport
+    # C16 preflight 面板（Sprint 87 建立；Sprint 94 擴為 X-1a／影像解析度／油墨總量三分區）
+    from cjkfolio.preflight import (
+        Finding,
+        ImageFinding,
+        ImageResolutionReport,
+        InkCoverageReport,
+        InkFinding,
+        PreflightReport,
+    )
     from editor.preflight_panel import PreflightDialog
 
-    win16 = EditorWindow(str(DOC))
-    cap16 = {}
-    _orig16 = PreflightDialog.exec
-    PreflightDialog.exec = lambda dlg: cap16.setdefault("dlg", dlg) or 0
-    try:
-        report16 = win16._run_preflight()
-    finally:
-        PreflightDialog.exec = _orig16
+    def _run_panel(doc_path):
+        """跑一次 _run_preflight（面板不真開），回傳 (window, report, dialog)。"""
+        win = EditorWindow(str(doc_path))
+        cap = {}
+        orig = PreflightDialog.exec
+        PreflightDialog.exec = lambda dlg: cap.setdefault("dlg", dlg) or 0
+        try:
+            rep = win._run_preflight()
+        finally:
+            PreflightDialog.exec = orig
+        return win, rep, cap.get("dlg")
+
+    win16, report16, dlg16 = _run_panel(DOC)
     assert report16 is not None and report16.ok, "preflight 應全數通過"
     assert len(report16.findings) == 12, f"規則數 {len(report16.findings)}（預期 12）"
-    dlg16 = cap16["dlg"]
     assert dlg16.table.rowCount() == 12, "面板表列數非 12"
     assert "全數通過（12/12）" in dlg16.summary_label.text(), "摘要非全數通過"
     assert dlg16.not_covered_label.text().startswith("未涵蓋"), "未涵蓋聲明未顯示"
+    assert dlg16.tabs.count() == 3, "面板分頁非三區"
+    assert dlg16.tabs.tabText(0).startswith("PDF/X-1a"), "首頁非 X-1a"
+    # 無置入圖的樣張：影像區零列且摘要據實說「無置入影像」；墨量區列出內文著色且達標
+    assert dlg16.image_table.rowCount() == 0, "無圖樣張影像區不應有列"
+    assert "無置入影像" in dlg16.image_summary_label.text(), "影像摘要異常"
+    assert dlg16.ink_report.ok and dlg16.ink_table.rowCount() > 0, "墨量區應有達標列"
+    assert "皆在上限內" in dlg16.ink_summary_label.text(), "墨量摘要異常"
     assert "preflight：全數通過" in win16.statusBar().currentMessage(), "statusBar 未列結論"
-    # 失敗案例：合成不過報告 → 面板紅字摘要＋「不過」列
+    # 低解析度樣張（wrap-demo 置入 218ppi 佔位圖）：影像區報不足，X-1a 結論仍通過
+    win16b, report16b, dlg16b = _run_panel(ROOT / "samples" / "wrap-demo.doc.json")
+    assert report16b is not None and report16b.ok, "低解析度不應影響 X-1a 合規"
+    assert dlg16b.image_table.rowCount() == 1, "影像區應列一次置入"
+    assert dlg16b.image_table.item(0, 0).text() == "不足", "218ppi 應判不足"
+    assert "解析度不足" in dlg16b.image_summary_label.text(), "影像摘要未報不足"
+    assert "影像解析度：解析度不足" in win16b.statusBar().currentMessage(), \
+        "statusBar 未附影像警示"
+    # 失敗案例：合成不過報告 → X-1a 紅字摘要與「不過」列；印廠條件兩區各自警示
     bad16 = PreflightReport(path="x", findings=(
         Finding("header-version", True, "1.3"),
         Finding("color-cmyk-only", False, "RGB 殘留")))
-    bdlg16 = PreflightDialog(bad16)
+    bad_img16 = ImageResolutionReport(path="x", min_ppi=300.0, findings=(
+        ImageFinding(page=1, xref=5, px_w=400, px_h=600, draw_w_pt=265.2,
+                     draw_h_pt=360.9, ppi=108.6, ok=False),))
+    bad_ink16 = InkCoverageReport(path="x", max_tac=320.0, findings=(
+        InkFinding(kind="影像", label="obj 7 881×588px", tac=349.5, ok=False),),
+        unchecked=("obj 9 無法解碼",))
+    bdlg16 = PreflightDialog(bad16, bad_img16, bad_ink16)
     assert "未通過（1/2）" in bdlg16.summary_label.text(), "失敗摘要異常"
     assert bdlg16.table.item(1, 0).text() == "不過", "失敗列狀態非『不過』"
+    assert bdlg16.image_table.item(0, 0).text() == "不足", "影像失敗列異常"
+    assert bdlg16.ink_table.item(0, 0).text() == "超標", "墨量失敗列異常"
+    assert bdlg16.ink_table.item(1, 0).text() == "未判讀", "未判讀列未接於末尾"
     print(
-        "C16 preflight 面板：匯出臨時 PDF → 機械 preflight 12/12 → 面板列 12 規則"
-        "＋全數通過摘要＋未涵蓋聲明；合成不過報告面板紅字摘要與『不過』列"
+        "C16 preflight 面板三分區：匯出臨時 PDF → X-1a 12/12＋影像解析度＋油墨總量"
+        "（無圖樣張『無置入影像』、墨量皆在上限內）→ wrap-demo 218ppi 影像區報不足"
+        "而 X-1a 仍 12/12（statusBar 附警示）；合成不過報告三區各列不過／不足／超標與未判讀"
     )
 
     print(

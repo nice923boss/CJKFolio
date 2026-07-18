@@ -32,9 +32,11 @@ from cjkfolio.ink import (
 from cjkfolio.pdf_writer import export_pdf
 from cjkfolio.preflight import (
     InkCoverageReport,
+    InkFinding,
     check_ink_coverage,
     check_pdfx1a,
     ink_coverage_summary,
+    ink_rows,
 )
 from cjkfolio.styles import load_template, template_from_dict, template_to_dict
 
@@ -371,3 +373,48 @@ def test_cli_preflight_prints_ink_section(tmp_path, template, capsys):
     assert main(["preflight", str(out_pdf), "--max-tac", "50"]) == 0
     printed = capsys.readouterr().out
     assert "超標" in printed and "全數通過（12/12）" in printed
+
+
+# ---------- 逐筆列（Sprint 94：CLI 與 editor 面板共用的呈現層，同 summary 慣例） ----------
+
+def test_ink_rows_empty_report_is_empty():
+    report = InkCoverageReport(path=Path("x.pdf"), max_tac=MAX_TAC, findings=())
+    assert ink_rows(report) == ()
+
+
+def test_ink_rows_marks_status_and_detail():
+    report = InkCoverageReport(path=Path("x.pdf"), max_tac=320.0, findings=(
+        InkFinding(kind="著色", label="頁 1 0 0 0 0.92", tac=92.0, ok=True),
+        InkFinding(kind="影像", label="obj 12 881×588px", tac=349.5, ok=False),
+    ))
+    rows = ink_rows(report)
+    assert len(rows) == 2
+    assert [r[0] for r in rows] == ["達標", "超標"]
+    assert {r[1] for r in rows} == {"油墨總量"}
+    assert "著色" in rows[0][2] and "92%" in rows[0][2]
+    assert "影像" in rows[1][2] and "350%" in rows[1][2]
+
+
+def test_ink_rows_append_unchecked_notes():
+    """無法判讀者列於末尾且狀態為「未判讀」（不計為通過，同報告語意）。"""
+    report = InkCoverageReport(
+        path=Path("x.pdf"), max_tac=320.0,
+        findings=(InkFinding(kind="著色", label="頁 1 0 0 0 1", tac=100.0, ok=True),),
+        unchecked=("obj 5 無法解碼",))
+    rows = ink_rows(report)
+    assert len(rows) == 2
+    assert rows[-1][0] == "未判讀"
+    assert rows[-1][1] == "油墨總量" and rows[-1][2] == "obj 5 無法解碼"
+
+
+def test_ink_rows_match_cli_lines(tmp_path, template, capsys):
+    """CLI 與面板共用同一組列（DRY）：CLI 每行即該列以「｜」「：」串接。"""
+    from cjkfolio.cli import main
+    out_pdf = tmp_path / "plain.pdf"
+    export_pdf(_text_doc(), template, out_pdf, footer=False)
+    assert main(["preflight", str(out_pdf)]) == 0
+    printed = capsys.readouterr().out
+    rows = ink_rows(check_ink_coverage(out_pdf))
+    assert rows
+    for status, rule, detail in rows:
+        assert f"{status}｜{rule}：{detail}" in printed

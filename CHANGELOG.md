@@ -2,6 +2,31 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.89.0（2026-07-18，Sprint 94）preflight 面板三分區（關 GAPS #51 (d)、#53 (d)）
+
+### 新增
+
+- [實作] `cjkfolio/preflight.image_rows`／`ink_rows` 純函式：把兩份印廠條件報告攤成逐筆列 `(狀態, 項目, 明細)`，**CLI 與 editor 面板共用同一組列**（承 Sprint 87 `preflight_summary` 的 DRY 慣例）。CLI 每行即該列以「｜」與「：」串接，故兩處呈現不可能分歧；油墨總量的 `unchecked` 接於末尾、狀態列「未判讀」（不當作通過，與報告語意一致）。
+- [實作] `editor/preflight_panel.PreflightDialog` 擴為三分區：**三行摘要**（PDF/X-1a 結論＋影像解析度＋油墨總量，後兩者標註「§9，非 X-1a 條款」）＋**三分頁明細表**（欄位統一為 狀態／項目／明細）＋未涵蓋誠實聲明。摘要與列的顏色語意區分兩類判定：X-1a 不過為紅（`#b00000`＝不合規），影像與墨量未達標為警示橘（`#b06000`＝印廠條件風險，不影響 X 合規），未判讀為灰。
+- [實作] `editor/preflight_actions._run_preflight` 於同一份臨時 PDF 加跑 `check_image_resolution` 與 `check_ink_coverage`；statusBar 結論後附未達標的印廠條件摘要（達標時不贅字）。回傳值仍為 X-1a report（statusBar 與判定語意依 X-1a 不變），影像與墨量報告掛於面板 `dlg.image_report`／`dlg.ink_report`。
+
+### 變更
+
+- CLI `cmd_preflight` 的影像與墨量逐筆列改呼叫 `image_rows`／`ink_rows`（**輸出逐字不變**，既有 CLI 測試釘死），去除與面板的重複格式化。
+
+### 驗證
+
+- 基線 **878 passed / 0 failed**（871→878，+7：`image_rows` 空報告／狀態與明細／與 CLI 逐行相符 3＋`ink_rows` 空報告／狀態與明細／未判讀接尾／與 CLI 逐行相符 4）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R2 判定：無新外部依賴、無新機制（判定邏輯全在 Sprint 91／93 已 pytest 驗的兩支檢查器，本 Sprint 只做呈現層與入口），無需 spike（先例 Sprint 87 面板本身）。R1 證據＝既有 `check_image_resolution`／`check_ink_coverage`（A 級，Sprint 91／93 已對真書送印稿實測）＋離屏面板實測（A 級）。
+- smoke C16 擴為三分區：**無圖樣張**（case-divider）→ X-1a 12/12、影像區 0 列且摘要據實報「無置入影像」、墨量區列內文著色且皆在上限內；**低解析度樣張**（wrap-demo 置入 218ppi 佔位圖）→ 影像區 1 列判「不足」、摘要報不足、statusBar 附影像警示，而 **X-1a 仍 12/12**（印廠條件不影響合規結論）；**合成不過報告** → 三區各列「不過」「不足」「超標」與末尾「未判讀」。
+- R5 真實素材驗收（真書為本機素材，紅線不入 repo；out/ 已於 .gitignore）：抽真書送印稿 `DeviceCMYK` 影像（xref 156，881×588，解碼 2,072,112 bytes 與 `881×588×4` 相符）→ 本產品 G-圖文版槽式置入 → **editor 離屏開面板**：X-1a 全數通過（12/12）、影像區「不足｜頁 1 obj 7 881×588px 繪 287.5×191.9pt ＝ 221ppi」、墨量區「達標｜著色 頁 1 k 0 0 0 0.92 最高 TAC 92%」與「超標｜影像 頁 1 obj 7 881×588px 最高 TAC 349%」、statusBar 三段皆列。
+- Gate 4 獨立路徑對照：同一文件另走 CLI（`export-pdf` → `preflight`，另一份 PDF、另一次檢查）→ 逐筆列與面板**逐字相同**（221ppi、92%、349%），X-1a 亦 12/12；精確值 TAC **348.62745098%**、PPI **220.6407ppi**，其中 TAC 與 Sprint 93 記錄的 348.6275% 到小數四位一致（跨 Sprint 一致性複驗）。
+- 誠實差異（GAPS #47 更新、#51 (d) 與 #53 (d) 關閉）：三分區皆為唯讀呈現，不提供修正建議或自動修復；仍只驗預設 X-1a（X-4 需 ICC 選取器，後續）；認證級 preflight 不涵蓋（承 #18）；三項檢查同步跑於單次匯出，文件大時凍視窗時間較 Sprint 87 更長（背景執行緒後續，承 #47 (d)）。
+
+### 待 Owner 真實素材驗收
+
+- 真視窗手感（三分頁切換、表格可讀性、摘要三行的視覺層次是否分得出「不合規」與「印廠條件風險」兩類）僅離屏驗過邏輯，未經人眼實看（GAPS #19 批次）。
+
 ## v0.88.0（2026-07-18，Sprint 93）油墨總量 TAC 檢核（§9 最後一項未實作硬條件）
 
 ### 新增

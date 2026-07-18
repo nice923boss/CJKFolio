@@ -349,6 +349,18 @@ def check_image_resolution(path, min_ppi: float = MIN_IMAGE_PPI) -> ImageResolut
     return ImageResolutionReport(path=p, min_ppi=min_ppi, findings=tuple(findings))
 
 
+def image_rows(report: ImageResolutionReport) -> tuple:
+    """逐筆判定列 (狀態, 項目, 明細)（CLI 與 editor 面板共用，同 summary 慣例）。
+
+    CLI 以「狀態｜項目：明細」印成一行，面板以三欄列入表，兩處呈現不分歧。
+    """
+    return tuple(
+        ("達標" if f.ok else "不足", "影像解析度",
+         f"頁 {f.page} obj {f.xref} {f.px_w}×{f.px_h}px "
+         f"繪 {f.draw_w_pt:.1f}×{f.draw_h_pt:.1f}pt ＝ {f.ppi:.0f}ppi")
+        for f in report.findings)
+
+
 def image_resolution_summary(report: ImageResolutionReport) -> str:
     """一行結論摘要（CLI 與後續面板共用，同 preflight_summary 慣例）。"""
     if not report.findings:
@@ -459,6 +471,18 @@ def check_ink_coverage(path, max_tac: float = MAX_TAC) -> InkCoverageReport:
         doc.close()
     return InkCoverageReport(path=p, max_tac=max_tac, findings=tuple(findings),
                              unchecked=tuple(unchecked))
+
+
+def ink_rows(report: InkCoverageReport) -> tuple:
+    """逐筆判定列 (狀態, 項目, 明細)（CLI 與 editor 面板共用，同 image_rows 慣例）。
+
+    無法判讀者接於末尾、狀態列「未判讀」（不當作通過，與報告語意一致）。
+    """
+    rows = [("達標" if f.ok else "超標", "油墨總量",
+             f"{f.kind} {f.label} 最高 TAC {f.tac:.0f}%")
+            for f in report.findings]
+    rows += [("未判讀", "油墨總量", note) for note in report.unchecked]
+    return tuple(rows)
 
 
 def ink_coverage_summary(report: InkCoverageReport) -> str:

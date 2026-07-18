@@ -29,10 +29,12 @@ from cjkfolio.images import (
 )
 from cjkfolio.pdf_writer import export_pdf
 from cjkfolio.preflight import (
+    ImageFinding,
     ImageResolutionReport,
     check_image_resolution,
     check_pdfx1a,
     image_resolution_summary,
+    image_rows,
 )
 from cjkfolio.styles import load_template
 
@@ -308,3 +310,41 @@ def test_verifier_reads_pdf_not_source(tmp_path, template):
     assert len(report.findings) == 1 and report.findings[0].ok is False
     with fitz.open(out) as d:  # 影像確實在 PDF 內（獨立確認）
         assert len(d.get_page_images(0)) == 1
+
+
+# ---------- 逐筆列（Sprint 94：CLI 與 editor 面板共用的呈現層，同 summary 慣例） ----------
+
+def test_image_rows_empty_report_is_empty():
+    report = ImageResolutionReport(path=Path("x.pdf"), min_ppi=300.0, findings=())
+    assert image_rows(report) == ()
+
+
+def test_image_rows_marks_status_and_detail():
+    report = ImageResolutionReport(path=Path("x.pdf"), min_ppi=300.0, findings=(
+        ImageFinding(page=2, xref=7, px_w=1600, px_h=2400,
+                     draw_w_pt=265.2, draw_h_pt=360.9, ppi=434.6, ok=True),
+        ImageFinding(page=3, xref=9, px_w=400, px_h=600,
+                     draw_w_pt=265.2, draw_h_pt=360.9, ppi=108.6, ok=False),
+    ))
+    rows = image_rows(report)
+    assert len(rows) == 2
+    assert [r[0] for r in rows] == ["達標", "不足"]
+    assert {r[1] for r in rows} == {"影像解析度"}
+    assert "頁 2" in rows[0][2] and "obj 7" in rows[0][2]
+    assert "1600×2400px" in rows[0][2] and "435ppi" in rows[0][2]
+    assert "109ppi" in rows[1][2]
+
+
+def test_image_rows_match_cli_lines(tmp_path, template, capsys):
+    """CLI 與面板共用同一組列（DRY）：CLI 每行即該列以「｜」「：」串接。"""
+    from cjkfolio.cli import main
+    _make_image(tmp_path / "hi.png", 1600, 2400)
+    out_pdf = tmp_path / "hi.pdf"
+    export_pdf(_figure_doc("hi.png"), template, out_pdf, footer=False,
+               image_base_dir=tmp_path)
+    assert main(["preflight", str(out_pdf)]) == 0
+    printed = capsys.readouterr().out
+    rows = image_rows(check_image_resolution(out_pdf))
+    assert rows
+    for status, rule, detail in rows:
+        assert f"{status}｜{rule}：{detail}" in printed
