@@ -183,7 +183,8 @@ def cmd_render(args) -> int:
     )
     print(f"渲染完成：{len(result.paths)} 頁 → {args.output}")
     if result.images_placed:
-        print(f"置入圖：{result.images_placed} 張（灰階單 K；槽式與 rect 任意圖框）")
+        print(f"置入圖：{result.images_placed} 張（PNG 預覽一律灰階畫布，"
+              f"彩色 CMYK 只在 PDF 完稿呈現；槽式與 rect 任意圖框）")
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     print(_justify_line(result.justify_stats))
     for warning in result.font_warnings:
@@ -215,7 +216,10 @@ def cmd_export_pdf(args) -> int:
     print(f"{result.pdfx_label} 識別：OutputIntent {result.output_condition_identifier}"
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     if result.images_placed:
-        print(f"置入圖：{result.images_placed} 張（DeviceGray 影像 XObject，灰階單 K）")
+        spaces = "、".join(
+            f"{cs.lstrip('/')} {n} 張"
+            for cs, n in sorted(result.image_colorspaces.items()))
+        print(f"置入圖：{result.images_placed} 張影像 XObject（{spaces}）")
         for warning in result.ppi_warnings:
             print(warning)
         if not result.ppi_warnings:

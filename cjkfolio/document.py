@@ -7,7 +7,7 @@
 相容性：@1（純 text 段落）照載；@2 段落可用 text 捷徑或 runs 陣列。
 save 一律寫 @2；單一無字元樣式 run 以 text 捷徑序列化（可讀性）。
 圖片置入（images，@2 相容擴充選配欄位，同 page_no 慣例）：置入主版 figure
-保留區的照片清單（PLAN §4.2 G 圖文版、§9 灰階單 K）。
+保留區的照片清單（PLAN §4.2 G 圖文版、§9 灰階單 K 或彩色 CMYK）。
 """
 import json
 from dataclasses import dataclass
@@ -70,7 +70,7 @@ class TextFrame:
 
 @dataclass(frozen=True)
 class PlacedImage:
-    """置入一張圖到某版面頁（PLAN §4.2 G 圖文版照片、§9 灰階單 K）。
+    """置入一張圖到某版面頁（PLAN §4.2 G 圖文版照片、§9 灰階單 K 或彩色 CMYK）。
 
     path：圖檔路徑（相對路徑於 render／export 時相對文件目錄解析）；
     page：版面頁號（1 起算，與 --page 選頁鍵、檔名同鍵，Sprint 12 決議）；

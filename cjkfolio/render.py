@@ -395,21 +395,25 @@ class PageRenderer:
         for edge in figure_slot_edges(rect, self.master.figure):
             _draw_stroke_line(img, edge, self.scale)
 
-    def _draw_image(self, img, gray, book_number: int, rect=None) -> None:
-        """置入圖：等比縮放置中（contain）以灰階（§9 單 K）貼入畫布。
+    def _draw_image(self, img, pil, book_number: int, rect=None) -> None:
+        """置入圖：等比縮放置中（contain）貼入畫布。
 
         rect＝任意圖框（trim pt、top-down，Sprint 54）；None＝主版 figure 保留區
         （槽式，取代佔位框）。幾何與 pdf_writer._image 同源（fit_image_rect）；
-        溢出版心的 rect 由 PIL 於畫布邊界自然裁切（PNG 為 trim 空間預覽）。"""
+        溢出版心的 rect 由 PIL 於畫布邊界自然裁切（PNG 為 trim 空間預覽）。
+        CMYK 來源在此轉灰階（PNG 畫布為 "L"，同 Sprint 15 起的灰階預覽慣例；
+        彩色只在 PDF 完稿呈現，GAPS #38 (c) 同型）。"""
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
             slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
                                     self.master.figure)
             rect = (slot.x0, slot.y0, slot.x1, slot.y1)
-        box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], gray.width, gray.height)
+        box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], pil.width, pil.height)
         w_px = max(1, round((box.x1 - box.x0) * self.scale))
         h_px = max(1, round((box.y1 - box.y0) * self.scale))
-        resized = gray.resize((w_px, h_px))
+        resized = pil.resize((w_px, h_px))
+        if resized.mode != "L":
+            resized = resized.convert("L")
         img.paste(resized, (round(box.x0 * self.scale), round(box.y0 * self.scale)))
 
     def _draw_text_frame(self, img, placement) -> None:
@@ -481,8 +485,8 @@ class PageRenderer:
         slot_filled = any(rect is None for _p, _g, rect in images)
         if vertical and self.master.figure and page.placed and not slot_filled:
             self._draw_figure(img, book_number)
-        for _path, gray, rect in images:  # 文件序＝繪製序
-            self._draw_image(img, gray, book_number, rect=rect)
+        for _path, pil, rect in images:  # 文件序＝繪製序
+            self._draw_image(img, pil, book_number, rect=rect)
         if vertical:
             self._draw_vertical_body(img, page, book_number)
         else:
@@ -503,7 +507,7 @@ class RenderResult:
     fonts_used: list
     font_warnings: list
     justify_stats: dict
-    images_placed: int = 0  # 置入照片數（槽式＋rect 任意圖框，灰階單 K）
+    images_placed: int = 0  # 置入照片數（槽式＋rect 任意圖框；PNG 預覽一律灰階畫布）
 
 
 def render_document(doc, template: Template, out_dir, dpi: int = 150,

@@ -14,6 +14,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_PDF = ROOT / "內在整理-20260312.pdf"   # 交印檔（本機，不入 repo）
+# 交印檔亦可置於 local/（GAPS #6 已列 .gitignore 的本機素材目錄）。Windows 繁中
+# 環境下含中文的命令列參數會被以 mbcs 轉碼而損壞，故預設路徑自行探查兩處，免逐次
+# 靠 argv 傳中文路徑。
+REFERENCE_PDF_ALT = ROOT / "local" / "內在整理-20260312.pdf"
 REFERENCE_DIR = ROOT / "assets" / "reference"     # 量測 JSON 輸出目錄（本機）
 
 PT_PER_MM = 72.0 / 25.4
@@ -54,8 +58,10 @@ def strip_bleed(v_pt: float) -> float:
 
 
 def reference_pdf() -> str:
-    """參考書 PDF 路徑：命令列 argv[1] 覆寫，否則預設交印檔（本機）。"""
-    return sys.argv[1] if len(sys.argv) > 1 else str(REFERENCE_PDF)
+    """參考書 PDF 路徑：命令列 argv[1] 覆寫，否則預設交印檔（本機根目錄或 local/）。"""
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    return str(REFERENCE_PDF if REFERENCE_PDF.exists() else REFERENCE_PDF_ALT)
 
 
 def write_measurements(name: str, data) -> Path:

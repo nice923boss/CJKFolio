@@ -33,7 +33,8 @@ NOT_COVERED = (
     "疊印與 ExtGState 細節",
     "影像解析度 PPI（非 ISO 15930-1 條款故不入本規則集，另由 check_image_resolution "
     "依 §9 300ppi 下限檢查；置入嵌原生解析度、不重採樣；"
-    "影像色彩空間由 color-cmyk-only 涵蓋，DeviceGray 合法、DeviceRGB 判失敗）",
+    "影像色彩空間由 color-cmyk-only 涵蓋，DeviceGray 與 DeviceCMYK 合法、"
+    "DeviceRGB 判失敗）",
     "油墨總量 TAC",
     "字型授權嵌入旗標",
     "視覺內容正確性（人工抽檢）",

@@ -2,6 +2,37 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.87.0（2026-07-18，Sprint 92）彩色 CMYK 影像置入（關 GAPS #29 (c)）
+
+### 新增
+
+- [Spike] `spikes/spike18-cmyk-image/`：CMYK 影像自來源檔到 PDF 的分量往返驗證。`probe_cmyk_roundtrip.py` 三組樣本（合成極值圖、真書 DeviceCMYK 影像的 TIFF 與 JPEG 兩容器）逐位元組往返皆相等；並以 PyMuPDF 的 DCT 解碼為獨立基準，實測**真實世界的 Adobe YCCK CMYK JPEG 經 PIL 讀出為負片**（兩張真書樣本反相假設誤差 3.14／5.69，對墨量假設 221.45／193.14）。
+- [實作] `tools/measure_cmyk_images.py`：真書 179 頁全書影像色彩空間形態量測（R1，A 級一手）。94 次置入結果：`DeviceN(1,DeviceCMYK,Black)` 67、**`DeviceCMYK` 16**（與 §1「16 張 CMYK」逐數吻合）、`Indexed(*,DeviceCMYK)` 11；8bpc 全數；**DeviceCMYK 影像無 `/Decode` 反相陣列**；帶 `/SMask` 14（真書交印檔本就非 PDF/X，本產品不比照）。
+- [實作] 彩色 CMYK 影像置入（§9「全文 CMYK 或 Grayscale」）：
+  - `cjkfolio/images.py`：`open_placed`（置入用開圖，依**來源檔自帶的色彩空間**分流：CMYK 保持 CMYK、其餘轉 8-bit 灰階）；`IMAGE_COLORSPACES` 對照表；`EmbeddedImage` 改依 PIL mode 決定 `/ColorSpace`（`L`→`/DeviceGray`、`CMYK`→`/DeviceCMYK`），不支援的 mode 快速失敗。
+  - `cjkfolio/pdf_writer.py`：`PdfResult.image_colorspaces`（各色彩空間張數，供 CLI 據實回報）。
+  - `cjkfolio/render.py`：`_draw_image` 於貼入前轉灰階（PNG 畫布為 "L"，彩色只在 PDF 完稿呈現，同 Sprint 15 起的灰階預覽慣例）。
+
+### 變更
+
+- **行為變更（誠實記錄）**：CMYK 來源檔過去一律被轉為灰階置入，自本版起保持 CMYK。既有文件若置入 CMYK 檔，輸出由 DeviceGray 變為 DeviceCMYK（§9 兩者皆合法；沉默降級使用者素材本非正確行為）。灰階與 RGB 來源輸出形態不變。
+- **CMYK JPEG 拒收**：`open_placed` 對 CMYK JPEG 快速失敗並提示轉存 TIFF。理由見 spike18：判別依據只存在於函式庫層的容器細節（`adobe_transform`），猜錯的後果是整批送印成負片，而使用者規避成本只是另存一次檔。RGB JPEG 不受影響。
+- CLI 訊息改為據實回報，不再寫死色彩空間：`export-pdf` 列各色彩空間張數（原寫死「DeviceGray 影像 XObject，灰階單 K」）；`render` 明示 PNG 預覽一律灰階畫布。
+- `preflight.NOT_COVERED` 影像條目補列 `DeviceCMYK` 為合法色彩空間（規則數維持 12，判定邏輯未動）。
+- `tools/_measure_common.py`：參考檔預設路徑兼探 `local/`（Windows 繁中環境含中文的命令列參數會被 mbcs 轉碼損壞，原預設路徑已不存在）。
+
+### 驗證
+
+- 基線 **835 passed / 0 failed**（817→835，+18：`open_placed` 分流 5＋CMYK JPEG 拒收與 RGB JPEG 不誤傷 2＋`EmbeddedImage` DeviceCMYK 形態與未反相 3＋端到端匯出／preflight／灰階不變 3＋PNG 預覽 1＋PPI 交互 1＋`image_colorspaces` 2＋內容流無 rg／RG 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R1 證據：PLAN §9 條文（B 級）＋真書 179 頁全書影像形態實測（A 級，工具入 repo 可重現）＋輸出探針實測（A 級）。R2：spike18 條件性通過（TIFF 走、JPEG 拒收）。R6 pre-mortem 三風險（分量反相成負片／PNG 預覽掩蓋 PDF 缺陷／污染既有灰階輸出）分別以 spike 往返驗證、PDF 光柵化目視、灰階形態回歸測試解消。
+- R5 真實素材驗收（真書為本機素材，紅線不入 repo；out/ 已於 .gitignore）：抽真書送印稿 DeviceCMYK 影像（881×588，原始四分量非經 RGB 轉換）→ 本產品置入 → CLI 匯出報「DeviceCMYK 1 張」→ **Gate 4** PyMuPDF 獨立解析：`/ColorSpace /DeviceCMYK`、8bpc、無 `/Decode`、無 `/SMask`、分量 **2,072,112 bytes 逐位元組相等且非反相**、內容流無 rg／RG、preflight **12/12**；PDF 光柵化親 Read 目視正相（非負片）；較小圖框變體（200×133.5pt）報「實效 PPI 皆達 §9 300ppi 下限」（槽式置入 221ppi 則正確列警告，證 Sprint 91 檢核對 CMYK 影像同樣運作）。
+- 回歸：真書第一章 render 22 頁、禁則 0 違規、齊行擠入 10／撐開 2，與 Sprint 11／88／89／90／91 記錄逐項一致；灰階來源匯出仍為 `/DeviceGray`（測試釘死）。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [實作]：影像層與 PDF 寫出層；[Spike]：spike18（條件性通過，結論即「JPEG 不做」）。
+- **未涵蓋**（GAPS #52）：CMYK JPEG 不支援（拒收，非靜默降級）；不做 RGB→CMYK 換算（色彩轉換屬印廠 ICC 範疇）；無來源 ICC 感知（DeviceCMYK 為裝置相依，色彩正確性依 OutputIntent 與印廠條件）；PNG 預覽不顯示彩色；`DeviceN` 單黑版與 `Indexed` 等真書所用的最佳化形態不產生；圖片置入 UI 未接線（承 #29 (d)）。
+
 ## v0.86.0（2026-07-18，Sprint 91）影像解析度 PPI 檢核（關 GAPS #29 (b)）
 
 ### 新增

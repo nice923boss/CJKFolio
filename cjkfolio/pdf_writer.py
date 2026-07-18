@@ -13,12 +13,14 @@
   OutputIntent（預設 JC200103 registry 識別，依 ISO 15930-1 免嵌描述檔；
   自訂識別須以 icc_profile 嵌 DestOutputProfile）、XMP metadata stream。
   機械 preflight 見 preflight.py（獨立解析驗證）。
-- 圖片置入（Sprint 50）：DeviceGray 影像 XObject（§9 灰階單 K），置入主版 figure
-  保留區、contain 等比置中，幾何與 render 同源（figure_slot_rect＋fit_image_rect）。
+- 圖片置入（Sprint 50）：影像 XObject 置入主版 figure 保留區、contain 等比置中，
+  幾何與 render 同源（figure_slot_rect＋fit_image_rect）。色彩空間依來源分流
+  （Sprint 92）：灰階單 K 走 DeviceGray、CMYK 來源走 DeviceCMYK（§9 兩者皆合法）。
 """
+import collections
 import hashlib
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -488,14 +490,15 @@ class _PdfPageWriter:
 
     def _image(self, content: _Content, entry, book_number: int,
                page_number: int) -> None:
-        """置入圖：等比縮放置中（contain）DeviceGray 影像，與 render._draw_image
-        幾何同源（fit_image_rect）；top-down 下緣 → y-up 左下角。
-        entry＝(解析後路徑, PIL "L" 影像, rect|None)；rect＝任意圖框（trim pt、
-        top-down，Sprint 54，可溢出版心入出血）、None＝主版 figure 保留區；
-        同路徑跨頁共用單一 XObject。"""
-        path, gray, rect = entry
+        """置入圖：等比縮放置中（contain），與 render._draw_image 幾何同源
+        （fit_image_rect）；top-down 下緣 → y-up 左下角。
+        entry＝(解析後路徑, PIL 影像, rect|None)；影像色彩空間依來源分流
+        （"L"→DeviceGray 單 K、"CMYK"→DeviceCMYK，images.open_placed）；
+        rect＝任意圖框（trim pt、top-down，Sprint 54，可溢出版心入出血）、
+        None＝主版 figure 保留區；同路徑跨頁共用單一 XObject。"""
+        path, pil, rect = entry
         if path not in self._images:
-            self._images[path] = EmbeddedImage(gray, f"Im{len(self._images) + 1}")
+            self._images[path] = EmbeddedImage(pil, f"Im{len(self._images) + 1}")
         emb = self._images[path]
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
@@ -619,7 +622,8 @@ class PdfResult:
     output_condition_identifier: str
     icc_embedded: bool
     justify_stats: dict
-    images_placed: int = 0  # 嵌入的 DeviceGray 影像 XObject 數（同路徑去重；灰階單 K）
+    images_placed: int = 0  # 嵌入的影像 XObject 數（同路徑去重）
+    image_colorspaces: dict = field(default_factory=dict)  # {"/DeviceGray": n, ...}
     pdfx_label: str = "PDF/X-1a:2001"  # 一致性形態標籤（X-1a 預設；X-4 選項）
     crop_marks: bool = False  # 是否含裁切標記（opt-in；MediaBox 外擴、BleedBox=trim+出血）
     license_warnings: tuple = ()  # 嵌入字型授權警告（fsType 不可嵌入／子集政策衝突）
@@ -640,7 +644,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     時免嵌描述檔；自訂識別須以 icc_profile 提供 CMYK 輸出 ICC。
     X-4（ISO 15930-7）：強制嵌 DestOutputProfile，故 icc_profile 必填（registry
     免嵌不足），header 升 1.6、GTS_PDFXVersion=PDF/X-4 且無 GTS_PDFXConformance。
-    置入圖（doc.images）以 DeviceGray XObject 嵌入，路徑相對 image_base_dir 解析。
+    置入圖（doc.images）以影像 XObject 嵌入（色彩空間依來源分流，見 images.open_placed），
+    路徑相對 image_base_dir 解析。
     crop_marks=True 加裁切標記（§9）：MediaBox 於 BleedBox 外擴 MARK_LENGTH_MM、
     BleedBox 縮回 trim＋出血、8 條單 K 角標；預設 False 時輸出與無標記相同（BleedBox
     ＝MediaBox，向後相容）。
@@ -778,6 +783,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         icc_embedded=icc_bytes is not None,
         justify_stats=dict(layout.justify_stats),
         images_placed=len(writer._images),
+        image_colorspaces=collections.Counter(
+            emb.colorspace for emb in writer._images.values()),
         pdfx_label=profile.label,
         crop_marks=crop_marks,
         license_warnings=tuple(license_warnings(writer.fonts_used)),
