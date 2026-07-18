@@ -2,6 +2,40 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.93.0（2026-07-18，Sprint 98）開源授權定案 AGPL-3.0-or-later（關 GAPS #55）
+
+### 結論先講：授權是被相依鎖死的，不是偏好
+
+`PyMuPDF` 是 **AGPL-3.0**，而且被 `cjkfolio/preflight.py:12` 與 `cjkfolio/reference_extract.py:14` **in-process import 進產品碼**。只要 CJKFolio 以結合物散布，AGPL 的傳染性即擴及整個專案，MIT、Apache-2.0、BSD、MPL-2.0、LGPL 全部不可選。
+
+一手證據：`pymupdf-1.27.2.3.dist-info/COPYING` 全檔僅一行「Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial License」，`METADATA` L8 同字串。
+
+### 新增
+
+- [實作] 根目錄 `LICENSE`：AGPL-3.0 條款全文（34,523 bytes）。取自本機已安裝套件的既有副本，並以另一份獨立副本比對驗證，**條款正文第 0〜17 節逐位元組相同**，唯一差異在附錄的範例聲明換行處，且採用與 gnu.org 一致的變體。
+- [實作] `THIRD-PARTY-LICENSES.md`：六項產品相依的逐字授權字串與一手證據路徑、必須履行的義務（§5 修改標註、§13 網路互動的預先聲明、第三方著作權聲明保留）、字型資產授權與缺口、商標名稱聲明、以及本清單的證據邊界。
+- [實作] `pyproject.toml`：相依宣告與**授權錨點**。每個相依旁註記其授權，因為授權事實只對特定版本成立（PyMuPDF 在 1.24.x 之前是 GPL v3 而非 AGPL v3，即為漂移實例）。
+
+### 定案要點
+
+- **與 Spike 4 的關係已釐清**：§10（Sprint 5）記載的「禁止 in-process import」決議**明文限定於 Vivliostyle 整合形態**，而該路線未被採用（Sprint 8 定案自寫 PDF 寫出層），且 PLAN 全文從未承諾本專案採寬鬆條款。故本定案不推翻任何已定案承諾。**但誠實記錄**：spike4 報告 :34 的通則「不深度整合 AGPL 元件」在引入 PyMuPDF 時未被重新檢視，屬未察覺的漂移。
+- **否決「子程序隔離改採 Apache-2.0」**：即使做隔離，本專案仍須散布一個 `import fitz` 的 worker，該檔本身即為 AGPL 結合物。只換到混合授權的複雜度，換不到下游的實質自由，還會加重 preflight 面板的凍視窗（承 GAPS #47 (d)）。
+- **PySide6 取 GPL-3.0-only 臂，不取 LGPL 臂**：稽核發現 `PySide6-Addons` 夾帶的 Qt Quick3D、VirtualKeyboard、HttpServer、Graphs、Charts、DataVisualization 等模組在 Qt 開源側**只有 GPL-3.0 沒有 LGPL 臂**，籠統宣稱「走 LGPL 臂」對實際安裝的內容並不成立。GPL-3.0 與 AGPL-3.0 經 GPLv3 §13 互相授權故相容。**GPL-2.0-only 臂與 AGPL-3.0 不相容，明確不選。**
+- **標示分兩層**：自有程式碼 `AGPL-3.0-or-later`；結合散布物實效 `AGPL-3.0`（PyMuPDF 未寫 or-later，PySide6 與 shiboken6 明寫 `-only`）。
+
+### 驗證
+
+- 授權事實經**多代理人稽核**（六路平行實查、判定、四名 skeptic 對抗驗證）產出，其中 **2 名 skeptic 推翻了初版建議**，促成本次的 Spike 4 釐清與 PySide6 臂別修正。所有決定性事實另經本人一手複驗：`COPYING` 全文、產品碼 `import fitz` 落點、spike4 報告原文、PLAN 全文無寬鬆條款承諾、六項相依的 `METADATA` License 欄。
+- 基線 **884 passed / 0 failed**、typecheck EXIT_CODE=0。新增 `pyproject.toml` 後另複驗 `python -m pytest`（無參數）亦為 884，確認測試探索行為未被改變。
+
+### 未做與待辦
+
+- **根目錄 README 尚未寫**（下個 Sprint）。故 `pyproject.toml` 不宣告 `readme` 欄，避免指向不存在的檔案。
+- **未經法律專業複核**。spike4 報告 :38 亦自記此點，正式公開釋出前應安排。
+- `freetype-py` 夾帶的 `libfreetype.dll` 上游授權（FTL 或 GPLv2）無法自 wheel 查證，純原始碼散布風險低，**製作含二進位的安裝檔前必須查證**。
+- 傳遞相依未展開稽核。
+- **警惕**：本機環境另有 `pymupdf-layout`（Polyform Noncommercial，非開源、與 AGPL 不相容），目前零 import，名稱與 PyMuPDF 近似，極易誤裝誤用。
+
 ## v0.92.0（2026-07-18，Sprint 97）真書逐字內容清洗（紅線違反修復，關 GAPS #1）
 
 ### 背景：這是一次紅線違反，不是一般整理
