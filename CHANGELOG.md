@@ -2,6 +2,46 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.95.0（2026-07-18，Sprint 101）X-4 preflight 與 ICC 選取器（關 GAPS #47 (a)、#56 甲(2)）
+
+### 問題
+
+匯出層自 Sprint 82 起就支援 PDF/X-4:2010，但 editor 的 preflight 面板只驗預設 X-1a。X-4 強制嵌 DestOutputProfile，registry 名不足，而 editor 沒有任何選 ICC 的入口。
+
+### 新增
+
+- [實作] `editor/preflight_core.py`：`run_preflight_checks` 與 `preflight_cache_key` 收 `pdfx` 與 `icc_profile` 兩個具名參數；`PreflightResults` 加 `profile` 欄位供呈現層標示規則集。
+- [實作] `editor/preflight_actions.py`：`_ensure_preflight_icc()` 以 `QFileDialog` 選 CMYK 輸出 ICC，選過的路徑留在本視窗沿用；`_run_preflight("x-4")` 入口。
+- [實作] `editor/preflight_panel.py`：`PreflightDialog` 收 `profile_label`，視窗標題與首分頁標籤據實標示是 X-1a 還是 X-4（兩份結論規則集不同，不讓它們看起來同名）。
+- [實作] `editor/app.py`：「檢查」選單加「PDF/X-4 preflight（需輸出 ICC）…」。
+
+### 行為
+
+- 取消選 ICC：statusBar 說明「未選輸出 ICC，PDF/X-4 preflight 未執行（X-4 須嵌輸出色彩描述檔）」，**不默默改跑 X-1a 再宣稱通過**。
+- 快取鍵納入形態與 ICC 檔指紋，**X-1a 的快取不會被 X-4 誤命中**（規則集不同，結論不可互代）。
+- X-4 規則集 11 條（不列 `no-transparency`，X-4 允許透明）；X-1a 仍 12 條。
+
+### 重構
+
+- [實作] `editor/smoke_check.py` 逾單檔 800 行上限，preflight 三項驗證（C16〜C18）抽為 `editor/smoke_preflight.py`。**純機械搬移，驗證項與輸出逐字不變**（同 Sprint 93 `pdf_writer` → `pdf_objects` 的處置）。
+
+### 驗證
+
+- 基線 **891 → 895 passed（+4）/ 0 failed**、typecheck EXIT_CODE=0、smoke C1〜C18 全過（0 退步）。
+- 新增 4 測試：形態不同即換鍵、ICC 換檔或改內容即換鍵、X-4 嵌 ICC 後 11 規則全過且不列 `no-transparency`、**X-4 未給 ICC 時快速失敗**（不得沉默降級）。
+- smoke 擴 C18：取消選 ICC 不執行 → 選取器回傳 ICC 後背景跑出 X-4 11/11 → 面板標題與分頁標 X-4、ICC 留給下次沿用 → 改跑 X-1a 不命中 X-4 快取。
+- **R5 真實素材＋Gate 4 獨立驗證**：改用 Windows 內建的**真 CMYK 印表機描述檔 `RSWOP.icm`**（prtr/CMYK，218,103 bytes，只讀不入 repo）跑完整 X-4 匯出，再以 PyMuPDF **直接讀 PDF 物件複驗**（不呼叫 `check_pdfx`，避免同一支檢查器自我背書）：header `%PDF-1.6`、Info 有 `GTS_PDFXVersion (PDF/X-4)` 且無 `GTS_PDFXConformance`、catalog 有 `/OutputIntents`、**DestOutputProfile 串流 218,103 bytes 與 ICC 原檔逐位元組相同**。
+
+### 未做
+
+- **ICC 選取無內容驗證**：只要是可讀檔就送進匯出，是否為合法 CMYK prtr 描述檔由匯出層與印廠判斷（機械 preflight 檢查 header 欄位，不做色彩引擎級解析）。以結構最小的假 ICC 測試時 MuPDF 會在 stderr 印 `cmsOpenProfileFromMem failed`，真 ICC 則無此訊息。
+- **形態切換即重跑**：快取仍只留最近一次鍵值，X-1a 與 X-4 交替檢查會互相擠掉（承 GAPS #47 (f)）。
+- ICC 路徑不隨文件存檔，換視窗須重選。
+
+### 待 Owner
+
+- 真視窗的 ICC 選檔手感、印廠實際指定的 ICC 檔是否被本管線接受，待 Owner 與印廠實測（#19、#18 批次）。
+
 ## v0.94.0（2026-07-18，Sprint 100）preflight 背景執行緒與快取（關 GAPS #47 (d)、#56 甲(1)）
 
 ### 問題

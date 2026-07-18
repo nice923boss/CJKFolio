@@ -108,3 +108,57 @@ def test_run_preflight_checks_returns_three_reports(template):
     assert results.report.ok and len(results.report.findings) == 12
     assert results.image_report.findings == ()  # 本樣張無置入影像
     assert results.ink_report.ok and len(results.ink_report.findings) > 0
+
+
+# ---------- X-4 preflight 與 ICC（Sprint 101，關 GAPS #47 (a)） ----------
+
+def fake_icc(space: bytes = b"CMYK", klass: bytes = b"prtr") -> bytes:
+    """最小可驗 ICC（與 test_preflight.fake_icc 同構，避免跨測試檔匯入）。"""
+    head = bytearray(132)
+    head[0:4] = (132).to_bytes(4, "big")
+    head[12:16] = klass
+    head[16:20] = space
+    return bytes(head)
+
+
+def test_cache_key_separates_profiles(template):
+    """X-1a 與 X-4 的鍵必須相異（否則切形態時會拿另一份報告當結論）。"""
+    doc = sample_doc()
+    base = ROOT / "samples"
+    assert preflight_cache_key(doc, template, base, pdfx="x-1a") != \
+        preflight_cache_key(doc, template, base, pdfx="x-4")
+
+
+def test_cache_key_tracks_icc_file(tmp_path, template):
+    """換 ICC 檔或改 ICC 內容即換鍵（輸出的 OutputIntent 變了）。"""
+    doc = sample_doc()
+    icc_a = tmp_path / "a.icc"
+    icc_a.write_bytes(fake_icc())
+    icc_b = tmp_path / "b.icc"
+    icc_b.write_bytes(fake_icc())
+    key_a = preflight_cache_key(doc, template, tmp_path, pdfx="x-4", icc_profile=icc_a)
+    key_b = preflight_cache_key(doc, template, tmp_path, pdfx="x-4", icc_profile=icc_b)
+    assert key_a != key_b, "不同 ICC 檔應換鍵"
+    icc_a.write_bytes(fake_icc(klass=b"scnr"))  # 同路徑、內容不同
+    assert key_a != preflight_cache_key(doc, template, tmp_path, pdfx="x-4",
+                                        icc_profile=icc_a), "ICC 內容改變應換鍵"
+
+
+@needs_fonts
+def test_run_preflight_checks_x4_with_icc(tmp_path, template):
+    """X-4 形態：嵌 ICC 後過 X-4 規則集，且不列 no-transparency（X-4 允許透明）。"""
+    icc = tmp_path / "out.icc"
+    icc.write_bytes(fake_icc())
+    results = run_preflight_checks(sample_doc(), template, ROOT / "samples",
+                                   pdfx="x-4", icc_profile=icc)
+    assert results.report.ok, [f for f in results.report.findings if not f.ok]
+    rules = {f.rule for f in results.report.findings}
+    assert "no-transparency" not in rules
+    assert len(results.report.findings) == 11
+
+
+@needs_fonts
+def test_run_preflight_checks_x4_without_icc_fails_loudly(template):
+    """X-4 未給 ICC 時快速失敗（不得沉默降級成 X-1a 再宣稱通過）。"""
+    with pytest.raises(ValueError, match="X-4"):
+        run_preflight_checks(sample_doc(), template, ROOT / "samples", pdfx="x-4")

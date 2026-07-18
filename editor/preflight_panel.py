@@ -74,11 +74,17 @@ def _tab(table: QTableWidget) -> QWidget:
 
 
 class PreflightDialog(QDialog):
-    """唯讀顯示三份檢查報告：三行摘要 ＋ 三分頁明細 ＋ 未涵蓋聲明。"""
+    """唯讀顯示三份檢查報告：三行摘要 ＋ 三分頁明細 ＋ 未涵蓋聲明。
 
-    def __init__(self, report, image_report, ink_report, parent=None) -> None:
+    profile_label＝送檢的 PDF/X 形態（Sprint 101 起可為 PDF/X-4，規則集與 X-1a
+    不同故標題與分頁標籤據實標示，不讓兩份結論看起來同名）。
+    """
+
+    def __init__(self, report, image_report, ink_report, parent=None,
+                 profile_label: str = "PDF/X-1a:2001") -> None:
         super().__init__(parent)
-        self.setWindowTitle("PDF/X preflight 檢查結果")
+        self.setWindowTitle(f"{profile_label} preflight 檢查結果")
+        self.profile_label = profile_label
         self.report = report
         self.image_report = image_report
         self.ink_report = ink_report
@@ -87,11 +93,11 @@ class PreflightDialog(QDialog):
         self.summary_label.setStyleSheet(
             "font-weight:bold; color:%s;" % (PASS_COLOR if report.ok else FAIL_COLOR))
         self.image_summary_label = QLabel(
-            f"影像解析度（§9，非 X-1a 條款）：{image_resolution_summary(image_report)}")
+            f"影像解析度（§9，非 PDF/X 條款）：{image_resolution_summary(image_report)}")
         self.image_summary_label.setStyleSheet(
             "color:%s;" % (PASS_COLOR if image_report.ok else WARN_COLOR))
         self.ink_summary_label = QLabel(
-            f"油墨總量（§9，非 X-1a 條款）：{ink_coverage_summary(ink_report)}")
+            f"油墨總量（§9，非 PDF/X 條款）：{ink_coverage_summary(ink_report)}")
         self.ink_summary_label.setStyleSheet(
             "color:%s;" % (PASS_COLOR if ink_report.ok else WARN_COLOR))
 
@@ -100,7 +106,8 @@ class PreflightDialog(QDialog):
         self.ink_table = _make_table(ink_rows(ink_report), "達標", WARN_COLOR)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(_tab(self.table), f"PDF/X-1a（{len(report.findings)} 規則）")
+        self.tabs.addTab(_tab(self.table),
+                         f"{profile_label}（{len(report.findings)} 規則）")
         self.tabs.addTab(_tab(self.image_table), "影像解析度")
         self.tabs.addTab(_tab(self.ink_table), "油墨總量")
 

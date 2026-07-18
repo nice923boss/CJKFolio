@@ -191,9 +191,13 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
             action.triggered.connect(handler)
             library_menu.addAction(action)
 
+        check_menu = self.menuBar().addMenu("檢查")
         check_action = QAction("PDF/X-1a preflight（機械檢查）…", self)
         check_action.triggered.connect(lambda: self._run_preflight())
-        self.menuBar().addMenu("檢查").addAction(check_action)
+        check_menu.addAction(check_action)
+        check_x4_action = QAction("PDF/X-4 preflight（需輸出 ICC）…", self)
+        check_x4_action.triggered.connect(lambda: self._run_preflight("x-4"))
+        check_menu.addAction(check_x4_action)
 
         ai_action = QAction("AI 設定…", self)
         ai_action.triggered.connect(self._show_ai_config)

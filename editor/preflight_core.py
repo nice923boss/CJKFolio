@@ -31,49 +31,66 @@ from cjkfolio.styles import Template, template_to_dict
 
 
 class PreflightResults(NamedTuple):
-    """三份機械檢查報告（X-1a 合規；影像解析度與油墨總量為 §9 印廠條件）。"""
+    """三份機械檢查報告（PDF/X 合規；影像解析度與油墨總量為 §9 印廠條件）。
+
+    profile＝送檢的 PDF/X 形態鍵（"x-1a" 或 "x-4"），供呈現層標示是哪一套規則集。
+    """
     report: PreflightReport
     image_report: ImageResolutionReport
     ink_report: InkCoverageReport
+    profile: str = "x-1a"
 
 
-def run_preflight_checks(doc: Document, template: Template,
-                         image_base_dir) -> PreflightResults:
-    """匯出臨時 PDF/X-1a → 三項機械檢查，回三份報告。
+def run_preflight_checks(doc: Document, template: Template, image_base_dir, *,
+                         pdfx: str = "x-1a", icc_profile=None) -> PreflightResults:
+    """匯出臨時 PDF/X → 三項機械檢查，回三份報告。
 
+    pdfx="x-4" 須以 icc_profile 提供 CMYK 輸出 ICC（X-4 強制嵌 DestOutputProfile，
+    registry 名不足）；未給時 export_pdf 快速失敗，不在此降級成 X-1a。
     匯出或檢查失敗時照樣拋出（呼叫端負責提示，不在此吞掉）。
     """
     with tempfile.TemporaryDirectory() as td:
         pdf_path = Path(td) / "preflight.pdf"
-        export_pdf(doc, template, pdf_path, image_base_dir=image_base_dir)
+        export_pdf(doc, template, pdf_path, image_base_dir=image_base_dir,
+                   pdfx=pdfx, icc_profile=icc_profile)
         path = str(pdf_path)
         return PreflightResults(
-            check_pdfx(path, profile="x-1a"),
+            check_pdfx(path, profile=pdfx),
             check_image_resolution(path),
             check_ink_coverage(path),
+            pdfx,
         )
 
 
-def _image_fingerprint(image_base_dir, rel_path: str) -> list:
-    """置入圖的指紋：檔案大小與修改時間（缺檔記 missing，算鍵不失敗）。"""
-    full = Path(image_base_dir) / rel_path
+def _file_fingerprint(path) -> list:
+    """檔案指紋：路徑、大小、修改時間（缺檔記 missing，算鍵不失敗）。"""
+    full = Path(path)
     try:
         st = full.stat()
     except OSError:
-        return [rel_path, "missing"]
-    return [rel_path, st.st_size, st.st_mtime_ns]
+        return [str(full), "missing"]
+    return [str(full), st.st_size, st.st_mtime_ns]
 
 
-def preflight_cache_key(doc: Document, template: Template, image_base_dir) -> str:
-    """當前輸出的指紋：文件、模版、基準目錄、每張置入圖檔的位元組狀態。
+def _image_fingerprint(image_base_dir, rel_path: str) -> list:
+    """置入圖的指紋（相對路徑亦入鍵：同內容不同來源仍屬不同輸出）。"""
+    return [rel_path] + _file_fingerprint(Path(image_base_dir) / rel_path)[1:]
 
-    同鍵代表匯出的 PDF 會逐位元組相同，故可沿用上次的報告。
+
+def preflight_cache_key(doc: Document, template: Template, image_base_dir, *,
+                        pdfx: str = "x-1a", icc_profile=None) -> str:
+    """當前輸出的指紋：文件、模版、基準目錄、置入圖檔、PDF/X 形態與輸出 ICC。
+
+    同鍵代表匯出的 PDF 會逐位元組相同，故可沿用上次的報告。形態與 ICC 入鍵，
+    X-1a 的快取才不會被 X-4 誤命中（兩者規則集不同，結論不可互代）。
     """
     payload = {
         "document": document_to_dict(doc),
         "template": template_to_dict(template),
         "image_base_dir": str(Path(image_base_dir)),
         "images": [_image_fingerprint(image_base_dir, img.path) for img in doc.images],
+        "pdfx": pdfx,
+        "icc": _file_fingerprint(icc_profile) if icc_profile else None,
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False,
                       separators=(",", ":"))
