@@ -1,0 +1,498 @@
+{
+ "schema": "cjkfolio/template@1",
+ "name": "《內在整理》起始模版",
+ "page": {
+  "width_mm": 148.0,
+  "height_mm": 210.0
+ },
+ "colors": {
+  "暖黑": {
+   "cmyk": [
+    0.0,
+    0.0,
+    0.0,
+    0.92
+   ],
+   "hex": "#231f20",
+   "note": "內文暖黑：§1 量測 #231f20；印刷單 K90〜92 取 92（§9／§10 Sprint 8 決議）"
+  },
+  "紙白": {
+   "cmyk": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "hex": "#ffffff",
+   "note": "紙白（無墨）"
+  },
+  "虛線灰": {
+   "cmyk": [
+    0.0,
+    0.0,
+    0.0,
+    0.57
+   ],
+   "note": "D-目錄天頭虛線灰：p003 一手量測 K57（Sprint 15，D 主版 rule 同值）"
+  }
+ },
+ "paragraph_styles": {
+  "內文-明體直排": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "indent_chars": 2,
+   "note": "主力 57,536 字；行距＝欄距 23.0pt、滿行 32 字、字距 12.08pt（跨頁逐字實測）",
+   "para_gap_slots": 1,
+   "size_pt": 11.5,
+   "source_font": "DFMingStd-W3"
+  },
+  "訪談發言body": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "indent_chars": 2,
+   "note": "訪談章內文；發言人以字元樣式「發言人標籤-黑體」區隔",
+   "para_gap_slots": 1,
+   "size_pt": 11.5,
+   "source_font": "DFMingStd-W3"
+  },
+  "引文-仿宋語錄": {
+   "font_family": "全字庫正宋體",
+   "font_weight": "regular",
+   "indent_chars": 2,
+   "note": "2,505 字、6 頁；仿宋無 OFL 對應，暫以全字庫正宋體對映（風格近似待評估）",
+   "para_gap_slots": 1,
+   "size_pt": 11.5,
+   "source_font": "DFFangSongStd-W4"
+  },
+  "題詞-楷書": {
+   "font_family": "全字庫正楷體 TW-Kai",
+   "font_weight": "regular",
+   "indent_chars": 0,
+   "note": "章扉題詞（掃描 10 頁）",
+   "para_gap_slots": 1,
+   "size_pt": 11.2,
+   "source_font": "DFKaiShuStd-W3"
+  },
+  "推薦序大標-黑體": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "indent_chars": 0,
+   "note": "序文標題（p004/p007/p009 三頁互證：NotoSans Medium 12.9pt、slot 0、段後 4 空槽＝內文自 slot 5 起；原書即用思源黑體 Medium，OFL）。勘誤（Sprint 23）：原名「推薦序大標-楷書W5 16.3pt」為掃描誤抓署名行長橫「─」（楷 W5 16.3 單字元，署名行自由手排，v1 不建模入 GAPS）",
+   "para_gap_slots": 4,
+   "size_pt": 12.9,
+   "source_font": "NotoSansCJKtc-Medium"
+  },
+  "章節小標-黑體": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "indent_chars": 0,
+   "note": "內文小標，全書 110 頁出現",
+   "para_gap_slots": 1,
+   "size_pt": 13.0,
+   "source_font": "DFHeiStd-W7"
+  },
+  "個案大標-NotoSans": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "indent_chars": 0,
+   "note": "內頁個案大標／md h2（42 頁）；para_gap 1＝標題後內文留 1 槽。Sprint 33 自扉頁大標拆出（扉頁大標後內文相鄰 slot 2 改用 個案扉頁大標-NotoSans）；原書即用思源黑體 Medium（OFL）",
+   "para_gap_slots": 1,
+   "size_pt": 17.9,
+   "source_font": "NotoSansCJKtc-Medium"
+  },
+  "個案扉頁大標-NotoSans": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "indent_chars": 0,
+   "note": "個案扉頁大標（slot 1，p20/36/54 一手量測，Sprint 25）；para_gap 3＝大標後空 slot 2~4、內容自 slot 5（Sprint 38 全 33 個案扉頁探針量測：首內容 slot 5 分佈 33/33、空 2~4 為鐵律，勘正 Sprint 25「內文自 slot 2」誤讀，第五例 C 主版 slot 誤讀承 Sprint 34/35/36）。Sprint 33 自 個案大標-NotoSans 拆出，與內頁 h2 用法（para_gap 1）分屬兩物件樣式",
+   "para_gap_slots": 3,
+   "size_pt": 17.9,
+   "source_font": "NotoSansCJKtc-Medium"
+  },
+  "個案中標-NotoSans": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "indent_chars": 0,
+   "note": "個案扉頁資訊區欄位標籤（【格局】【居住者】等，NotoSans Medium 11.4pt）。Sprint 35 量測勘正（兩路探針 33 頁交叉驗證，推翻 Sprint 25 誤讀）：本樣式 141 span cx 全落 93~231 資訊區、非 slot 0；Sprint 25 原記「slot 0、cx 354.24」係誤讀 slot 0 黑體欄標位置，slot 0（cx 354）實為 DFHeiStd-W7 欄標（11.5pt×26 頁「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談」、10.5pt×7 頁「理解與祝福」）非本樣式；原記「slot 0 另含 Case 編號黑 W5 13pt『01』雙元素」否決＝全書黑體與大字數字編號 0 命中、真書 Case 編號＝頁腳 PepitaMT 9pt「Case N」（top 508.3），掃描見的 13pt DFHeiStd 為資訊區內文中標（cx 117~240「父母的留戀…」）非 slot 0 編號；para_gap_slots 0 為 status-quo（Owner 定案 B：不依資訊區真實佈局重定；黑 W7 欄標樣式與個案中標移資訊區＋多欄位佈局為後續專項 GAPS #13）。Sprint 34 量測釐清：個案中標＝單一 11.4pt，掃描見的 12.9pt NotoSans 全 33 個案扉頁 0 命中、全書 81 span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半），屬 推薦序大標-黑體，非本樣式變體",
+   "para_gap_slots": 0,
+   "size_pt": 11.4,
+   "source_font": "NotoSansCJKtc-Medium"
+  },
+  "個案欄標-黑W7": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "indent_chars": 0,
+   "note": "個案扉頁 slot 0 欄標（cx 354，Sprint 37 建模，Owner 定案升級 C，33 個案扉頁一手量測）：DFHeiStd-W7 對映思源黑體 Bold（§8 可散布，W7＝Bold，思源黑體有 Bold 檔不 fallback；別於章名明 W7 用 heavy＝思源宋體無 Bold 檔）；首字頂 92.1＝天頭 92.09（承 A、indent 0、lead_offset 0，墨頂差為字型 bearing）、縱向 4~6 字佔 block slot 0 一行、para_gap 0（與大標 slot 1 相鄰）。size 11.5pt×26 頁（資訊頁欄標「個案資料／廖心筠整理師」等）主流建模，10.5pt×7 頁（訪談頁欄標「理解與祝福」）變體記錄（GAPS #13，主流建模）。Sprint 35 揭露此 slot 0 原被 Sprint 25 誤讀為個案中標 11.4pt／虛構 Case 編號 13pt，本 Sprint 正名建模；個案中標移資訊區＋資訊區多欄位佈局（cx 93~231 slot 5~11）為 Sprint 38 專項",
+   "para_gap_slots": 0,
+   "size_pt": 11.5,
+   "source_font": "DFHeiStd-W7"
+  },
+  "部扉大標-明體W9": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "indent_chars": 0,
+   "lead_offset_pt": 6.02,
+   "note": "三篇部扉（掃描 p18/68/114）；lead_offset_pt 6.02：大標首字頂比部序號低 6.02pt（0.26 字槽，Sprint 20 三頁互證量測），Sprint 29 pt 精度模型落地，首字頂 176.84→182.86pt 貼真書（原整數槽模型兩段同天頭）",
+   "para_gap_slots": 1,
+   "size_pt": 21.9,
+   "source_font": "DFMingStd-W9"
+  },
+  "章名大標-明體W7": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "indent_chars": 0,
+   "note": "十章章扉；§4.2 原記明體W9，全書掃描修正為 W7",
+   "para_gap_slots": 1,
+   "size_pt": 21.9,
+   "source_font": "DFMingStd-W7"
+  },
+  "標籤-篇序小標": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "indent_chars": 0,
+   "note": "部扉「第X篇」標籤；段後不空槽（Sprint 20 量測：與大標間距已含於 B 行距 34.37pt）",
+   "para_gap_slots": 0,
+   "size_pt": 14.9,
+   "source_font": "DFMingStd-W7"
+  },
+  "目錄-部名": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "indent_chars": 0,
+   "note": "目次部名詩句（p1-2）",
+   "para_gap_slots": 1,
+   "size_pt": 16.0,
+   "source_font": "DFMingStd-W7"
+  },
+  "目錄-篇章條目": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "head_offset_chars": 2,
+   "indent_chars": 0,
+   "lead_offset_pt": 6.24,
+   "note": "目錄帶頁碼章名條目（p002/p003 一手量測，Sprint 24）：DFHeiStd-W5 11.5pt（黑 W5，對映思源黑體 Medium OFL，已入庫不 fallback）；勘誤（原記楷 W3 9.5pt＝掃描把不帶頁碼摘要層字型誤設為章名層，同 Sprint 23 署名長橫勘誤）；head_offset 2 字格＝黑字距 12.08×2＝24.16pt（框頂 132.12）；lead_offset_pt 6.24（Sprint 30 pt 精度）：條目墨頂扣 3mm 出血後於 trim 同口徑貼真書 135.15，勘正 Sprint 24 墨頂比對之出血座標框錯配（原以 model 含出血 media 137.42 比真書無出血 trim 135.15，未扣 8.504pt，屬 GAPS #21 同型；正確 trim 差 +6.24 下移，方向與原記 +2.27 相反）；v1 不建模：條目摘要層（楷 W3 9.5 不帶頁碼、真書 top_y 166）、【結語】黑 W5 10pt 變體、章名與摘要縱向錯落及多層列距（GAPS #13）",
+   "para_gap_slots": 0,
+   "size_pt": 11.5,
+   "source_font": "DFHeiStd-W5"
+  },
+  "版權頁-CIP橫排": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "indent_chars": 0,
+   "note": "全書唯一橫排（p178 CIP 細框）；級數 5.63pt 為 p178 一手量測（Sprint 19，全 31 span 單一字級），量測參數入模版、內容不入 repo",
+   "para_gap_slots": 0,
+   "size_pt": 5.63,
+   "source_font": "DFMingStd-W3",
+   "writing_mode": "horizontal-tb"
+  },
+  "旁注-手札圖注": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "indent_chars": 0,
+   "note": "圖注與旁注，主體 8.0pt（與頁腳書眉副標同級，173 頁）；9pt 變體 Sprint 36 探針量測確認為真（非掃描誤植，對照 Sprint 34／35 誤植 0 命中）：HanziPenTC-W5 raw 8.955pt、4 頁（PDF 25/60/61/93）34 字、頁面中上部 top 82~338（非頁腳 508）＝圖注大一號；屬美術／自由佈局層（§8）Phase 1 無渲染用例不建獨立樣式，GAPS #13 後續",
+   "para_gap_slots": 0,
+   "size_pt": 8.0,
+   "source_font": "HanziPenTC-W5"
+  },
+  "圖說-辰宇落雁": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "indent_chars": 0,
+   "note": "G 圖文版照片圖說標籤（如「整理前／整理後」）；一手量測 15.92pt（31 span 同值，Sprint 27，tools/measure_figure_page.py），與字元樣式裝飾大字-辰宇落雁體 15.9pt 同構；真書圖說自由置於照片上（美術，§8）＋Phase 2，此段落樣式供獨立圖說置放",
+   "para_gap_slots": 0,
+   "size_pt": 15.9,
+   "source_font": "ChenYuluoyan-Thin"
+  },
+  "內文-標點擠壓": {
+   "based_on": "內文-明體直排",
+   "note": "CLREQ §3.1.6.1 相鄰約物減半形示範（Sprint 90）；其餘參數承內文-明體直排",
+   "punct_squeeze": true
+  }
+ },
+ "character_styles": {
+  "發言人標籤-黑體": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "note": "「廖：」「鄧：」等發言人（32 頁）",
+   "size_pt": 11.5,
+   "source_font": "DFHeiStd-W7"
+  },
+  "內文強調-明體W9": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "note": "內文重點字（35 頁）",
+   "size_pt": 11.1,
+   "source_font": "DFMingStd-W9"
+  },
+  "角色註記-仿宋小字": {
+   "font_family": "全字庫正宋體",
+   "font_weight": "regular",
+   "note": "職稱括註；與引文同級數，語意區分",
+   "size_pt": 11.5,
+   "source_font": "DFFangSongStd-W4"
+  },
+  "頁碼數字-GillSans": {
+   "font_family": "jf open 粉圓",
+   "font_weight": "regular",
+   "note": "切口下角頁碼；Gill Sans 無授權，以 OFL 粉圓對映",
+   "size_pt": 8.0,
+   "source_font": "GillSans-Light"
+  },
+  "Case編號-手寫拉丁": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "note": "個案頁 Case N 手寫編號，主體 9.0pt 頁腳（top 508.3、153 頁，Sprint 35 確認）；Sprint 36 探針證 Pepita 另兩級變體皆真（非掃描誤植）：15.9pt（raw 15.92，10 頁章扉大號 PDF 19/35/53/69/84/98/115/133/144/156、top 86.2 x0 192.7）＋10.4pt（raw 10.447，目錄 Case 編號 PDF 1/2、top~135）；15.9 章扉與辰宇落雁 15.9 圖說同級不同字型勿混淆。變體屬美術／自由佈局層 Phase 1 無渲染用例不建獨立樣式，GAPS #13 後續",
+   "size_pt": 9.0,
+   "source_font": "PepitaMT"
+  },
+  "書眉副標-手札體": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "note": "書眉章節副標，全書 173 頁",
+   "size_pt": 8.0,
+   "source_font": "HanziPenTC-W5"
+  },
+  "裝飾大字-辰宇落雁體": {
+   "font_family": "辰宇落雁體",
+   "font_weight": "regular",
+   "note": "原書即用辰宇落雁體（OFL，可內建）",
+   "size_pt": 15.9,
+   "source_font": "ChenYuluoyan-Thin"
+  },
+  "拉丁正文-Times": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "note": "內文西文；Times 無授權，以思源宋體拉丁字面替",
+   "size_pt": 11.5,
+   "source_font": "TimesNewRomanPSMT"
+  },
+  "西文書名-ACaslon": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "bold",
+   "note": "全書掃描未見著字（來源為 PLAN §1 字型資源清單），級數未量測，暫記 11.5",
+   "size_pt": 11.5,
+   "source_font": "ACaslonPro-Bold"
+  }
+ },
+ "masters": {
+  "A-內文版": {
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
+   "mirror": true,
+   "footer": {
+    "page_number": {
+     "style": "頁碼數字-GillSans",
+     "source": "number",
+     "baseline_from_top_pt": 530.43,
+     "outer_offset_pt": 36.8,
+     "pages": "all"
+    },
+    "running_title": {
+     "style": "書眉副標-手札體",
+     "source": "title",
+     "baseline_from_top_pt": 529.15,
+     "outer_offset_pt": 59.53,
+     "pages": "even"
+    }
+   },
+   "evidence": "跨頁實測（measurements.json、calibration.json）；inner 與 bottom 由版心網格反推（148mm − 書口 21mm − 13 行網格寬 287.5pt）；頁腳座標取 foot_elements 實測（頁碼外緣 36.8pt≈13mm、基線 530.43pt；書眉齊版心外緣 59.53pt、基線 529.15pt）；側別依真書三向互證（Sprint 22）：偶數頁＝右頁（頁碼書口右＋書名書眉）、奇數頁＝左頁（頁碼書口左）",
+   "note": "頁腳 v1 為頁碼（全頁）＋書名書眉（偶數頁＝右頁）；原書左頁（奇數頁）書眉為章節副標、個案頁另有 Case 編號，待章節結構與個案主版進場"
+  },
+  "B-部扉": {
+   "margins_mm": {
+    "top": 62.38,
+    "bottom": 41.13,
+    "outer": 63.53,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 10,
+    "lines_per_page": 8,
+    "char_advance_pt": 23.1,
+    "line_pitch_pt": 34.37,
+    "base_size_pt": 21.9
+   },
+   "mirror": false,
+   "evidence": "三部扉一手量測（Sprint 20，PDF 索引 18/68/114 三頁互證同值）：部序號行軸 228.49pt（slot 0＝419.53−outer 180.09−21.9/2）、大標行軸 194.12pt（slot 1，行距 34.37）、天頭＝部序號首字頂 176.84pt=62.38mm、大標字距 23.1pt（§10 換算規則 21.9×12.08/11.5）；部扉無頁腳。已知差異（GAPS #13）：真書大標首字頂 182.86 比部序號低 6.02pt（0.26 字槽），v1 整數槽模型兩段同天頭起排；雙線菱形裝飾框為手繪美術資產不規則化（Sprint 15 決議）",
+   "note": "掃描定位 p18/68/114"
+  },
+  "C-個案扉頁": {
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
+   "mirror": true,
+   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0＝黑 W7 欄標（DFHeiStd-W7 11.5pt×26 頁／10.5pt×7 頁「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談／理解與祝福」，Sprint 35 兩路探針 33 頁量測；非個案中標、非 Case 編號）；個案中標 11.4pt 副標（【格局】【居住者】）實在資訊區 cx 93~231（Sprint 35 勘正 Sprint 25「slot 0 cx 354.24」誤讀）；Case 編號＝頁腳 PepitaMT 9pt「Case N」左下三件組（原記「slot 0 Case 編號黑 W5 13pt『01』」否決＝黑體與大字數字編號全書 0 命中）。已知差異（GAPS #13）：slot 0 黑 W7 欄標樣式已建模（Sprint 37 新增 個案欄標-黑W7 思源黑體 Bold 11.5pt slot 0，Owner 定案升級 C；render PNG 墨跡 cx 354.2＝line_axis、preflight 12/12、兩後端 parity）、個案中標移資訊區＋多欄位佈局（slot 2~4 空欄＋slot 5~11 標籤／內文／13pt 中標交替，線性堆疊不可表達需新機制）為 Sprint 38 專項、雙線菱形框（美術資產不生成，Sprint 15 決議）。扉頁大標與內文 gap 已修（Sprint 33：拆 個案扉頁大標-NotoSans para_gap 0，內文落 slot 2）、內頁大標 usage 分屬 個案大標-NotoSans（para_gap 1）"
+  },
+  "D-目錄": {
+   "margins_mm": {
+    "top": 38.09,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
+   "mirror": true,
+   "rule": {
+    "kind": "toc-rule",
+    "y_from_top_pt": 122.46,
+    "cmyk": [
+     0.0,
+     0.0,
+     0.0,
+     0.57
+    ],
+    "line_width_pt": 1.0,
+    "dash_on_pt": 3.0,
+    "dash_off_pt": 2.0,
+    "bleed_extend_pt": 8.503937007874017,
+    "break_before_pt": 28.5,
+    "break_after_pt": 3.9
+   },
+   "toc": {
+    "page_no_style": "頁碼數字-GillSans",
+    "page_no_bottom_pt": 490.0,
+    "leader_width_pt": 0.1,
+    "leader_gap_pt": 2.0,
+    "leader_cmyk": [
+     0.0,
+     0.0,
+     0.0,
+     0.92
+    ]
+   },
+   "evidence": "天頭 38.09mm＝篇名（第N篇）首字頂 107.96pt（p002/p003 三處一手量測同值，Sprint 21）；條目縮退見「目錄-篇章條目」head_offset（原 47.63mm 條目錨 135pt 改由縮退表達）；左右與地腳承 A；天頭水平虛線參數為 p003 一手量測（y 122.46pt、1.0pt、dash [3 2]、灰≈K57，Sprint 15）；篇名嵌線斷開邊距 break_before 28.5pt／break_after 3.9pt（p002/p003 行槽緣→線端量測中值，真書手排離散 before 26.9〜30.1／after 3.7〜4.1 入 GAPS）；條目頁碼底錨 490pt 與引導線 0.1pt 為 p003 實測、頁碼字型以頁碼數字樣式對映（原書 Times 9pt，Sprint 16）；帶起訖（前置條目區無線、跨頁延續記號）與篇序 11pt 密排騎線混排不建模（v1 已知差異，GAPS #13）"
+  },
+  "E-序文版": {
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
+   "mirror": true,
+   "footer": {
+    "page_number": {
+     "style": "頁碼數字-GillSans",
+     "source": "number",
+     "baseline_from_top_pt": 530.43,
+     "outer_offset_pt": 36.8,
+     "pages": "all"
+    },
+    "running_title": {
+     "style": "書眉副標-手札體",
+     "source": "title",
+     "baseline_from_top_pt": 529.15,
+     "outer_offset_pt": 59.53,
+     "pages": "even"
+    }
+   },
+   "evidence": "版心承 A 一手驗證成立（Sprint 23，p004/p007/p009 三頁互證同值）：內文天頭 92.09pt=32.49mm、行距 23.0（行軸序列）、字距 12.08（字頂序列）、首行縮排 2 字（116.47pt 吻合）；標題（推薦序大標-黑體 12.9pt）slot 0、內文自 slot 5 起（行軸差 114.76pt=4.99 槽）；已知差異：標題行軸實測 342.16 vs inner 承 A 推導 341.26（差 0.9pt≈inner 0.32mm）、欄標「推薦序」（黑 W5 9pt）為標題行右側 16.2pt 肩位（v1 無肩注機制）、署名行（楷 W5 16.3 長橫＋明 W9 11.1）y 頂底皆隨頁變動＝自由手排（皆入 GAPS #13）；頁腳承 A（p004 頁碼 x 36.85pt 與 A outer_offset 36.8 精確吻合、序文偶頁書眉「內在整理」實測 x 741.9 同 A）"
+  },
+  "F-版權頁": {
+   "margins_mm": {
+    "top": 43.48,
+    "bottom": 41.13,
+    "outer": 25.81,
+    "inner": 21.0
+   },
+   "grid": {
+    "chars_per_line": 23,
+    "lines_per_page": 45,
+    "char_advance_pt": 5.66,
+    "line_pitch_pt": 7.74,
+    "base_size_pt": 5.63
+   },
+   "mirror": false,
+   "frame": {
+    "kind": "cip-box",
+    "cmyk": [
+     0.0,
+     0.0,
+     0.0,
+     0.92
+    ],
+    "line_width_pt": 0.14,
+    "pad_pt": 5.05,
+    "pad_v_pt": 4.94
+   },
+   "evidence": "p178 一手量測（Sprint 19，tools/measure_cip_page.py）：CIP 5.63pt、字距 5.66pt（樣本 7 行均值）、主體行距 7.74pt、內容左 73.15pt=25.81mm＝書口（p178 為左半＝奇數頁＝左頁，Sprint 22 側別修正後 25.81 改標 outer，mirror=false 恆以 outer 為起排側，幾何不變）、首行 baseline 128.2pt→top=128.2−5.63×0.88=123.25pt=43.48mm（baseline 錨定）、框線 0.141pt 暖黑（同內文→單 K92）、框 pad 水平 5.05／垂直 4.94pt、滿行 23 字（內容寬 131.48pt÷5.66）。inner 21.0 承 A 自擬（p178 訂口側未量測）。lines_per_page 45 為幾何推導（(595.28−123.25−116.64)÷7.74）非量測。已知差異（GAPS #13）：後段 3 行行距 12.73／11.73pt 分區（v1 單一 pitch）、框上方標題行（v1 不區分框內外行）"
+  },
+  "G-圖文版": {
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
+   "mirror": true,
+   "figure": {
+    "kind": "photo-slot",
+    "top_from_top_pt": 107.04,
+    "bottom_from_top_pt": 467.62,
+    "cmyk": [
+     0.0,
+     0.0,
+     0.0,
+     0.3
+    ],
+    "line_width_pt": 0.5,
+    "dash_on_pt": 4.0,
+    "dash_off_pt": 3.0,
+    "note": "前後對照照片保留區；典型雙照片全頁一手量測（Sprint 27）"
+   },
+   "evidence": "版心承 A 一手驗證（Sprint 27，tools/measure_figure_page.py，32 全頁圖文版頁）：圖框保留區橫向承 A 版心（R 頁 x0=72.51／x1=360.0、L 頁 59.53／347.02，鏡像感知），縱向雙照片區 top 107.04pt（38.20mm）／bottom 467.62pt（一致值）；辰宇落雁體圖說 15.92pt（31 span 同值，頂錨 y0≈117）。頁型＝房名黑體標題＋前後對照灰階照片＋手寫圖說（本書整理術核心頁型，如廚房整理前/後）。圖框以淡虛線佔位框標示（Phase 1 骨架，photo-slot），Phase 2 圖片置入取代。已知差異（GAPS #13）：真書照片略溢版心 1〜4pt、實際照片逐頁變異（單/雙、高度 385〜500pt）屬美術自由佈局（§8）；房名黑體標題、辰宇自由圖說位置、裝飾括號為美術＋Phase 2；照片嵌入為 Phase 2、圖文繞排為 Phase 4"
+  }
+ },
+ "md_mapping": {
+  "h1": "章名大標-明體W7",
+  "h2": "個案大標-NotoSans",
+  "h3": "章節小標-黑體",
+  "blockquote": "引文-仿宋語錄",
+  "paragraph": "內文-明體直排"
+ },
+ "md_inline_mapping": {
+  "strong": "內文強調-明體W9",
+  "em": "內文強調-明體W9"
+ }
+}

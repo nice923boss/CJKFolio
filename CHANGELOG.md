@@ -2,6 +2,44 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.85.0（2026-07-18，Sprint 90）標點擠壓（Phase 4 末項，關 GAPS #45）
+
+### 新增
+
+- [Spike] `spikes/spike17-mojikumi/`（新，GAPS #45 的 R2 退回條件）：
+  - `probe_punct_ink.py`：以 ttb（直排 vert）塑形量測內建思源宋體 TC 全部 34 枚約物在字身框內的墨跡邊界。**括號類有明確空邊**（開括號墨在下半、上留白 0.52〜0.71；閉括號墨在上半、下留白 0.52〜0.71）；**句逗類墨跡置中**（上下留白各 0.33〜0.44、墨高僅 0.25〜0.29）故無單一可移除的半邊；`：；！？…` 墨高 0.63〜0.79 近乎滿框。
+  - `probe_squeeze_pairs.py`：以上述墨跡邊界驗算 CLREQ 各條規則的擠壓後墨距。規則 2〜6 共 15 個字對全數 > 0（最小 `》」` 0.060 em）；**規則 1 三對皆碰墨（−0.07〜−0.12 em），與條文明文「繁體中文標點不適用此規則」獨立吻合**。
+  - `premortem.md`／`report.md`：判定條件性通過（規則 2〜6 做；規則 1、規則 7／8、行首行尾字面調整不做）。
+- [實作] 標點擠壓（§6 Phase 4「禁則／約物擠壓微調」；CLREQ WD-20150723 §3.1.6.1 規則 2〜6）：
+  - `cjkfolio/engine.py`：新增 `SQUEEZE_STOPS`／`SQUEEZE_OPENERS`／`SQUEEZE_CLOSERS`（沿用既有禁則字集，不另立新集）＋`SQUEEZE_WIDTH=0.5`＋`_squeezes`（規則判定）＋`_squeezable`＋`squeeze_punctuation`（純函式：讓出半形者字身框 1→0.5、**字形位置不變**，故兩後端零改動）；`Cell.width` int→float；`ParagraphSpec.punct_squeeze`，`flow_pages` 於直排時套用。
+  - `cjkfolio/styles.py`：`ParagraphStyle.punct_squeeze`（預設 False）入 `PARAGRAPH_STYLE_FIELDS`（繼承級聯／declared 序列化／StyleEditDialog 自動涵蓋，同 Sprint 76 color 慣例）；新增 `_bool` 轉換器（不用 Python 真值判定，`bool("False")` 為真會把使用者的關閉讀成開啟；無法辨識者 TemplateError 快速失敗）。
+  - `cjkfolio/layout.py`：`ParagraphSpec` 帶入樣式的 `punct_squeeze`。
+  - `samples/punct-squeeze.doc.json`＋`samples/punct-squeeze.template.json`（新，自擬內文；模版為內建模版加一款 `based_on` 子樣式，由 `save_template` 產出）。
+
+### 驗證
+
+- 基線 **789 passed / 0 failed**（754→789，+35：CLREQ 六條規則逐條 18＋純函式邊界 5＋流排整合 4＋樣式與模版層 7＋兩後端 parity 1）；typecheck EXIT=0（含 editor/*.py 與新 spike）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R1 證據：W3C CLREQ WD-20150723 §3.1.6.1 條文原文（B 級；PLAN §10 2026-07-10 已定案標點擠壓以 CLREQ 為準）＋內建字型墨跡一手量測（A 級，工具入 repo 可重現）＋兩者交叉驗算。
+- R5 真實素材驗收（**真書《內在整理》不採擠壓故自擬 samples/punct-squeeze，不宣稱真書驗證**，同 Sprint 86 注音 ruby 處置）：CLI render PNG 親 Read 目視（同一句排兩次，`」（`／`）「`／`」「` 空隙可見收窄，已擠壓段首欄多排 3 字＝30→33）；CLI export PDF → preflight **12/12**；模版另存重載 round-trip 保真（`declared=('note','punct_squeeze')`、其餘參數承基底）。
+- Gate 4（PyMuPDF 獨立解析，與寫出層不同實作）：規則 4 `」（`／規則 2 `），`／規則 5 `（「`／規則 6 `」）` 擠壓後 Δy 比值 0.492、規則 4 `」「` 為 0.500（0.492 者係該行齊行實效字距 11.88 之半，非幾何偏差）；**規則 1 的 `，」` 比值 1.000 確認未擠壓**；兩段首字墨頂 y 皆為 121.645／97.485（縮排不受擠壓影響）。
+- 回歸：真書第一章（本機素材，預設關閉）22 頁、禁則 0 違規、齊行擠入 10／撐開 2，與 Sprint 11／88／89 記錄逐項一致。另以真書內文開啟擠壓實測機制量級：5351 字格僅 17 處命中（省 8.5 格＝0.16%；形態 `。「`8／`，「`4／`」，`3／`」。`2，全屬規則 2、3），頁數仍 22、0 違規。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [Spike]：spike17-mojikumi 為 GAPS #45 明列的 R2 退回條件，先量測後立規，不憑 CJK 排版通則寫表。
+- [實作]：engine 純邏輯層＋樣式欄位，兩後端與 editor 畫布零改動（`Cell.width` 消費點 15 處全為算術累加）。
+- GAPS #45 原判兩點經一手證據修正：規則來源不缺（CLREQ 條文為既定 B 級來源，真書無樣本只影響 R5 素材）；float 寬成本被高估（全鏈實為零改動）。
+- 誠實差異（GAPS #50）：規則 1（條文明文繁體不適用＋量測碰墨）與規則 7／8 不實作；行首行尾字面調整不做（與斷行互為因果需迭代收斂）；只直排 body（橫排與文字框未接）；連續開括號情境前枚墨溢縮後字身框 0.44〜0.47 em（不碰墨但畫布字格 rect 與墨跡不再重合）；擠壓集不含【】（既有禁則字集本就未收）；三枚以上連續約物逐對套用。
+- 實效誠實記錄：本功能對《內在整理》這類繁中置中標點書系命中率僅 0.16%，價值在採緊排慣例的其他書稿。
+
+### 待 Owner 真實素材驗收
+
+- 採緊排（aki）慣例的真實書稿以補 R5 真素材（#50 (h)）；真視窗手感與樣式面板新欄位（#19 批次）；印廠打樣色彩與直排品質（Phase 4 DoD，#18／#41）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 §6 清單可自主項自此全數收口（PDF/X-1a 預設與 X-4 選項、CMYK 單 K、出血、裁切標記、輸出色彩描述檔、字型子集化與授權檢查、禁則／約物擠壓微調、目錄自動生成、圖文繞排、注音 ruby、縱中橫精修、preflight 面板）。次個 Sprint 依前三 Phase 慣例（#22／#33／#40）做 **Phase 4 收尾 Known Limitations 彙整**，逐項一手複驗後提請 Owner 定案轉 Phase 5。
+
 ## v0.84.0（2026-07-18，Sprint 89）圖文繞排（Phase 4 續項）
 
 ### 新增

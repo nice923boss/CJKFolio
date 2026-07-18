@@ -29,6 +29,26 @@ class TemplateError(ValueError):
     """模版 JSON 不合 schema。"""
 
 
+_TRUE_TEXT = {"true", "1", "yes", "on"}
+_FALSE_TEXT = {"false", "0", "no", "off", ""}
+
+
+def _bool(value) -> bool:
+    """布林欄位（模版 JSON 真布林／樣式面板 QLineEdit 字串皆可）。
+
+    不用 Python 的真值判定：bool("False") 為 True，會把使用者的「關閉」讀成開啟。
+    無法辨識者快速失敗，不沉默取預設。
+    """
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in _TRUE_TEXT:
+        return True
+    if text in _FALSE_TEXT:
+        return False
+    raise TemplateError(f"布林欄位須為 true／false，得到 {value!r}")
+
+
 @dataclass(frozen=True)
 class ColorSwatch:
     """命名色票（§4.2／§4.3，Sprint 76）。
@@ -54,6 +74,7 @@ class ParagraphStyle:
     writing_mode: str = "vertical-rl"
     head_offset_chars: int = 0  # 段級天頭縮退（字格）：目錄條目相對篇名的縮退（Sprint 21）
     lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調（Sprint 29）
+    punct_squeeze: bool = False  # 標點擠壓（Sprint 90）：相鄰約物讓出半形（CLREQ §3.1.6.1）
     color: Optional[str] = None  # 文字色票名（Sprint 76）；None＝預設暖黑 K92
     source_font: Optional[str] = None
     note: Optional[str] = None
@@ -85,6 +106,7 @@ PARAGRAPH_STYLE_FIELDS: Mapping[str, Callable] = {
     "writing_mode": str,
     "head_offset_chars": int,
     "lead_offset_pt": float,
+    "punct_squeeze": _bool,
     "color": _opt_str,
     "source_font": _opt_str,
     "note": _opt_str,
@@ -307,6 +329,7 @@ def _paragraph_style(name: str, d: dict) -> ParagraphStyle:
         writing_mode=str(d.get("writing_mode", "vertical-rl")),
         head_offset_chars=int(d.get("head_offset_chars", 0)),
         lead_offset_pt=float(d.get("lead_offset_pt", 0.0)),
+        punct_squeeze=_bool(d.get("punct_squeeze", False)),
         color=_opt_str(d.get("color")),
         source_font=d.get("source_font"),
         note=d.get("note"),

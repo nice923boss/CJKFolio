@@ -28,6 +28,13 @@ LINE_START_FORBIDDEN = set("，。、：；！？」』）〕》〉｝〗…‥�
 # 行尾禁則（不得懸在行尾）
 LINE_END_FORBIDDEN = set("「『（〔《〈｛〖")
 
+# 標點擠壓（約物詰め）字集（Sprint 90，CLREQ WD-20150723 §3.1.6.1）：
+# 條文列舉的「頓號、逗號、句號」與括號類。括號沿用既有禁則字集不另立新集。
+SQUEEZE_STOPS = frozenset("、，。")
+SQUEEZE_OPENERS = frozenset(LINE_END_FORBIDDEN)
+SQUEEZE_CLOSERS = frozenset("」』）〕》〉｝〗")
+SQUEEZE_WIDTH = 0.5  # 讓出半形後的字身框（條文：可減少半個字寬）
+
 # 走縱中橫的數字串：1〜2 位數字，可帶列標記尾點（真書 p10「1.」「2.」「3.」）
 _TCY_NUMERIC = re.compile(r"\d{1,2}\.?")
 
@@ -53,7 +60,7 @@ _PRESENTATION_FORMS = {
 class Cell:
     text: str
     kind: str  # "cjk" | "tcy" | "latin" | "space"
-    width: int = 1  # 佔用的直排字槽數
+    width: float = 1  # 佔用的直排字槽數（標點擠壓後可為 0.5，Sprint 90）
     char_style: Optional[str] = None  # 字元樣式名（run 模型；None＝依段落樣式）
     span: Optional[tuple] = None  # 文件 provenance：來源 text 半開區間 (start, end)。
     # 座標系＝tokenize 輸入 text；經 offsets 映射後＝文件段 text（normalize 前）座標。
@@ -84,6 +91,7 @@ class ParagraphSpec:
     head_offset: int = 0  # 段級天頭縮退（槽）：整段每行起始槽位下移（目錄條目縮退）
     lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調，不改斷行容量（Sprint 29）
     advance_pt: float = 0.0  # 該樣式字距（pt）：繞排排除區的 pt 區間換算字格用（0＝不繞排）
+    punct_squeeze: bool = False  # 標點擠壓（Sprint 90）：相鄰約物讓出半形（opt-in）
 
 
 @dataclass(frozen=True)
@@ -245,6 +253,48 @@ def cells_from_runs(runs, vertical: bool = True) -> list:
     return cells
 
 
+def _squeezes(left: str, right: str) -> bool:
+    """左枚約物是否讓出半形（CLREQ WD-20150723 §3.1.6.1 規則 2〜6）。
+
+    規則 2／4／6＝閉括號後接句逗、開括號、閉括號；規則 3＝句逗後接開括號；
+    規則 5＝連續開括號。**規則 1（句逗後接閉括號）不實作**：條文明文括註
+    「繁體中文標點不適用此規則」，且內建繁體字型墨跡量測顯示該情境擠壓後
+    墨距為負（相碰，spikes/spike17-mojikumi）。規則 7／8（solidus 減 1/4 形）
+    無素材可驗，未實作（見 GAPS）。
+    """
+    if left in SQUEEZE_CLOSERS:
+        return (right in SQUEEZE_STOPS or right in SQUEEZE_OPENERS
+                or right in SQUEEZE_CLOSERS)
+    if left in SQUEEZE_STOPS:
+        return right in SQUEEZE_OPENERS
+    if left in SQUEEZE_OPENERS:
+        return right in SQUEEZE_OPENERS
+    return False
+
+
+def _squeezable(cell) -> bool:
+    """單一全形約物字格才參與擠壓（縱中橫、旋轉拉丁、空白與已擠壓者除外）。"""
+    return cell.kind == "cjk" and len(cell.text) == 1 and cell.width == 1
+
+
+def squeeze_punctuation(cells: list) -> list:
+    """相鄰約物擠壓（純函式）：讓出半形者字身框 1 → 0.5 em，字形位置不變。
+
+    CLREQ §3.1.6.1 調整的是「符號間相鄰的空隙」而非字面位置，故只縮推進量、
+    不位移字形：兩後端既有的 `content_i += cell.width` 累加即得正確落點，
+    渲染層零改動（Spike 17 已推導此模型與「壓後枚＋字形上移」等價）。
+    逐對套用（三枚以上連續約物各對獨立判定）。
+    """
+    out = list(cells)
+    for i in range(len(out) - 1):
+        left, right = out[i], out[i + 1]
+        if not (_squeezable(left) and _squeezable(right)):
+            continue
+        if _squeezes(left.text, right.text):
+            out[i] = replace(left, width=SQUEEZE_WIDTH)
+    return out
+
+
 def break_paragraph(text: str, chars_per_line: int, indent: int = 2,
                     vertical: bool = True) -> list:
     return break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
@@ -372,6 +422,8 @@ def flow_pages(
         else:
             norm, offs = normalize_with_offsets(spec.text)
             cells = tokenize(norm, vertical=vertical, offsets=offs)
+        if spec.punct_squeeze and vertical:  # 擠壓量測依直排 vert 形墨跡（Sprint 90）
+            cells = squeeze_punctuation(cells)
         idx = 0
         start = spec.head_offset + indent  # head＝段級天頭縮退（每行）；indent 只疊段首行
         blocked = 0  # 本頁因繞排跳過的行槽數（整頁排不下任何行＝配置錯誤，快速失敗）
