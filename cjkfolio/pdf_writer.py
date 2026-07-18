@@ -29,7 +29,6 @@ from .images import EmbeddedImage, resolve_placed_images
 from .pdf_fonts import EmbeddedFont
 from .pdfx_meta import xmp_packet
 from .layout import (
-    layout_document,
     line_justified_advance,
     style_advance_pt,
     style_line_slots,
@@ -62,6 +61,7 @@ from .render import (
     rule_break_ranges,
 )
 from .styles import DEFAULT_TEXT_CMYK, resolve_text_cmyk
+from .wrap import layout_with_wrap
 
 BLEED_MM = 3.0
 TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92；styles 單一來源）
@@ -653,7 +653,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             f"{profile.label} 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
         )
     mark_margin_mm = MARK_LENGTH_MM if crop_marks else 0.0
-    layout = layout_document(doc, template)
+    layout = layout_with_wrap(doc, template, first_page=first_page)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir,
                             mark_margin_pt=mm_to_pt(mark_margin_mm))
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}

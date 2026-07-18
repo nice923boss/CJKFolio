@@ -13,6 +13,31 @@ from dataclasses import dataclass
 PT_PER_MM = 72.0 / 25.4  # 物理常數（同 render.PT_PER_MM，底層層各自持有免循環依賴）
 
 
+def is_right_page(book_number: int) -> bool:
+    """右頁（書口在右）＝偶數書頁。
+
+    真書《內在整理》三向互證（Sprint 22，A 級）：頁碼側（偶頁頁碼書口右）、
+    書眉側（書名書眉皆偶頁）、版心側（偶頁右邊距 21mm＝outer 精確）。
+    右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大。
+    """
+    return book_number % 2 == 0
+
+
+def line_axis_x_pt(template, master, slot: int, page_number: int,
+                   line_slots: int = 1) -> float:
+    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，偶數＝右頁書口在右；
+    mirror=false 恆以 outer 槽為起排側（B 部扉先例）。
+
+    兩後端與繞排排除區換算（wrap.py，Sprint 89）的行軸單一事實來源；render 與
+    pdf_writer 自此 re-export（既有呼叫端不變）。
+    """
+    page_w = template.page_width_mm * PT_PER_MM
+    outer_side = is_right_page(page_number) or not master.mirror
+    margin_mm = master.margins.outer_mm if outer_side else master.margins.inner_mm
+    axis0 = page_w - margin_mm * PT_PER_MM - master.grid.base_size_pt / 2
+    return axis0 - (slot + (line_slots - 1) / 2) * master.grid.line_pitch_pt
+
+
 @dataclass(frozen=True)
 class StrokeRect:
     """描邊矩形（top-down pt）：x0<x1、y0<y1（y0＝上緣）。cmyk 為描邊色 (c,m,y,k)。"""

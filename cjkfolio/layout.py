@@ -234,7 +234,14 @@ def _sections(doc) -> list:
     return sections
 
 
-def layout_document(doc, template: Template, first_para_continues: bool = False) -> LayoutResult:
+def layout_document(doc, template: Template, first_para_continues: bool = False,
+                    exclusions=None) -> LayoutResult:
+    """流排文件為分頁 LayoutPage。
+
+    exclusions＝{版面頁號: (engine.Exclusion, ...)} 圖文繞排排除區（Sprint 89，
+    選配）：由 wrap.layout_with_wrap 於第二趟傳入（換算需先知逐頁主版），
+    layout 只負責把節內頁序換算為版面頁號（page_offset）後轉交 flow_pages。
+    """
     pages: list = []
     for si, (master_name, lo, hi) in enumerate(_sections(doc)):
         if master_name not in template.masters:
@@ -263,6 +270,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
                     para_idx=i,
                     head_offset=st.head_offset_chars,
                     lead_offset_pt=st.lead_offset_pt,
+                    advance_pt=style_advance_pt(st, grid),
                 )
             )
         # 每節獨立流排（節首＝強制起新頁）；頁號跨節連續。節間段後空槽自然歸零
@@ -270,6 +278,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False)
         raw_pages = flow_pages(
             specs, grid.chars_per_line, grid.lines_per_page,
             first_para_continues=first_para_continues and si == 0, vertical=vertical,
+            exclusions=exclusions, page_offset=len(pages),
         )
         for page in raw_pages:
             pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name,

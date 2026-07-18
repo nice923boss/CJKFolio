@@ -78,10 +78,17 @@ class PlacedImage:
     None＝置入主版 figure 保留區（槽式，每頁一張）。rect 圖每頁多張、可溢出
     版心（真書照片略溢 1〜4pt 特徵與出血照片皆正當用法，不做邊界快速失敗）。
     圖在框內 contain 等比置中（primitives.fit_image_rect）。
+
+    wrap：圖文繞排（Sprint 89，選配，預設 False＝既有行為圖疊於文上）。True 時
+    圖框成為排除區，受影響行槽的內文避開圖的字軸範圍（真書 179 頁全掃形態）；
+    限 rect 圖框（槽式無座標）。wrap_margin_mm＝圖框四周額外留白（真書圖文間隙
+    1〜3 字格為作者自由放置，本產品由此欄位表達不硬編）。
     """
     path: str
     page: int
     rect: Optional[tuple] = None
+    wrap: bool = False
+    wrap_margin_mm: float = 0.0
 
 
 def _runs_from_list(raw, idx: int) -> tuple:
@@ -125,7 +132,8 @@ def _rect_from_value(raw, ctx: str) -> tuple:
 
 def _images_from_list(raw) -> tuple:
     """解析 images 陣列（選配）。每項須含非空 path 與 ≥1 整數 page；選配 rect
-    （任意圖框，每頁多張）；無 rect＝槽式（figure 保留區），槽式每頁僅一張。"""
+    （任意圖框，每頁多張）；無 rect＝槽式（figure 保留區），槽式每頁僅一張。
+    選配 wrap（bool，繞排）須搭 rect；wrap_margin_mm 須 ≥0。"""
     images = []
     slot_pages = set()
     for j, im in enumerate(raw):
@@ -147,7 +155,21 @@ def _images_from_list(raw) -> tuple:
                     "多圖請用 rect 任意圖框）"
                 )
             slot_pages.add(page)
-        images.append(PlacedImage(path=path, page=page, rect=rect))
+        wrap = im.get("wrap", False)
+        if not isinstance(wrap, bool):
+            raise DocumentError(f"images[{j}] wrap 需為布林值，得到 {wrap!r}")
+        if wrap and rect is None:
+            raise DocumentError(
+                f"images[{j}] wrap 需搭 rect 圖框（槽式 figure 保留區無座標，v1 不繞排）"
+            )
+        margin = im.get("wrap_margin_mm", 0.0)
+        if (isinstance(margin, bool) or not isinstance(margin, (int, float))
+                or margin < 0):
+            raise DocumentError(
+                f"images[{j}] wrap_margin_mm 需為 ≥0 的數字，得到 {margin!r}"
+            )
+        images.append(PlacedImage(path=path, page=page, rect=rect, wrap=wrap,
+                                  wrap_margin_mm=float(margin)))
     return tuple(images)
 
 
@@ -293,7 +315,9 @@ def document_to_dict(doc: Document) -> dict:
     if doc.images:
         out["images"] = [
             {"path": im.path, "page": im.page,
-             **({"rect": list(im.rect)} if im.rect is not None else {})}
+             **({"rect": list(im.rect)} if im.rect is not None else {}),
+             **({"wrap": True} if im.wrap else {}),
+             **({"wrap_margin_mm": im.wrap_margin_mm} if im.wrap_margin_mm else {})}
             for im in doc.images
         ]
     if doc.text_frames:

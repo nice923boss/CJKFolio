@@ -18,8 +18,10 @@
 import re
 import unicodedata
 from dataclasses import dataclass, replace
-from math import ceil
+from math import ceil, floor
 from typing import Optional
+
+_EPS = 1e-6
 
 # CLREQ 繁中行首禁則（不得出現在行首）
 LINE_START_FORBIDDEN = set("，。、：；！？」』）〕》〉｝〗…‥·．％")
@@ -81,6 +83,47 @@ class ParagraphSpec:
     para_idx: Optional[int] = None  # 文件段索引（純載體，供畫布反查文件游標）
     head_offset: int = 0  # 段級天頭縮退（槽）：整段每行起始槽位下移（目錄條目縮退）
     lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調，不改斷行容量（Sprint 29）
+    advance_pt: float = 0.0  # 該樣式字距（pt）：繞排排除區的 pt 區間換算字格用（0＝不繞排）
+
+
+@dataclass(frozen=True)
+class Exclusion:
+    """繞排排除區（頁級，已換算為版面座標；Sprint 89）。
+
+    slot_lo／slot_hi：受影響行槽半開區間（行軸）；
+    span_lo_pt／span_hi_pt：字軸排除區間（相對天頭 pt，半開）。
+    幾何換算（rect → 本結構）在 wrap.py，engine 只做字格裁切（不認識主版與鏡像）。
+    """
+    slot_lo: int
+    slot_hi: int
+    span_lo_pt: float
+    span_hi_pt: float
+
+
+def line_window(exclusions, slot: int, line_slots: int, advance_pt: float,
+                chars_per_line: int):
+    """該行的可用字格半開區間 [start, end)（繞排排除區裁切後）。
+
+    行佔 slot〜slot+line_slots−1，任一行槽與排除區行軸區間重疊即整行受裁切（保守，
+    大級數跨槽行不做部分裁切）。排除區把可用區間切成前後兩段，v1 取較長的一段
+    （同欄不跨圖續排＝真書 179 頁全掃 8 個繞排樣本的一致形態，Sprint 89 R1）。
+    end ≤ start＝該行槽被圖佔滿，呼叫端不於此槽排字。
+    """
+    start, end = 0, chars_per_line
+    if not exclusions or advance_pt <= 0:
+        return start, end
+    for ex in exclusions:
+        if ex.slot_hi <= slot or ex.slot_lo >= slot + line_slots:
+            continue
+        lo = int(floor(ex.span_lo_pt / advance_pt + _EPS))
+        hi = int(ceil(ex.span_hi_pt / advance_pt - _EPS))
+        before = (start, min(end, lo))
+        after = (max(start, hi), end)
+        start, end = (before if max(0, before[1] - before[0])
+                      >= max(0, after[1] - after[0]) else after)
+        if end < start:
+            end = start
+    return start, end
 
 
 @dataclass(frozen=True)
@@ -224,51 +267,61 @@ def _break_cells(cells: list, chars_per_line: int, indent: int = 2,
     start = head + indent  # head＝段級天頭縮退（每行）；indent 只疊段首行
     while idx < len(cells):
         cap = chars_per_line - start
-        line: list = []
-        used = 0
-        while idx < len(cells) and used + cells[idx].width <= cap:
-            line.append(cells[idx])
-            used += cells[idx].width
-            idx += 1
-        # 禁則解消（迭代至穩定；每輪或推進 idx、或縮短 line，必然終止）
-        while True:
-            # 行尾禁則：開括弧不懸行尾（後面還有字才需處理）
-            if line and idx < len(cells) and line[-1].text in LINE_END_FORBIDDEN:
-                idx -= 1
-                used -= line[-1].width
-                line.pop()
-                continue
-            # 行首禁則：整串句逗一次決策，擠入或追出
-            if line and idx < len(cells) and cells[idx].text in LINE_START_FORBIDDEN:
-                run_w, j = 0, idx
-                while j < len(cells) and cells[j].text in LINE_START_FORBIDDEN:
-                    run_w += cells[j].width
-                    j += 1
-                if used + run_w - cap <= MAX_SQUEEZE_SLOTS or len(line) <= 1:
-                    while idx < j:  # 擠入：句逗掛本行行尾，齊行負調整
-                        line.append(cells[idx])
-                        used += cells[idx].width
-                        idx += 1
-                else:  # 追出：退到非禁則錨字，錨字連同整串句逗下移
-                    while len(line) > 1 and line[-1].text in LINE_START_FORBIDDEN:
-                        idx -= 1
-                        used -= line[-1].width
-                        line.pop()
-                    if len(line) > 1:
-                        idx -= 1
-                        used -= line[-1].width
-                        line.pop()
-                continue
-            break
-        if not line:  # 病理情形防護：強制收一字避免死循環
-            line.append(cells[idx])
-            idx += 1
+        line, idx = _break_one_line(cells, idx, cap)
         lines.append(Line(tuple(line), start, cap=cap, para_end=False))
         start = head
     if lines:
         last = lines[-1]
         lines[-1] = Line(last.cells, last.start_slot, cap=last.cap, para_end=True)
     return lines
+
+
+def _break_one_line(cells: list, idx: int, cap: int):
+    """自 idx 起斷出一行（禁則解消後），回傳 (line_cells, new_idx)。
+
+    斷行與流排共用（繞排逐行流排每行容量不同，Sprint 89）：任一行邊界皆為合法
+    切點，故逐行取用與整段一次斷行等價。
+    """
+    line: list = []
+    used = 0
+    while idx < len(cells) and used + cells[idx].width <= cap:
+        line.append(cells[idx])
+        used += cells[idx].width
+        idx += 1
+    # 禁則解消（迭代至穩定；每輪或推進 idx、或縮短 line，必然終止）
+    while True:
+        # 行尾禁則：開括弧不懸行尾（後面還有字才需處理）
+        if line and idx < len(cells) and line[-1].text in LINE_END_FORBIDDEN:
+            idx -= 1
+            used -= line[-1].width
+            line.pop()
+            continue
+        # 行首禁則：整串句逗一次決策，擠入或追出
+        if line and idx < len(cells) and cells[idx].text in LINE_START_FORBIDDEN:
+            run_w, j = 0, idx
+            while j < len(cells) and cells[j].text in LINE_START_FORBIDDEN:
+                run_w += cells[j].width
+                j += 1
+            if used + run_w - cap <= MAX_SQUEEZE_SLOTS or len(line) <= 1:
+                while idx < j:  # 擠入：句逗掛本行行尾，齊行負調整
+                    line.append(cells[idx])
+                    used += cells[idx].width
+                    idx += 1
+            else:  # 追出：退到非禁則錨字，錨字連同整串句逗下移
+                while len(line) > 1 and line[-1].text in LINE_START_FORBIDDEN:
+                    idx -= 1
+                    used -= line[-1].width
+                    line.pop()
+                if len(line) > 1:
+                    idx -= 1
+                    used -= line[-1].width
+                    line.pop()
+            continue
+        break
+    if not line:  # 病理情形防護：強制收一字避免死循環
+        line.append(cells[idx])
+        idx += 1
+    return line, idx
 
 
 def check_kinsoku(lines) -> list:
@@ -290,27 +343,26 @@ def flow_pages(
     slots_per_page: int,
     first_para_continues: bool = False,
     vertical: bool = True,
+    exclusions=None,
+    page_offset: int = 0,
 ) -> list:
     """把 ParagraphSpec 序列流排成頁。
 
     回傳 pages，每頁為 [PlacedLine, ...]，行槽起算為 0（直排右起、橫排上起）。
     段後空槽跨頁時歸零（不帶進次頁），與參考書實測一致。
     斷行與禁則規則與方向無關；vertical 只決定 tokenize（橫排不轉縱中橫）。
+
+    繞排（Sprint 89）：exclusions＝{版面頁號: (Exclusion, ...)}，逐行以 line_window
+    取該行槽的可用字格區間（行首推移或行尾縮短），故斷行改逐行取用（行邊界皆為
+    合法切點，與整段一次斷行等價）。page_offset＝本次流排前已產生的頁數（節式
+    多節流排時把節內頁序換算為版面頁號）。無 exclusions 時行為與既有一致。
     """
     pages: list = []
     cur: list = []
     slot = 0
 
-    def emit(line: Line, style: str, line_slots: int, page_no=None, para_idx=None,
-             lead_offset_pt=0.0) -> None:
-        nonlocal slot, cur
-        if slot + line_slots > slots_per_page:
-            pages.append(cur)
-            cur = []
-            slot = 0
-        cur.append(PlacedLine(slot, line, style, page_no=page_no, para_idx=para_idx,
-                              lead_offset_pt=lead_offset_pt))
-        slot += line_slots
+    def page_exclusions():
+        return exclusions.get(page_offset + len(pages) + 1, ()) if exclusions else ()
 
     for pi, spec in enumerate(specs):
         indent = 0 if (pi == 0 and first_para_continues) else spec.indent
@@ -320,10 +372,37 @@ def flow_pages(
         else:
             norm, offs = normalize_with_offsets(spec.text)
             cells = tokenize(norm, vertical=vertical, offsets=offs)
-        for line in _break_cells(cells, cap, indent=indent, head=spec.head_offset):
-            emit(line, spec.style, spec.line_slots,
-                 page_no=spec.page_no if line.para_end else None,
-                 para_idx=spec.para_idx, lead_offset_pt=spec.lead_offset_pt)
+        idx = 0
+        start = spec.head_offset + indent  # head＝段級天頭縮退（每行）；indent 只疊段首行
+        blocked = 0  # 本頁因繞排跳過的行槽數（整頁排不下任何行＝配置錯誤，快速失敗）
+        while idx < len(cells):
+            if slot + spec.line_slots > slots_per_page:
+                if blocked and not cur:
+                    raise ValueError(
+                        f"繞排排除區覆蓋版面頁 {page_offset + len(pages) + 1} 全部行槽，"
+                        "無處排字（請縮小圖框或 wrap_margin）"
+                    )
+                pages.append(cur)
+                cur = []
+                slot = 0
+                blocked = 0
+            win_lo, win_hi = line_window(page_exclusions(), slot, spec.line_slots,
+                                         spec.advance_pt, cap)
+            line_start = max(start, win_lo)
+            line_cap = win_hi - line_start
+            if line_cap <= 0:  # 本行槽被排除區佔滿：留白，續下一行槽
+                slot += spec.line_slots
+                blocked += spec.line_slots
+                continue
+            line_cells, idx = _break_one_line(cells, idx, line_cap)
+            line = Line(tuple(line_cells), line_start, cap=line_cap,
+                        para_end=idx >= len(cells))
+            cur.append(PlacedLine(slot, line, spec.style,
+                                  page_no=spec.page_no if line.para_end else None,
+                                  para_idx=spec.para_idx,
+                                  lead_offset_pt=spec.lead_offset_pt))
+            slot += spec.line_slots
+            start = spec.head_offset
         if pi < len(specs) - 1:
             slot += spec.gap_after
             if slot >= slots_per_page:

@@ -17,7 +17,6 @@ from .fonts import DEFAULT_FONT_DIR, FontRegistry
 from .frames import resolve_text_frames
 from .images import resolve_placed_images
 from .layout import (
-    layout_document,
     line_justified_advance,
     style_advance_pt,
     style_line_slots,
@@ -34,41 +33,18 @@ from .primitives import (
     figure_slot_edges,
     figure_slot_rect,
     fit_image_rect,
+    is_right_page,
+    line_axis_x_pt,
     toc_rule_segments,
 )
 from .styles import MasterPage, Template, resolve_text_cmyk
+from .wrap import layout_with_wrap
 
 PT_PER_MM = 72.0 / 25.4
 
 
 def mm_to_pt(mm: float) -> float:
     return mm * PT_PER_MM
-
-
-def is_right_page(book_number: int) -> bool:
-    """右頁（書口在右）＝偶數書頁。
-
-    真書《內在整理》三向互證（Sprint 22，A 級）：頁碼側（偶頁頁碼書口右）、
-    書眉側（書名書眉皆偶頁）、版心側（偶頁右邊距 21mm＝outer 精確）。
-    右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大。
-    """
-    return book_number % 2 == 0
-
-
-def line_axis_x_pt(
-    template: Template,
-    master: MasterPage,
-    slot: int,
-    page_number: int,
-    line_slots: int = 1,
-) -> float:
-    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，偶數＝右頁書口在右；
-    mirror=false 恆以 outer 槽為起排側（B 部扉先例）。"""
-    page_w = mm_to_pt(template.page_width_mm)
-    outer_side = is_right_page(page_number) or not master.mirror
-    margin_mm = master.margins.outer_mm if outer_side else master.margins.inner_mm
-    axis0 = page_w - mm_to_pt(margin_mm) - master.grid.base_size_pt / 2
-    return axis0 - (slot + (line_slots - 1) / 2) * master.grid.line_pitch_pt
 
 
 def horizontal_left_x_pt(master: MasterPage, book_number: int) -> float:
@@ -534,7 +510,7 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
                     basename: str = "page", font_dir=None,
                     footer: bool = True, first_page: int = 1,
                     image_base_dir=None) -> RenderResult:
-    layout = layout_document(doc, template)
+    layout = layout_with_wrap(doc, template, first_page=first_page)
     renderer = PageRenderer(template, doc.master, dpi=dpi, font_dir=font_dir)
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(

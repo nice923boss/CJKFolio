@@ -2,6 +2,41 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.84.0（2026-07-18，Sprint 89）圖文繞排（Phase 4 續項）
+
+### 新增
+
+- [實作] 圖文繞排（§6「圖文繞排」；直排內文避讓置入圖框，規則對表真書 179 頁全掃）：
+  - `tools/measure_wrap_pages.py`（新）：對真書全書掃「同頁既有圖又有內文流」的半頁，量測圖 rect 與直排文字欄的幾何關係並分類（wrap-partial／column-block／disjoint），另列圖文間隙內的其他 span（判斷間隙成因）。輸出 assets/reference/wrap_measurements.json（本機不入 repo）。
+  - `cjkfolio/engine.py`：新增 `Exclusion`（行槽區間＋字軸 pt 區間）與 `line_window` 純函式（排除區把可用字格切成前後兩段，取較長者＝同欄不跨圖續排）；`_break_one_line` 自 `_break_cells` 抽出（斷行與逐行流排共用）；`flow_pages` 加 `exclusions`／`page_offset`，改逐行取窗（行首推移或行尾縮短；行槽被圖佔滿則留白續下一槽，整頁無處排字快速失敗）。
+  - `cjkfolio/wrap.py`（新）：`image_exclusion`（rect→排除區換算，含 wrap_margin 外擴與版心行槽夾取）、`page_exclusions`（逐頁；橫排頁略過）、`layout_with_wrap`（兩趟：Pass 1 取逐頁主版與方向、Pass 2 帶排除區重排；主版於重排後位移列入 violations 不沉默）。
+  - `cjkfolio/document.py`：document@2 相容擴充 `PlacedImage.wrap`／`wrap_margin_mm`（預設 False／0＝既有輸出零變更；wrap 須搭 rect 圖框、margin 須 ≥0，序列化只寫非預設值）。
+  - `cjkfolio/primitives.py`：`is_right_page`／`line_axis_x_pt` 自 `render.py` 下放（wrap 與兩後端同一行軸事實來源；render／pdf_writer re-export，既有呼叫端不變）。
+  - `cjkfolio/render.py`／`pdf_writer.py`：`render_document`／`export_pdf` 改用 `layout_with_wrap`（帶 first_page，鏡像側別正確）。
+  - `samples/wrap-demo.doc.json`＋`samples/wrap-photo.png`（新，自擬內文＋程式生成灰階佔位圖）。
+
+### 驗證
+
+- 基線 **754 passed / 0 failed**（728→754，+26：排除區幾何與 line_window 純函式 11＋document wrap 欄位 5＋flow_pages 排除區流排 4＋layout_with_wrap 端到端 5＋PDF 端到端 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R1 一手證據（A 級，`python tools/measure_wrap_pages.py`）：真書 179 頁中「含圖且有內文流」11 個圖例＝wrap-partial 8、disjoint 3，形態一致＝圖矩形跨數欄、受影響欄內文避開圖的字軸範圍、同欄不跨圖續排（無「圖上下同欄皆有字」樣本）；受影響欄字軸起訖同頁一致（矩形排除區，非輪廓繞排）；圖文間隙 1〜3 字格不等且間隙內無圖說 span（純留白）＝作者自由放置，非排版規則。
+- 模型對表（A 級）：真書 PDF 53 R 半頁圖 rect 經本產品換算得 slot 7〜12，與量測 6 欄行軸 193.25〜78.25 逐欄吻合（A-內文版 `354.25−23s`）；`wrap_margin` 一字格時可用字格 [0,15)，與真書該 6 欄末字落 cell 14 逐格吻合。
+- R5 真實素材驗收（紅線自擬 samples/wrap-demo）：CLI render 兩頁 PNG 親 Read 目視（照片上方數欄提前收尾留一字格、照片區無字、其餘欄滿排至地腳、續頁接排、書頁 3＝左頁頁碼在左下）；CLI export PDF → preflight **12/12**；Gate 4 以量測真書的**同一支分類器**獨立解析本產品輸出，判定 `relation=wrap-partial`（與真書 8 樣本同形），受影響 5 欄末字墨底 274.63 對表模型推導 273.29（差＝字型 bearing），圖實際落點 y 333.65〜422.91 符合 contain 等比置中於宣告框（非缺陷）。
+- 回歸：真書第一章（本機素材）重排 22 頁、禁則 0 違規、齊行擠入 10／撐開 2（與 Sprint 11／88 記錄一致）；`flow_pages` 逐行改寫以「有無 exclusions 參數輸出逐行相同」與既有 54 個 engine／layout 測試守門。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [實作]：排版引擎層新增排除區機制＋文件模型相容擴充，兩後端共用既有繪製路徑。R2：無新外部依賴、無新機制（復用既有斷行與置入圖層），無需 spike（先例 Sprint 57 框串接、Sprint 85 兩趟分頁）。R1 證據＝真書 179 頁全掃（A 級一手，工具入 repo 可重現）＋輸出探針實測（A 級）。
+- 行為變更（誠實記錄）：`render_document`／`export_pdf` 改走 `layout_with_wrap`，無 wrap 圖的文件仍為單趟流排、輸出零變更（測試釘死）；`is_right_page`／`line_axis_x_pt` 實作搬至 primitives，render／pdf_writer re-export 故既有 import 與行為不變。
+- 誠實差異（GAPS #49）：v1 只直排 body（橫排頁不繞排）；矩形排除區非輪廓繞排；同欄不跨圖續排（圖落字軸中段時另一段留白）；節式多主版文件若因繞排位移致主版改變，列 violations 不自動再迭代；editor 畫布不顯示繞排（畫布本就不繪置入圖）；拖放置圖與繞排參數 UI 未接線。
+
+### 待 Owner 真實素材驗收
+
+- 真視窗手感與圖文繞排的版面美感判斷（#19 批次）；印廠打樣色彩與直排品質（Phase 4 DoD，#18／#41）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 §6 清單本輪可自主項至此收口（PDF/X-1a／X-4、CMYK 與單 K、出血、裁切標記、輸出色彩描述檔、字型嵌入與授權檢查、目錄自動生成、圖文繞排、注音 ruby、縱中橫精修、preflight 面板皆 [實作]；禁則／約物擠壓微調依 GAPS #45 順延待 R2 spike＋R5 素材）。下個 Sprint 提請 Owner 定案：續攻 GAPS 乙類後續片（PPI 重採樣、彩色 CMYK 影像、X-4 ICC 選取器等），或收尾轉 Phase 5。
+
 ## v0.83.0（2026-07-18，Sprint 88）縱中橫精修（Phase 4 續項）
 
 ### 新增

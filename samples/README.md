@@ -9,6 +9,7 @@
 | --- | --- |
 | `cip-copyright.doc.json` | 橫排版權頁-CIP 樣張（虛構書目）。示範 Sprint 13 的橫排版面軸（horizontal-tb）與 Sprint 14 的 CIP 細框向量原件（cip-box，兩後端 CMYK 描邊）。 |
 | `toc.doc.json` | 直排目錄樣張（虛構條目）。示範 Sprint 15 的目錄天頭水平虛線（toc-rule，灰 K57、dash [3 2]，貫穿頁寬含出血）與 Sprint 16 的條目頁碼＋引導線（page_no 直排逐位底錨對齊＋行軸垂直引導線 0.1pt K92），兩後端同源。 |
+| `wrap-demo.doc.json` | 圖文繞排樣張（自擬內文＋自擬照片）。示範 Sprint 89 的 `PlacedImage.wrap`：圖框成排除區，受影響行槽的內文避開圖的字軸範圍並留 `wrap_margin_mm` 一字格。搭配 `wrap-photo.png`＝程式生成的灰階漸層佔位圖（幾何形狀，非任何實際攝影或參考書圖像）。 |
 
 重現：
 
@@ -20,4 +21,8 @@ python -m cjkfolio.cli preflight out/cip/cip.pdf
 python -m cjkfolio.cli render samples/toc.doc.json -o out/toc --dpi 300 --no-footer
 python -m cjkfolio.cli export-pdf samples/toc.doc.json -o out/toc/toc.pdf --no-footer
 python -m cjkfolio.cli preflight out/toc/toc.pdf
+
+python -m cjkfolio.cli render samples/wrap-demo.doc.json --out out/wrap --first-page 2
+python -m cjkfolio.cli export-pdf samples/wrap-demo.doc.json -o out/wrap/wrap-demo.pdf --first-page 2
+python -m cjkfolio.cli preflight out/wrap/wrap-demo.pdf
 ```
