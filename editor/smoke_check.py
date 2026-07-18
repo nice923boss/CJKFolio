@@ -16,6 +16,7 @@
   C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
   C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派（單一 undo 步）、警告不沉默
   C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
+  C16 preflight 面板（Sprint 87）：匯出臨時 PDF → 機械 check_pdfx → 結果面板列規則＋摘要
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -598,11 +599,42 @@ def main() -> int:
         "（壞檔套用守門警示）→ 套用整份模版（樣式回來）→ 一步 undo 回原"
     )
 
+    # C16 preflight 面板（Sprint 87）：匯出臨時 PDF → check_pdfx → 結果面板顯示
+    from cjkfolio.preflight import Finding, PreflightReport
+    from editor.preflight_panel import PreflightDialog
+
+    win16 = EditorWindow(str(DOC))
+    cap16 = {}
+    _orig16 = PreflightDialog.exec
+    PreflightDialog.exec = lambda dlg: cap16.setdefault("dlg", dlg) or 0
+    try:
+        report16 = win16._run_preflight()
+    finally:
+        PreflightDialog.exec = _orig16
+    assert report16 is not None and report16.ok, "preflight 應全數通過"
+    assert len(report16.findings) == 12, f"規則數 {len(report16.findings)}（預期 12）"
+    dlg16 = cap16["dlg"]
+    assert dlg16.table.rowCount() == 12, "面板表列數非 12"
+    assert "全數通過（12/12）" in dlg16.summary_label.text(), "摘要非全數通過"
+    assert dlg16.not_covered_label.text().startswith("未涵蓋"), "未涵蓋聲明未顯示"
+    assert "preflight：全數通過" in win16.statusBar().currentMessage(), "statusBar 未列結論"
+    # 失敗案例：合成不過報告 → 面板紅字摘要＋「不過」列
+    bad16 = PreflightReport(path="x", findings=(
+        Finding("header-version", True, "1.3"),
+        Finding("color-cmyk-only", False, "RGB 殘留")))
+    bdlg16 = PreflightDialog(bad16)
+    assert "未通過（1/2）" in bdlg16.summary_label.text(), "失敗摘要異常"
+    assert bdlg16.table.item(1, 0).text() == "不過", "失敗列狀態非『不過』"
+    print(
+        "C16 preflight 面板：匯出臨時 PDF → 機械 preflight 12/12 → 面板列 12 規則"
+        "＋全數通過摘要＋未涵蓋聲明；合成不過報告面板紅字摘要與『不過』列"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
         "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
-        "（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
+        "＋preflight 面板（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
     )
     return 0
 

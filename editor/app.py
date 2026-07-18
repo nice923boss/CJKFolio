@@ -59,6 +59,7 @@ from editor.canvas import (  # noqa: E402
     resolve_frame_hit,
     resolve_hit,
 )
+from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
 from editor.style_panel import StylePanel  # noqa: E402
 
@@ -106,7 +107,7 @@ class CanvasView(QGraphicsView):
         super().keyPressEvent(event)
 
 
-class EditorWindow(StyleActionsMixin, QMainWindow):
+class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
@@ -114,6 +115,7 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
         # 由 property 委派＝樣式編輯後畫布與面板恆用現行模版，Sprint 71）
         self.session = EditSession(
             load_document(str(doc_path)), load_template(str(TEMPLATE)))
+        self._doc_path = Path(doc_path)  # 置入圖相對路徑基準（preflight 匯出用）
         self.page = self.layout_result.pages[0]
         self.cursor = None        # 目前選取 body 字格 (placed_idx, cell_idx)
         self.frame_cursor = None  # 目前選取框字格 ("frame", fi, li, ci)；與 body 游標互斥
@@ -188,6 +190,10 @@ class EditorWindow(StyleActionsMixin, QMainWindow):
             action = QAction(label, self)
             action.triggered.connect(handler)
             library_menu.addAction(action)
+
+        check_action = QAction("PDF/X-1a preflight（機械檢查）…", self)
+        check_action.triggered.connect(lambda: self._run_preflight())
+        self.menuBar().addMenu("檢查").addAction(check_action)
 
         ai_action = QAction("AI 設定…", self)
         ai_action.triggered.connect(self._show_ai_config)

@@ -28,7 +28,7 @@ from .document import (
 from .docx_import import import_docx
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
-from .preflight import check_pdfx
+from .preflight import check_pdfx, preflight_summary
 from .reference_extract import extract_draft
 from .render import render_document
 from .styles import load_template, save_template
@@ -261,8 +261,7 @@ def cmd_preflight(args) -> int:
     for finding in report.findings:
         print(f"{'通過' if finding.ok else '不過'}｜{finding.rule}：{finding.detail}")
     print("未涵蓋（誠實聲明）：" + "；".join(report.not_covered))
-    passed = sum(1 for finding in report.findings if finding.ok)
-    print(f"結論：{'全數通過' if report.ok else '未通過'}（{passed}/{len(report.findings)}）")
+    print(f"結論：{preflight_summary(report)}")
     return 0 if report.ok else 1
 
 

@@ -9,7 +9,14 @@ import pytest
 
 from cjkfolio.document import document_from_dict
 from cjkfolio.pdf_writer import export_pdf
-from cjkfolio.preflight import RULE_IDS, check_pdfx, check_pdfx1a
+from cjkfolio.preflight import (
+    RULE_IDS,
+    Finding,
+    PreflightReport,
+    check_pdfx,
+    check_pdfx1a,
+    preflight_summary,
+)
 from cjkfolio.styles import load_template
 
 fitz = pytest.importorskip("fitz")
@@ -192,3 +199,16 @@ def test_preflight_accepts_literal_string_id(tmp_path):
     assert "trailer-id" not in _failed_rules(report), (
         "可列印 /ID 序列化為 (literal) 時 trailer-id 仍須通過"
     )
+
+
+# ---------- preflight_summary 純函式（Sprint 87，供 CLI 與 editor 面板共用） ----------
+
+def test_preflight_summary_pass_fail_empty():
+    ok = PreflightReport(path="x", findings=(
+        Finding("a", True, ""), Finding("b", True, "")))
+    assert preflight_summary(ok) == "全數通過（2/2）"
+    bad = PreflightReport(path="x", findings=(
+        Finding("a", True, ""), Finding("b", False, "細節")))
+    assert preflight_summary(bad) == "未通過（1/2）"
+    empty = PreflightReport(path="x", findings=())
+    assert preflight_summary(empty) == "全數通過（0/0）"  # ok＝all([])＝True

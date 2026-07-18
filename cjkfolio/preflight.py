@@ -278,3 +278,10 @@ def check_pdfx(path, profile: str = "x-1a") -> PreflightReport:
 def check_pdfx1a(path) -> PreflightReport:
     """X-1a:2001 機械 preflight（check_pdfx 的相容包裝，既有呼叫端維持不變）。"""
     return check_pdfx(path, profile="x-1a")
+
+
+def preflight_summary(report: PreflightReport) -> str:
+    """一行結論摘要（CLI 與 editor 面板共用）：「全數通過（N/M）」或「未通過（N/M）」。"""
+    passed = sum(1 for f in report.findings if f.ok)
+    verdict = "全數通過" if report.ok else "未通過"
+    return f"{verdict}（{passed}/{len(report.findings)}）"

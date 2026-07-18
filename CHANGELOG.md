@@ -2,6 +2,30 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.82.0（2026-07-18，Sprint 87）preflight 面板（Phase 4 續項）
+
+### 新增
+
+- [實作] preflight 面板（§6「preflight 面板」；editor 內 PDF/X 機械檢查結果呈現，判定邏輯全在既有 check_pdfx）：
+  - `cjkfolio/preflight.py`：新增純函式 `preflight_summary`（一行結論摘要，CLI 與 editor 面板共用）；`cjkfolio/cli.py` cmd_preflight 改用之（DRY，輸出不變）。
+  - `editor/preflight_panel.py`：`PreflightDialog`（唯讀顯示結論摘要＋逐規則通過／不過表＋未涵蓋誠實聲明）。
+  - `editor/preflight_actions.py`：`PreflightActionsMixin._run_preflight`（匯出當前文件為臨時 PDF/X-1a → check_pdfx → 開面板；匯出／檢查失敗以 statusBar 提示不 crash）。抽為 mixin 同 `StyleActionsMixin` 慣例，控管 app.py 行數。
+  - `editor/app.py`：「檢查」選單「PDF/X-1a preflight…」入口；存 `self._doc_path`（置入圖 image_base_dir 基準）。
+
+### 驗證
+
+- 基線 **712 passed / 0 failed**（711→712，+1：preflight_summary 純函式通過／不過／空）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke **C1〜C16 全過**（C16 新＝真 export → check_pdfx 12/12 → 面板列 12 規則＋全數通過摘要＋未涵蓋聲明＋合成不過報告紅字摘要與「不過」列）。繁中標點 grep 無破折號。
+- R5 真實素材驗收（自擬 samples/case-divider）：C16 以真實文件離屏走完「匯出臨時 PDF → 機械 preflight 12/12 → 面板呈現」全鏈；CLI preflight 重構後輸出複驗「結論：全數通過（12/12）」不變。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [實作]：呈現層＋入口，判定邏輯復用已驗 check_pdfx。R2：無新外部依賴，無需新 spike。R1 證據＝既有 check_pdfx 12 規則（Sprint 10／28，A 級）＋離屏面板實測（A 級）。
+- 誠實差異（GAPS #47）：v1 只驗預設 X-1a（X-4 需 ICC 選取器，後續）；面板唯讀不提供修正建議／自動修復（機械檢查器非修復器）；認證級 preflight 不涵蓋（承 #18）；同步匯出檢查短暫凍視窗（背景執行緒後續）；真視窗手感待 Owner（#19）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項（依 §6 清單：圖文繞排、縱中橫精修；約物擠壓微調待 R2 spike＋R5 素材，見 GAPS #45）。
+
 ## v0.81.0（2026-07-18，Sprint 86）注音 ruby（Phase 4 續項）
 
 ### 新增
