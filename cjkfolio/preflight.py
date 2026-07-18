@@ -10,8 +10,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import fitz
+from PIL import Image
 
 from .images import MIN_IMAGE_PPI, effective_ppi, meets_ppi
+from .ink import MAX_TAC, image_max_tac, meets_tac, tac_percent
 from .pdf_writer import KNOWN_PRINT_CONDITIONS, PDFX_PROFILES
 
 RULE_IDS = (
@@ -35,7 +37,8 @@ NOT_COVERED = (
     "依 §9 300ppi 下限檢查；置入嵌原生解析度、不重採樣；"
     "影像色彩空間由 color-cmyk-only 涵蓋，DeviceGray 與 DeviceCMYK 合法、"
     "DeviceRGB 判失敗）",
-    "油墨總量 TAC",
+    "油墨總量 TAC（非 ISO 15930-1 條款故不入本規則集，另由 check_ink_coverage "
+    "依 §9 320% 上限檢查內容流著色與影像；超標為印廠條件風險非 X 不合規）",
     "字型授權嵌入旗標",
     "視覺內容正確性（人工抽檢）",
     "Acrobat／印廠認證級 preflight",
@@ -357,3 +360,116 @@ def image_resolution_summary(report: ImageResolutionReport) -> str:
     worst = min(f.ppi for f in low)
     return (f"解析度不足 {len(low)}/{len(report.findings)} 張"
             f"（最低 {worst:.0f}ppi < {report.min_ppi:.0f}ppi）")
+
+
+# ---------- 油墨總量 TAC（§9 印廠條件，非 X-1a 標準條款故獨立規則集） ----------
+
+@dataclass(frozen=True)
+class InkFinding:
+    """PDF 內一處墨量來源的判定（自 PDF 反算，不看產出側中間值）。"""
+    kind: str      # "著色"（內容流 k／K 算符）或"影像"（XObject 樣本）
+    label: str     # 頁次與色值／物件號與像素尺寸
+    tac: float     # 最高總墨量百分比
+    ok: bool
+
+
+@dataclass(frozen=True)
+class InkCoverageReport:
+    path: Path
+    max_tac: float
+    findings: tuple
+    unchecked: tuple = ()  # 無法解碼判墨量的影像（誠實列出，不當作通過）
+
+    @property
+    def ok(self) -> bool:
+        return all(f.ok for f in self.findings)
+
+
+#: DeviceCMYK 著色算符（k 填色／K 描邊）：四個數值運算元後接算符
+_CMYK_OP = re.compile(
+    rb"(?:^|[\s\]>])([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(k|K)(?:$|[\s/\[<(])")
+
+#: PDF 影像樣本可判墨量的分量數 → PIL mode（DeviceGray 0＝全黑、DeviceCMYK 四分量）
+_INK_MODES = {1: "L", 4: "CMYK"}
+
+
+def check_ink_coverage(path, max_tac: float = MAX_TAC) -> InkCoverageReport:
+    """以 PyMuPDF 自已寫出的 PDF 獨立反算總墨量 TAC（Gate 4）。
+
+    兩類來源：內容流的 DeviceCMYK 著色算符（k／K）、影像 XObject 的實際樣本
+    （經 PyMuPDF 解碼為裝置色，故 DeviceN 單黑版與 Indexed 亦還原得出墨量）。
+    同色值與同影像跨頁去重（首次出現處為代表）。
+
+    TAC 不屬 ISO 15930-1（X-1a）條款，故不入 check_pdfx 規則集：超墨量不使 PDF
+    失去 X-1a 合規性，只是印刷風險（§9 總墨量 ≤ 320〜340%）。無法解碼判墨量的
+    影像列入 unchecked，不計為通過（誠實聲明）。
+    """
+    p = Path(path)
+    findings, unchecked = [], []
+    seen_colors, seen_images = set(), set()
+    doc = fitz.open(p)
+    try:
+        for page in doc:
+            data = b""
+            for cx in page.get_contents():
+                try:
+                    data += (doc.xref_stream(cx) or b"") + b"\n"
+                except Exception:
+                    unchecked.append(f"頁 {page.number + 1} 內容流無法解碼")
+            for m in _CMYK_OP.finditer(data):
+                try:  # 外來 PDF 為系統邊界：`[\d.]+` 可能撈到「1.2.3」這類非數值
+                    cmyk = tuple(round(float(m.group(i)), 6) for i in range(1, 5))
+                except ValueError:
+                    continue
+                if max(cmyk) > 1.0 or cmyk in seen_colors:
+                    continue  # 超出 [0,1] 者非 CMYK 運算元（如 re 的座標）
+                seen_colors.add(cmyk)
+                tac = tac_percent(cmyk)
+                findings.append(InkFinding(
+                    kind="著色",
+                    label=f"頁 {page.number + 1} {m.group(5).decode()} "
+                          + " ".join(f"{v:g}" for v in cmyk),
+                    tac=tac, ok=meets_tac(tac, max_tac)))
+
+            for info in page.get_image_info(xrefs=True):
+                xref = int(info.get("xref", 0))
+                if xref <= 0 or xref in seen_images:
+                    continue
+                seen_images.add(xref)
+                label = f"頁 {page.number + 1} obj {xref}"
+                try:
+                    pix = fitz.Pixmap(doc, xref)
+                    mode = _INK_MODES.get(pix.n - pix.alpha)
+                    if mode is None or pix.alpha:
+                        unchecked.append(f"{label}：{pix.n} 分量影像不可判墨量")
+                        continue
+                    row = pix.width * pix.n
+                    samples = pix.samples if pix.stride == row else b"".join(
+                        pix.samples[y * pix.stride: y * pix.stride + row]
+                        for y in range(pix.height))
+                    tac = image_max_tac(
+                        Image.frombytes(mode, (pix.width, pix.height), samples))
+                except Exception as e:
+                    unchecked.append(f"{label}：影像無法解碼（{e}）")
+                    continue
+                findings.append(InkFinding(
+                    kind="影像", label=f"{label} {pix.width}×{pix.height}px",
+                    tac=tac, ok=meets_tac(tac, max_tac)))
+    finally:
+        doc.close()
+    return InkCoverageReport(path=p, max_tac=max_tac, findings=tuple(findings),
+                             unchecked=tuple(unchecked))
+
+
+def ink_coverage_summary(report: InkCoverageReport) -> str:
+    """一行結論摘要（CLI 與後續面板共用，同 preflight_summary 慣例）。"""
+    tail = f"；{len(report.unchecked)} 處未能判讀" if report.unchecked else ""
+    if not report.findings:
+        return "無可判墨量的著色或影像" + tail
+    over = [f for f in report.findings if not f.ok]
+    if not over:
+        worst = max(f.tac for f in report.findings)
+        return (f"皆在上限內（最高 {worst:.0f}% ≤ {report.max_tac:.0f}%）" + tail)
+    worst = max(f.tac for f in over)
+    return (f"總墨量超標 {len(over)}/{len(report.findings)} 處"
+            f"（最高 {worst:.0f}% > {report.max_tac:.0f}%）" + tail)

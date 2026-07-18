@@ -27,12 +27,15 @@ from .document import (
 )
 from .docx_import import import_docx
 from .images import MIN_IMAGE_PPI
+from .ink import MAX_TAC
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
 from .preflight import (
     check_image_resolution,
+    check_ink_coverage,
     check_pdfx,
     image_resolution_summary,
+    ink_coverage_summary,
     preflight_summary,
 )
 from .reference_extract import extract_draft
@@ -224,6 +227,13 @@ def cmd_export_pdf(args) -> int:
             print(warning)
         if not result.ppi_warnings:
             print("影像解析度：置入影像實效 PPI 皆達 §9 300ppi 下限")
+    if result.tac_warnings:
+        for warning in result.tac_warnings:
+            print(warning)
+    elif result.ink_uses:
+        print(f"油墨總量：最高 TAC {result.ink_uses[0].tac:.0f}%"
+              f"（{result.ink_uses[0].kind} {result.ink_uses[0].label}）"
+              f"，未逾 §9 {MAX_TAC:.0f}% 上限")
     print(_justify_line(result.justify_stats))
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:
@@ -283,6 +293,14 @@ def cmd_preflight(args) -> int:
               f"{f.px_w}×{f.px_h}px 繪 {f.draw_w_pt:.1f}×{f.draw_h_pt:.1f}pt "
               f"＝ {f.ppi:.0f}ppi")
     print(f"影像解析度（§9，非 X-1a 條款）：{image_resolution_summary(img)}")
+    # 總墨量亦為 §9 印廠條件（非 X-1a 條款）：獨立規則集，不影響 X 合規判定
+    ink = check_ink_coverage(args.pdf, max_tac=args.max_tac)
+    for f in ink.findings:
+        print(f"{'達標' if f.ok else '超標'}｜油墨總量：{f.kind} {f.label} "
+              f"最高 TAC {f.tac:.0f}%")
+    for note in ink.unchecked:
+        print(f"未判讀｜油墨總量：{note}")
+    print(f"油墨總量（§9，非 X-1a 條款）：{ink_coverage_summary(ink)}")
     return 0 if report.ok else 1
 
 
@@ -382,6 +400,8 @@ def main(argv=None) -> int:
                        help="以此 PDF/X 形態的規則集檢查（預設 x-1a）")
     p_pre.add_argument("--min-ppi", type=float, default=MIN_IMAGE_PPI,
                        help="影像實效解析度下限（§9 連續調 300〜350ppi，預設 300）")
+    p_pre.add_argument("--max-tac", type=float, default=MAX_TAC,
+                       help="總墨量上限百分比（§9 320〜340%%，預設 320）")
     p_pre.set_defaults(func=cmd_preflight)
 
     args = parser.parse_args(argv)

@@ -2,6 +2,28 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.88.0（2026-07-18，Sprint 93）油墨總量 TAC 檢核（§9 最後一項未實作硬條件）
+
+### 新增
+
+- [實作] `tools/measure_ink_coverage.py`：真書 179 頁送印稿墨量分佈量測（R1，A 級一手；只取聚合統計，不抽像素內容）。結果：**影像最大 TAC 357%**（逐列跳讀取樣值）、最大 TAC 逾 320% 者 9 張、逾 340% 者 7 張；**向量／文字著色 15 種，最高為手繪路徑富黑 `0.929 0.878 0.889 0.799`＝TAC 349.5%**（8 頁、91 次，後續算符皆為 path 非文字）；內文與其餘著色皆單 K（≤ 100%）。**即真實付印的書本身局部超出 §9 的 320〜340% 區間**，此為本 Sprint「只警告不擋流程」的一手依據。
+- [實作] `cjkfolio/ink.py`（墨量領域層）：`MAX_TAC=320.0`（§9「總墨量 ≤ 320〜340%」取保守下限）＋`TAC_TOLERANCE=0.5`（報告顯示精度，同 `PPI_TOLERANCE` 理由）＋`tac_percent`（四分量→百分比，分量數與值域快速失敗）＋`meets_tac`（兩側共用判定，門檻語意不分歧）＋`image_max_tac`（**取最高單點墨量非平均**：一枚重墨像素即構成風險；`L` 走 `(255−最暗)/2.55` 上限 100%，`CMYK` 走 PIL ImageMath 四分量相加不飽和截斷）＋`InkUse`／`tac_warnings`。
+- [實作] 產出側（匯出期）：`_Content.cmyk_used` 記錄實際發出的 DeviceCMYK 著色（`set_fill`／`stroke_rect`／`stroke_line` 三入口）、`_PdfPageWriter._image_inks` 記每張獨立影像最高墨量；`PdfResult.ink_uses`（依 TAC 降序）／`tac_warnings`（**不沉默、不擋流程**，同 Sprint 84 授權與 91 解析度慣例）；CLI `export-pdf` 列墨量行。
+- [實作] 驗證側（Gate 4）：`preflight.check_ink_coverage`／`InkFinding`／`InkCoverageReport`／`ink_coverage_summary`，以 PyMuPDF 自**已寫出的 PDF** 反算兩類來源：內容流 `k`／`K` 算符＋影像 XObject 經 Pixmap 解碼為裝置色（故 `DeviceN` 單黑版與 `Indexed` 亦還原得出墨量），同色值與同影像跨頁去重；無法判讀者列 `unchecked` **不計為通過**。CLI `preflight` 加 `--max-tac` 與墨量分區。
+
+### 變更
+
+- **規則集分離**（承 Sprint 91 PPI 定案）：TAC 非 ISO 15930-1 條款而是紙張吸墨與乾燥的印廠條件，故**不入 `check_pdfx` 規則集**（維持 12 規則）：超墨量的 PDF 仍是合規 PDF/X，併入會使合規檔被誤判不合規。`NOT_COVERED` 的「油墨總量 TAC」條目改為指向 `check_ink_coverage`（誠實聲明不失效，測試釘死）。
+- `cjkfolio/pdf_objects.py`（新檔）：低階 PDF 組裝（物件表／串流／xref／trailer）自 `pdf_writer` 抽出為 `PdfBuilder`。純機械搬移，**PDF 輸出位元組零變更**；動機為 `pdf_writer` 逾單檔 800 行上限，取此層為切點（不認識版面、字型或色彩，與排版寫出層無雙向依賴）。
+
+### 驗證
+
+- 基線 **871 passed / 0 failed**（835→871，+36：`tac_percent` 6＋`meets_tac` 5＋`image_max_tac` 5＋`tac_warnings` 4＋匯出整合 5＋`check_ink_coverage` 7〔含外來 PDF 非數值符記不崩潰〕＋Gate 4 交叉 1＋規則集分離與誠實聲明 2＋CLI 2）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R1 證據＝真書 179 頁送印稿逐張墨量實測（A 級，工具入 repo 可重現）＋PLAN §9 條文（B 級）。R2 判定：無新外部依賴（復用既有 PIL 與 fitz），為既有能力擴充無需 spike（先例 Sprint 84／91）。R6 pre-mortem 三風險（取平均而漏判局部重墨／把 TAC 併入 X-1a 規則集使合規檔被誤判／著色正則誤抓非色彩運算元）分別以最大值語意測試、規則集分離測試、值域 `>1` 守門解消。
+- R5 真實素材驗收（真書為本機素材，紅線不入 repo；out/ 已於 .gitignore）：
+  - **驗證側對真書送印稿**：`check_ink_coverage` 直接檢查真書交印檔 → 94 筆判定、**超標 10 筆**（9 張影像＋富黑著色 349.5%）、0 筆未判讀、最高 359.6%；與 R1 量測工具（不同實作：逐列跳讀取樣＋整數化）的 9 張影像逐張對應，全掃較取樣多抓到峰值（357→359.6）為預期且方向正確。
+  - **產出側到驗證側同值**：取真書 DeviceCMYK 影像（xref 156，881×588）置入本產品 → CLI 匯出報「油墨總量：影像 book.tif 最高 TAC 349% 超過 320%」且 PDF 照常寫出（不擋流程）→ 本產品檢查器讀該 PDF 得 **348.6275%**，與產出側自來源檔算得值、與檢查器讀真書原檔同一張影像所得值**三者到小數四位完全相同**（印證 Sprint 92 的分量逐位元組保真）；同檔 X-1a 仍 **12/12 全數通過**（證超墨量不影響 X 合規判定）。
+
 ## v0.87.0（2026-07-18，Sprint 92）彩色 CMYK 影像置入（關 GAPS #29 (c)）
 
 ### 新增

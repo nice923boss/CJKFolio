@@ -18,11 +18,8 @@
   （Sprint 92）：灰階單 K 走 DeviceGray、CMYK 來源走 DeviceCMYK（§9 兩者皆合法）。
 """
 import collections
-import hashlib
-import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
@@ -33,7 +30,9 @@ from .images import (
     resolution_warnings,
     resolve_placed_images,
 )
+from .ink import InkUse, image_max_tac, tac_percent, tac_warnings
 from .pdf_fonts import EmbeddedFont
+from .pdf_objects import PdfBuilder
 from .pdfx_meta import xmp_packet
 from .layout import (
     line_justified_advance,
@@ -177,61 +176,6 @@ def _validate_output_profile(data: bytes, source) -> None:
         )
 
 
-# ---------- 低階 PDF 組裝（物件表＋xref） ----------
-
-class _PdfBuilder:
-    def __init__(self, compress: bool = True):
-        self.compress = compress
-        self._bodies = [b""]  # 物件 1 起算，index 0 佔位
-
-    def add(self, body) -> int:
-        if isinstance(body, str):
-            body = body.encode("latin-1")
-        self._bodies.append(body)
-        return len(self._bodies) - 1
-
-    def reserve(self) -> int:
-        return self.add(b"")
-
-    def set(self, num: int, body) -> None:
-        if isinstance(body, str):
-            body = body.encode("latin-1")
-        self._bodies[num] = body
-
-    def stream(self, extra_dict: str, data: bytes, compress=None) -> int:
-        if compress is None:
-            compress = self.compress
-        if compress:
-            data = zlib.compress(data)
-            extra_dict += " /Filter /FlateDecode"
-        return self.add(
-            f"<< /Length {len(data)}{extra_dict} >>\nstream\n".encode("latin-1")
-            + data + b"\nendstream"
-        )
-
-    def build(self, root_num: int, info_num: int, version: str = "1.4") -> bytes:
-        out = BytesIO()
-        out.write(f"%PDF-{version}\n".encode("latin-1") + b"%\xe2\xe3\xcf\xd3\n")
-        offsets = [0] * len(self._bodies)
-        for i, body in enumerate(self._bodies[1:], 1):
-            offsets[i] = out.tell()
-            out.write(f"{i} 0 obj\n".encode("latin-1"))
-            out.write(body)
-            out.write(b"\nendobj\n")
-        xref = out.tell()
-        out.write(f"xref\n0 {len(self._bodies)}\n".encode("latin-1"))
-        out.write(b"0000000000 65535 f \n")
-        for off in offsets[1:]:
-            out.write(f"{off:010d} 00000 n \n".encode("latin-1"))
-        fid = hashlib.md5(b"".join(self._bodies)).hexdigest().upper()
-        out.write(
-            f"trailer\n<< /Size {len(self._bodies)} /Root {root_num} 0 R "
-            f"/Info {info_num} 0 R /ID [<{fid}> <{fid}>] >>\n"
-            f"startxref\n{xref}\n%%EOF\n".encode("latin-1")
-        )
-        return out.getvalue()
-
-
 # ---------- 內容流 ----------
 
 class _Content:
@@ -240,6 +184,9 @@ class _Content:
         self.ops = ["q", _fill_op(DEFAULT_TEXT_CMYK), "BT"]
         self._cur = None
         self._fill = DEFAULT_TEXT_CMYK  # 現行文字填色（預設暖黑 K92）
+        # 本頁實際發出的 DeviceCMYK 著色值（TAC 檢核產出側，Sprint 93）：預設填色
+        # 恆隨 prologue 發出故先入集
+        self.cmyk_used: set = {tuple(DEFAULT_TEXT_CMYK)}
 
     def set_fill(self, cmyk) -> None:
         """切換文字填色（Sprint 76 色票）：與現行相同不發算符（預設輸出形態不變）；
@@ -248,11 +195,13 @@ class _Content:
         if cmyk != self._fill:
             self.ops.append(_fill_op(cmyk))
             self._fill = cmyk
+            self.cmyk_used.add(cmyk)
 
     def stroke_rect(self, cmyk, line_width_pt: float,
                     x_ll: float, y_ll: float, w: float, h: float) -> None:
         """DeviceCMYK 描邊矩形（獨立 q…Q 狀態塊，狀態隔離；`K` 不觸 preflight rg/RG）。"""
         c, m, y, k = cmyk
+        self.cmyk_used.add(tuple(cmyk))
         self.prologue += [
             "q",
             f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
@@ -268,6 +217,7 @@ class _Content:
         """DeviceCMYK 描邊線段（獨立 q…Q 狀態塊）。dash_on_pt>0 時掛 `d` dash 陣列，
         dash 狀態隨 Q 還原不外洩（spike8 實證）；`d`/`m`/`l` 不觸 preflight rg/RG。"""
         c, m, y, k = cmyk
+        self.cmyk_used.add(tuple(cmyk))
         ops = [
             "q",
             f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
@@ -322,6 +272,10 @@ class _PdfPageWriter:
         self._images: dict = {}  # 解析後路徑 → EmbeddedImage（跨頁去重）
         # 逐次置入的解析度紀錄（同圖多次置入各記一筆＝各自繪製尺寸不同）
         self._image_resolutions: list = []
+        # TAC 檢核產出側（Sprint 93）：全書用過的 DeviceCMYK 著色值、
+        # 每張獨立影像的最高墨量（{圖檔名: TAC%}；同圖多次置入墨量相同故只記一次）
+        self.cmyk_used: set = set()
+        self._image_inks: dict = {}
         self.fonts_used: set = set()
         self.notdef_warnings: list = []
         self.bleed_pt = mm_to_pt(BLEED_MM)
@@ -499,6 +453,8 @@ class _PdfPageWriter:
         path, pil, rect = entry
         if path not in self._images:
             self._images[path] = EmbeddedImage(pil, f"Im{len(self._images) + 1}")
+            # 最高單點墨量（TAC 檢核產出側）：同圖多次置入墨量相同，隨去重只算一次
+            self._image_inks[Path(path).name] = image_max_tac(pil)
         emb = self._images[path]
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
@@ -606,6 +562,7 @@ class _PdfPageWriter:
             self._text_frame(content, placement)
         if footer_texts:
             self._footer(content, book_number, footer_texts)
+        self.cmyk_used |= content.cmyk_used  # 全書著色值彙整（TAC 檢核產出側）
         return content.finish()
 
 
@@ -629,6 +586,8 @@ class PdfResult:
     license_warnings: tuple = ()  # 嵌入字型授權警告（fsType 不可嵌入／子集政策衝突）
     image_resolutions: tuple = ()  # 逐次置入的 ImageResolution（來源像素＋繪製尺寸）
     ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
+    ink_uses: tuple = ()           # 著色與影像的最高墨量 InkUse（依 TAC 降序）
+    tac_warnings: tuple = ()       # 總墨量超 §9 320% 上限的警告（不擋流程）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -703,7 +662,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             frames=frames_by_page.get(page.number, ()),
             crop_marks=crop_marks))
 
-    pdf = _PdfBuilder(compress=compress)
+    pdf = PdfBuilder(compress=compress)
     embedded = []
     font_refs = []
     for key in sorted(writer._fonts, key=lambda k: int(writer._fonts[k].res_name[1:])):
@@ -772,6 +731,14 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(pdf.build(catalog_num, info_num, version=profile.header))
+    # 總墨量（TAC，§9 ≤ 320〜340%）：著色值與影像各記最高墨量，依 TAC 降序
+    ink_uses = tuple(sorted(
+        [InkUse(kind="著色", label=" ".join(f"{v:g}" for v in cmyk),
+                tac=tac_percent(cmyk))
+         for cmyk in writer.cmyk_used]
+        + [InkUse(kind="影像", label=name, tac=tac)
+           for name, tac in writer._image_inks.items()],
+        key=lambda u: -u.tac))
     return PdfResult(
         path=out,
         page_count=len(contents),
@@ -790,4 +757,6 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         license_warnings=tuple(license_warnings(writer.fonts_used)),
         image_resolutions=tuple(writer._image_resolutions),
         ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),
+        ink_uses=ink_uses,
+        tac_warnings=tuple(tac_warnings(ink_uses)),
     )
