@@ -2,6 +2,56 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.96.0（2026-07-18，Sprint 102）畫布拖放與縮放置圖 UI（關 GAPS #29 (d)、#56 甲(3)）
+
+### 問題
+
+置圖核心自 Sprint 50〜54 就完備（`PlacedImage.rect` 任意圖框、兩後端幾何同源、灰階與 CMYK 分流、PPI 與墨量檢核），但**只能靠手寫 JSON 的座標置入**：editor 畫布既不顯示置入圖，也沒有拖放、拖曳、縮放的任何入口。
+
+### 新增
+
+- [實作] `cjkfolio/image_editing.py`：置圖編輯的判定層（Qt 無關，pytest 可離屏驗）。`place_image`／`move_image`／`resize_image`／`remove_image` 四個不可變文件編輯函式，`default_image_rect`（拖放預設尺寸）、`image_at_point`（命中）、`handle_rects`／`handle_at_point`（角控制點）、`resize_rect`（縮放幾何）。
+- [實作] `cjkfolio/session.py`：`place_image`／`move_image`／`resize_image`／`remove_image` 四個會談方法，**與文字、樣式編輯共用同一條 undo 歷史**（Ctrl+Z 的回退順序即使用者實際操作順序）。
+- [實作] `editor/canvas.py`：`page_images`（逐頁置入圖解析）與 `iter_image_rects`；`build_page_scene` 收 `images` 參數使**底圖畫出置入圖**，互動層加圖框 `("image", idx)` z=2 與四角控制點 `("image-handle", idx, 角名)` z=5。
+- [實作] `editor/image_actions.py`：`ImageActionsMixin`＝拖放置入、選取、拖曳移動、拖角縮放、Delete 移除。
+- [實作] `editor/canvas_view.py`：`CanvasView` 加 `on_move`／`on_release`／`on_drop` 三個回呼與拖放事件處理。
+- [實作] `editor/app.py`：「圖片」選單（置入圖片、移除選取的圖片）；`_on_pick` 分流圖框、Delete 鍵在選圖時吃圖不吃字。
+
+### 行為
+
+- **拖曳途中只畫虛線預覽框，放開左鍵才提交一步**。拖一次圖只留一步 undo，不讓每個 `mouseMove` 各成一步歷史。
+- **預設置入尺寸取 §9 下限 300ppi 的原生尺寸**（仍合印前規格時能放到的最大尺寸），超出頁面時等比縮到整頁可容；落點即圖框中心。
+- **拖角縮放為等比**（框恆貼合來源影像比例），拖多少放大多少，不產生 `fit_image_rect` 的 contain 留白。
+- **圖檔讀不到時據實提示並照常顯示無圖版面**，不讓一張缺圖使編輯器打不開，也不把缺圖默默移出文件。
+- 拖放只接受 `.png`／`.tif`／`.tiff`／`.jpg`／`.jpeg` 的本機檔案，其餘在 `dragEnter` 即拒絕。
+- 槽式圖（`rect` 為 `None`，由主版 figure 保留區定位）**不可拖放或縮放**，快速失敗而非默默改寫成 rect 圖。
+
+### 重構
+
+- [實作] `CanvasView` 自 `editor/app.py` 抽為 `editor/canvas_view.py`（app.py 加入置圖接線後將逾 800 行）。搬移部分為**純機械搬移**，三個既有回呼行為逐字不變；新增的是置圖需要的三個回呼與拖放事件。
+- [實作] C19 抽為 `editor/smoke_images.py`（`smoke_check.py` 已逼近 800 行上限，同 Sprint 101 `smoke_preflight` 處置）。
+
+### 驗證
+
+- 基線 **895 → 921 passed（+26）/ 0 failed**、typecheck EXIT_CODE=0、smoke C1〜C19 全過（0 退步）。
+- 新增 26 測試（`tests/test_image_editing.py`）：正規化與退化守門 2＋預設尺寸 3＋文件層編輯與不可變性 7＋命中與控制點 4＋縮放幾何 7＋session undo／redo 接線 3。
+- smoke 擴 C19：**真 `QDropEvent` 拖放**真圖檔入畫布（非影像檔拒收）→ 300ppi 預設框置於落點＋**底圖確有墨跡**＋互動層圖框與四角控制點（字格 48 格不退步）→ 拖曳移動（途中文件不動）→ 拖角等比縮放（比例守恆、對角固定）→ Delete 移除，三者各一步 undo 回原；缺圖不炸且據實提示。
+- **R5 真實素材＋Gate 4 獨立驗證**：以參考書送印稿內的**真實影像**（1757×2391 灰階，本機抽出至暫存目錄，**不入 repo**）走完整 UI 路徑（拖放 → 移動 → 等比縮放），再以 PyMuPDF **自行解析最終 PDF 的影像 XObject 落點**（不呼叫本專案任何渲染或檢查器）複驗：四邊與 UI 提交的圖框最大差異 **0.000508pt**、繪製比 0.734840 對來源像素比 0.734839、實效 632.5ppi。另 render PNG 親 Read 目視確認圖確實落在拖到的位置且內文 0 違規（out 不入 repo）。
+
+### 未做
+
+- **繞排參數無 UI**（`wrap`／`wrap_margin_mm` 仍須手寫 JSON），且 editor 畫布不套繞排（承 GAPS #49 (e)，為 #56 甲(4) 的範圍）。
+- **無等比／自由拉框的切換鍵**：拖角一律等比。自由拉框的幾何已在 `resize_rect(aspect=None)` 實作並測試，只是沒有 UI 開關。
+- **無鍵盤微調、無對齊輔助線、無多選**：移動與縮放只有滑鼠拖曳一種方式。
+- **槽式圖無 UI**：主版 figure 保留區的槽式置入仍只能寫 JSON。
+- 拖放置入的圖檔在文件目錄外時存絕對路徑（**不擅自複製檔案進專案目錄**），文件搬移後該圖會失連。
+
+### 待 Owner（真視窗，離屏測不了）
+
+- 拖曳與縮放的手感（跟手程度、控制點是否好抓、預覽框是否清楚）。
+- 自檔案總管拖圖進畫布的實際體感與游標回饋。
+- 選取外框（藍實線）與拖曳預覽（紅虛線）在真視窗的可辨識度。
+
 ## v0.95.0（2026-07-18，Sprint 101）X-4 preflight 與 ICC 選取器（關 GAPS #47 (a)、#56 甲(2)）
 
 ### 問題

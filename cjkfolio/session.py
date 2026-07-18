@@ -50,6 +50,7 @@ from .frame_editing import (
     locate_frame_cell,
 )
 from .frames import masters_for_layout, resolve_text_frames
+from .image_editing import move_image, place_image, remove_image, resize_image
 from .layout import LayoutResult, layout_document
 from .style_editing import (
     add_character_style,
@@ -223,6 +224,30 @@ class EditSession:
         模版不變）。未知樣式名全文重排 KeyError 快速失敗；全數等值 no-op 回 None。"""
         return self._commit_pair(
             change_paragraph_styles(self._document, assignments), self._template)
+
+    def place_image(self, path: str, page: int, rect):
+        """置入一張 rect 圖（Sprint 102 畫布拖放）：入統一 undo 歷史。
+
+        圖片編輯與文字編輯共用同一條歷史（同 Sprint 67 模版編輯的處置），故
+        Ctrl+Z 一路回退的順序就是使用者實際操作的順序，不分兩套歷史。
+        """
+        return self._commit_pair(
+            place_image(self._document, path, page, rect), self._template)
+
+    def move_image(self, idx: int, dx_pt: float, dy_pt: float):
+        """平移置入圖（拖曳放開時提交一步，拖曳途中的預覽不入歷史）。"""
+        return self._commit_pair(
+            move_image(self._document, idx, dx_pt, dy_pt), self._template)
+
+    def resize_image(self, idx: int, rect):
+        """縮放置入圖（同 move_image，放開才提交）。"""
+        return self._commit_pair(
+            resize_image(self._document, idx, rect), self._template)
+
+    def remove_image(self, idx: int):
+        """移除置入圖。"""
+        return self._commit_pair(
+            remove_image(self._document, idx), self._template)
 
     def update_para_style(self, name: str, changes: Mapping):
         """改段落樣式定義（§4.3「改樣式即全書套用」，Sprint 67）：全書重排入統一歷史。

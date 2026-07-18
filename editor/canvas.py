@@ -21,6 +21,8 @@ from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsS
 
 from cjkfolio.document import Document
 from cjkfolio.frames import masters_for_layout, resolve_text_frames
+from cjkfolio.image_editing import handle_rects
+from cjkfolio.images import resolve_placed_images
 from cjkfolio.layout import (
     LayoutResult,
     line_justified_advance,
@@ -135,6 +137,30 @@ def iter_frame_cell_rects(placements, scale: float) -> Iterator[tuple]:
                 content_i += cell.width
 
 
+def page_images(template: Template, doc: Document, layout: LayoutResult, page,
+                base_dir=None) -> tuple:
+    """該頁的置入圖 ((路徑, PIL 影像, rect|None), ...)（Sprint 102）。
+
+    封裝逐頁主版解析＋resolve_placed_images，供 build_page_scene 與呼叫端共用
+    單一事實來源（同 page_frame_placements 慣例）。圖檔缺失或不可讀由
+    resolve_placed_images 拋 ImageError，呼叫端負責提示（畫布不吞錯）。"""
+    masters = masters_for_layout(template, doc, layout)
+    return resolve_placed_images(doc, masters, base_dir=base_dir).get(page.number, ())
+
+
+def iter_image_rects(doc: Document, page_number: int, scale: float) -> Iterator[tuple]:
+    """該頁 rect 置入圖的互動層矩形（px）。yield (image_idx, x, y, w, h)。
+
+    幾何直接取 PlacedImage.rect（trim pt、top-down），與底圖 render._draw_image
+    同一組座標；槽式圖（rect None）無座標故不建互動層（不可拖放，見
+    image_editing 模組說明）。文件序＝繪製序，故後 yield 者應疊在上層。"""
+    for idx, placed in enumerate(doc.images):
+        if placed.page != page_number or placed.rect is None:
+            continue
+        x0, y0, x1, y1 = placed.rect
+        yield idx, x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale
+
+
 def build_page_scene(
     scene: QGraphicsScene,
     template: Template,
@@ -142,11 +168,17 @@ def build_page_scene(
     layout: LayoutResult,
     page,
     dpi: int = 150,
+    images=(),
 ) -> list:
     """在 scene 建雙層畫布（底圖 PNG z=0＋互動層透明字格 z=1）。回傳互動層 item list。
 
     互動層 item data(0)：body 字格＝(placed_idx, cell_idx) → resolve_hit；
-    文字框字格＝("frame", frame_idx, line_idx, cell_idx) → resolve_frame_hit（Sprint 58）。
+    文字框字格＝("frame", frame_idx, line_idx, cell_idx) → resolve_frame_hit（Sprint 58）；
+    置入圖框＝("image", image_idx) z=2、角控制點＝("image-handle", image_idx, 角名)
+    z=5（Sprint 102）。圖層 z 高於字格，故圖上按下取到的是圖不是其下的字。
+
+    images＝該頁已解析的置入圖（page_images 產出），底圖據此繪製；呼叫端自行解析
+    是為了讓「圖檔讀不到」的提示留在 UI 層（畫布不代為決定要不要吞錯）。
     """
     scale = dpi / 72.0
     book_number = page.number
@@ -157,27 +189,36 @@ def build_page_scene(
     pil_img = renderer.render_page(
         page, footer_texts=footer, book_number=book_number, vertical=vertical,
         frames=frames,  # 底圖含獨立文字框（Sprint 55）；互動層字格見下（Sprint 58）
+        images=images,  # 底圖含置入圖（Sprint 102）；互動層圖框見下
     )
     base = QGraphicsPixmapItem(QPixmap.fromImage(pil_to_qimage(pil_img)))
     base.setZValue(0)
     scene.addItem(base)
-    if not vertical:
-        # 橫排頁互動層未建（iter_cell_rects 為直排 body 幾何）：僅底圖，GAPS #30 (b) 註記
-        return []
-
-    # 逐頁主版（節式主版指派，Sprint 51）：互動層幾何依該頁主版，與 render 同源
-    master = template.masters[getattr(page, "master", "") or doc.master]
     items: list = []
 
-    def add_item(x: float, y: float, w: float, h: float, key: tuple) -> None:
+    def add_item(x: float, y: float, w: float, h: float, key: tuple,
+                 z: float = 1) -> None:
         item = QGraphicsRectItem(x, y, w, h)
         item.setPen(Qt.NoPen)
         item.setBrush(QBrush(QColor(0, 0, 0, 0)))  # 全透明但保填充形狀（hit 區域）
-        item.setZValue(1)
+        item.setZValue(z)
         item.setData(0, key)
         scene.addItem(item)
         items.append(item)
 
+    # 置入圖框與角控制點（Sprint 102）：直排橫排皆建（rect 圖不依行軸語意）
+    for idx, x, y, w, h in iter_image_rects(doc, page.number, scale):
+        add_item(x, y, w, h, ("image", idx), z=2)
+        rect = doc.images[idx].rect
+        for name, (hx0, hy0, hx1, hy1) in handle_rects(rect).items():
+            add_item(hx0 * scale, hy0 * scale, (hx1 - hx0) * scale,
+                     (hy1 - hy0) * scale, ("image-handle", idx, name), z=5)
+    if not vertical:
+        # 橫排頁字格互動層未建（iter_cell_rects 為直排 body 幾何）：GAPS #30 (b) 註記
+        return items
+
+    # 逐頁主版（節式主版指派，Sprint 51）：互動層幾何依該頁主版，與 render 同源
+    master = template.masters[getattr(page, "master", "") or doc.master]
     for pi, ci, x, y, w, h, _kind in iter_cell_rects(
         template, master, page, book_number, scale
     ):

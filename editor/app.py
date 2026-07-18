@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (  # noqa: E402
     QDockWidget,
     QGraphicsRectItem,
     QGraphicsScene,
-    QGraphicsView,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -48,6 +47,7 @@ from cjkfolio.ai_style import suggest_styles  # noqa: E402
 from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
+from cjkfolio.images import ImageError  # noqa: E402
 from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_assign import AssignReviewDialog  # noqa: E402
@@ -56,9 +56,12 @@ from editor.library_panel import TemplateLibraryDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
     page_frame_placements,
+    page_images,
     resolve_frame_hit,
     resolve_hit,
 )
+from editor.canvas_view import CanvasView  # noqa: E402
+from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
 from editor.style_panel import StylePanel  # noqa: E402
@@ -69,45 +72,8 @@ DPI = 150
 AUTHOR = "製作者：黃政文"
 
 
-class CanvasView(QGraphicsView):
-    """點畫布 → 反查最上層帶 provenance 的字格 item，回呼 on_pick(item)；
-    按住左鍵拖曳過字格 → 回呼 on_drag(item)（範圍選取，Sprint 65）；
-    鍵盤事件（Backspace／Delete／Enter／PgUp／PgDn）回呼 on_key(event)（Sprint 62）。"""
-
-    def __init__(self, scene: QGraphicsScene, on_pick, on_key=None,
-                 on_drag=None) -> None:
-        super().__init__(scene)
-        self._on_pick = on_pick
-        self._on_key = on_key
-        self._on_drag = on_drag
-
-    def _cell_item_at(self, event):
-        pt = self.mapToScene(event.position().toPoint())
-        for item in self.scene().items(pt):  # top-first；跳過高亮（data None）
-            if item.data(0) is not None:
-                return item
-        return None
-
-    def mousePressEvent(self, event) -> None:
-        item = self._cell_item_at(event)
-        if item is not None:
-            self._on_pick(item)
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event) -> None:
-        if self._on_drag is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            item = self._cell_item_at(event)
-            if item is not None:
-                self._on_drag(item)
-        super().mouseMoveEvent(event)
-
-    def keyPressEvent(self, event) -> None:
-        if self._on_key is not None and self._on_key(event):
-            return
-        super().keyPressEvent(event)
-
-
-class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
+class EditorWindow(StyleActionsMixin, PreflightActionsMixin, ImageActionsMixin,
+                   QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
@@ -124,8 +90,14 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
         self._sel_items = []      # 選取範圍 shading items
         self._drag_anchor = None  # 拖曳起點 (para_idx, span)，按下 body 字格時設定
 
+        self.statusBar().showMessage(  # 先放預設語，_make_scene 的缺圖提示才不被蓋掉
+            "點頁面字格 → 反查游標；組字按 Enter 插入；Ctrl+Z／Ctrl+Y 復原重做"
+        )
         self.scene, self._item_by_key = self._make_scene()
-        self.view = CanvasView(self.scene, self._on_pick, self._on_key, self._on_drag)
+        self.view = CanvasView(self.scene, self._on_pick, self._on_key, self._on_drag,
+                               on_move=self._on_image_move,
+                               on_release=self._on_image_release,
+                               on_drop=self._on_image_drop)
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
@@ -140,9 +112,6 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
         box.addWidget(self._ime)
         self.setCentralWidget(central)
 
-        self.statusBar().showMessage(
-            "點頁面字格 → 反查游標；組字按 Enter 插入；Ctrl+Z／Ctrl+Y 復原重做"
-        )
         credit = QLabel(AUTHOR)
         credit.setStyleSheet("color:#999; font-size:11px; padding:0 8px;")
         self.statusBar().addPermanentWidget(credit)
@@ -190,6 +159,15 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
             action = QAction(label, self)
             action.triggered.connect(handler)
             library_menu.addAction(action)
+
+        image_menu = self.menuBar().addMenu("圖片")
+        for label, handler in (
+            ("置入圖片（放在頁面中央）…", lambda: self._place_image_dialog()),
+            ("移除選取的圖片", self._remove_selected_image),
+        ):
+            action = QAction(label, self)
+            action.triggered.connect(handler)
+            image_menu.addAction(action)
 
         check_menu = self.menuBar().addMenu("檢查")
         check_action = QAction("PDF/X-1a preflight（機械檢查）…", self)
@@ -310,10 +288,20 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
         return self.session.layout
 
     def _make_scene(self):
-        """建雙層畫布 scene，回傳 (scene, {(placed_idx, cell_idx): item})。"""
+        """建雙層畫布 scene，回傳 (scene, {(placed_idx, cell_idx): item})。
+
+        置入圖於此解析（Sprint 102）：讀不到的圖檔據實提示並照常顯示無圖版面，
+        不讓一張缺圖使整個編輯器打不開（提示不沉默，缺圖仍留在文件裡）。"""
         scene = QGraphicsScene()
+        try:
+            images = page_images(self.template, self.doc, self.layout_result,
+                                 self.page, base_dir=self._doc_path.parent)
+        except ImageError as err:
+            images = ()
+            self.statusBar().showMessage(f"置入圖無法載入（本頁不顯示圖）：{err}")
         items = build_page_scene(
-            scene, self.template, self.doc, self.layout_result, self.page, dpi=DPI
+            scene, self.template, self.doc, self.layout_result, self.page, dpi=DPI,
+            images=images,
         )
         return scene, {it.data(0): it for it in items}
 
@@ -324,13 +312,22 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
         self._highlight = None
         self.selection = None
         self._sel_items = []
+        self._image_outline = None  # 舊 scene 已丟棄；選取仍在則於下方重畫外框
+        self._image_preview = None
+        if self._image_idx is not None:
+            self._select_image(min(self._image_idx, len(self.doc.images) - 1)
+                               if self.doc.images else None)
         if hasattr(self, "_style_panel"):  # 面板清單同步現行模版（Sprint 71）
             self._style_panel.refresh(self.session.template)
 
-    def _on_pick(self, item) -> None:
+    def _on_pick(self, item, scene_pos=None) -> None:
         key = item.data(0)
         self._set_selection(None)   # 重新按下＝清既有選取；拖曳起點隨本次點選重設
         self._drag_anchor = None    # 框字格不設拖曳起點（框選取 v1 不支援）
+        if key and key[0] in ("image", "image-handle"):  # 置入圖框（Sprint 102）
+            self._on_image_press(key, scene_pos)
+            return
+        self._select_image(None)    # 點到文字＝取消圖片選取（兩者互斥）
         if key and key[0] == "frame":  # 文字框字格（Sprint 58）：顯示框游標，不設插入游標
             self._on_pick_frame(item, *key[1:])
             return
@@ -607,6 +604,9 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, QMainWindow):
         if key in (Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
             self._turn_page(1 if key == Qt.Key.Key_PageDown else -1)
             return True
+        if (self._image_idx is not None
+                and key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)):
+            return self._remove_selected_image()  # 選取圖片時刪除吃圖不吃字
         if self.selection is not None:  # 選取中（Sprint 65）：刪除吃整段選取、不分段
             if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
                 return self._delete_selection()
