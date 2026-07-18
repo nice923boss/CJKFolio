@@ -41,7 +41,7 @@ def test_body_style_matches_measured_values(template):
 def test_case_info_size_single_and_distinct_from_preface(template):
     """個案中標 vs 推薦序大標級數釐清（Sprint 34 量測，GAPS #13 剩項）：模版原 note
     記「個案中標另有 12.9pt 變體見掃描」為誤導待查標記。量測參考書 33 個案扉頁：
-    右半頁頂 NotoSans 僅 11.4pt（資訊列副標「【格局】…」）＋17.9pt（大標），12.9pt
+    右半頁頂 NotoSans 僅 11.4pt（資訊列副標「【欄位甲】…」）＋17.9pt（大標），12.9pt
     0 命中；全書 81 個 12.9pt NotoSans span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半）。
     故個案中標＝單一 11.4pt，12.9pt 專屬 推薦序大標-黑體，二者不共用（守門防依誤導 note
     把 12.9 併回個案中標）。"""
@@ -58,9 +58,9 @@ def test_case_info_distinct_from_slot0_hei_label_and_case_no(template):
     """個案中標 vs slot 0 黑 W7 欄標／頁腳 Case 編號釐清（Sprint 35 量測，GAPS #13 剩項）：
     模版原 note 與 C 主版 evidence 記「slot 0 資訊列＝個案中標 11.4pt 副標＋Case 編號黑 W5
     13pt『01』雙元素」。量測參考書 33 個案扉頁交叉驗證（兩路探針）：slot 0（cx 354）實為
-    DFHeiStd-W7 11.5pt（26 頁）／10.5pt（7 頁）欄標「個案資料／廖心筠整理／鄧惠文醫師／心理師
-    訪談／理解與祝福」；黑體與大字數字編號「01」全書 0 命中，真書 Case 編號＝頁腳 PepitaMT
-    9pt「Case N」（top 508.3）；個案中標 NotoSans 11.4pt（【格局】【居住者】）cx 全落 93~231
+    DFHeiStd-W7 11.5pt（26 頁）／10.5pt（7 頁）欄標「欄標甲／欄標乙／欄標丙／欄標丁／
+    欄標戊」；黑體與大字數字編號「01」全書 0 命中，真書 Case 編號＝頁腳 PepitaMT
+    9pt「Case N」（top 508.3）；個案中標 NotoSans 11.4pt（【欄位甲】【欄位乙】）cx 全落 93~231
     資訊區，非 slot 0。故 slot 0 非個案中標、亦無 13pt Case 編號（守門防依誤導 note 把黑 W7
     欄標字型或虛構 13pt Case 編號併入個案中標）。黑 W7 欄標樣式與個案中標移資訊區為後續專項。"""
     info = template.paragraph_styles["個案中標-NotoSans"]
@@ -78,8 +78,8 @@ def test_case_hei_label_style_modeled(template):
     """個案欄標-黑W7（Sprint 37，slot 0 一手量測 33 個案扉頁，Owner 定案升級 C）：
     Sprint 35 揭露 slot 0（cx 354）＝DFHeiStd-W7 欄標非個案中標，本 Sprint 建模。量測
     （33 頁聚合）：欄標首字頂 92.1＝天頭 92.09（承 A、lead_offset 0，墨頂差為字型 bearing）、
-    縱向 4~6 字佔 block slot 0 一行；11.5pt×26 頁（「個案資料／廖心筠整理師」等）為主流，
-    10.5pt×7 頁（「理解與祝福」訪談頁）為變體（note 記錄，主流建模）。DFHeiStd-W7 對映
+    縱向 4~6 字佔 block slot 0 一行；11.5pt×26 頁（「欄標甲／欄標乙」等）為主流，
+    10.5pt×7 頁（「欄標戊」訪談頁）為變體（note 記錄，主流建模）。DFHeiStd-W7 對映
     思源黑體 Bold（§8 可散布，W7＝Bold；別於章名明 W7 用 heavy＝思源宋體無 Bold 檔）。
     para_gap 0（欄標 slot 0 與大標 slot 1 相鄰）。資訊區個案中標移入為 Sprint 38 專項。"""
     label = template.paragraph_styles["個案欄標-黑W7"]

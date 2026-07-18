@@ -4,7 +4,7 @@
 
 **根因（Sprint 38 A 級量測）**：臨時探針量測參考書 33 個案扉頁（本機，紅線不入 repo，跑完即刪），三輪聚焦：
 1. **首內容 slot 全頁統計**：33/33 頁首內容 slot＝5、空 slot 2~4 為鐵律（大標 slot 1 後空 3 slot）。**勘正 Sprint 25「內文自 slot 2（top 145.75）」誤讀**＝第五例 C 主版 slot 誤讀（承 Sprint 34/35/36）：真書內容自 slot 5。
-2. **頁型分類**：資訊頁 10（欄位卡片）／訪談頁 23（純內文流）。欄位標籤（NotoSans 11.4pt「【格局】【居住者】」top 92.3 頂格＝indent 0）＋欄位內文（DFMingStd 11.5pt 首列 top 116.5＝indent 2 縮排、續列 top 92.1 頂格）＋欄位間固定空 1 slot（四頁一致）。
+2. **頁型分類**：資訊頁 10（欄位卡片）／訪談頁 23（純內文流）。欄位標籤（NotoSans 11.4pt「【欄位甲】【欄位乙】」top 92.3 頂格＝indent 0）＋欄位內文（DFMingStd 11.5pt 首列 top 116.5＝indent 2 縮排、續列 top 92.1 頂格）＋欄位間固定空 1 slot（四頁一致）。
 3. **13pt DFHeiStd 中標定位**：9 頁全在訪談頁 slot 5 或正文中段（節標題「父母的留戀…」等），與資訊頁 0 重疊＝訪談頁節標題（＝章節小標-黑體），非資訊區元素。
 
 **架構判定（否決「需新機制」前提）**：Sprint 37 交接「線性堆疊不可表達需新機制」為初步判斷（當時只量 info_span_count 計數）。R1 深入量測後：**欄位標籤與內文在相鄰不同 slot（非同 slot inline 分區）**，標籤 indent 0 頂格、內文 indent 2 縮排＝既有 indent_chars 欄位自然表達；空 slot＝既有 para_gap_slots（大標 gap 3 空 2~4、內文 gap 1 空欄位間）。**現有線性流排（engine.flow_pages）＋既有樣式＋indent／gap_after 即足表達欄位卡片，無需新引擎機制**（同 Sprint 31/34/35 量測後否決「需新機制」前提）。R2 判定既有能力復用、無需新 spike（先例＝E 序文版 Sprint 23 推薦序大標 gap 4→內文 slot 5 同機制，test_layout_render 現存測試）。

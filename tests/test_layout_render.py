@@ -352,7 +352,7 @@ def test_case_master_and_title_placement(template):
     DFHeiStd-W7 → 思源黑體 Bold 11.5pt、天頭起（indent 0）；大標＝思源黑體 Medium
     17.9pt、para_gap 3。資訊區欄位卡片：欄位標籤（個案中標-NotoSans 11.4pt、indent 0
     ＝頂格 top 92.09）＋欄位內文（內文-明體直排、indent 2＝縮排 top 116.25），欄位間空
-    1 slot（真書 page 20：【格局】slot 5＋內文＋空＋【居住者】）。右頁行軸：欄標 slot 0
+    1 slot（真書 page 20：【欄位甲】slot 5＋內文＋空＋【欄位乙】）。右頁行軸：欄標 slot 0
     ＝354.25（真書墨 354.6）、大標 slot 1＝331.25（真書墨 331.28）；線性流排＋既有樣式
     即足表達欄位卡片，無需新引擎機制。"""
     master = template.masters["C-個案扉頁"]

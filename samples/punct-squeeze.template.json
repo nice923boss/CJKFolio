@@ -113,7 +113,7 @@
    "font_family": "思源黑體 TC",
    "font_weight": "medium",
    "indent_chars": 0,
-   "note": "個案扉頁資訊區欄位標籤（【格局】【居住者】等，NotoSans Medium 11.4pt）。Sprint 35 量測勘正（兩路探針 33 頁交叉驗證，推翻 Sprint 25 誤讀）：本樣式 141 span cx 全落 93~231 資訊區、非 slot 0；Sprint 25 原記「slot 0、cx 354.24」係誤讀 slot 0 黑體欄標位置，slot 0（cx 354）實為 DFHeiStd-W7 欄標（11.5pt×26 頁「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談」、10.5pt×7 頁「理解與祝福」）非本樣式；原記「slot 0 另含 Case 編號黑 W5 13pt『01』雙元素」否決＝全書黑體與大字數字編號 0 命中、真書 Case 編號＝頁腳 PepitaMT 9pt「Case N」（top 508.3），掃描見的 13pt DFHeiStd 為資訊區內文中標（cx 117~240「父母的留戀…」）非 slot 0 編號；para_gap_slots 0 為 status-quo（Owner 定案 B：不依資訊區真實佈局重定；黑 W7 欄標樣式與個案中標移資訊區＋多欄位佈局為後續專項 GAPS #13）。Sprint 34 量測釐清：個案中標＝單一 11.4pt，掃描見的 12.9pt NotoSans 全 33 個案扉頁 0 命中、全書 81 span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半），屬 推薦序大標-黑體，非本樣式變體",
+   "note": "個案扉頁資訊區欄位標籤（【欄位甲】【欄位乙】等，NotoSans Medium 11.4pt）。Sprint 35 量測勘正（兩路探針 33 頁交叉驗證，推翻 Sprint 25 誤讀）：本樣式 141 span cx 全落 93~231 資訊區、非 slot 0；Sprint 25 原記「slot 0、cx 354.24」係誤讀 slot 0 黑體欄標位置，slot 0（cx 354）實為 DFHeiStd-W7 欄標（11.5pt×26 頁「欄標甲／欄標乙／欄標丙／欄標丁」、10.5pt×7 頁「欄標戊」）非本樣式；原記「slot 0 另含 Case 編號黑 W5 13pt『01』雙元素」否決＝全書黑體與大字數字編號 0 命中、真書 Case 編號＝頁腳 PepitaMT 9pt「Case N」（top 508.3），掃描見的 13pt DFHeiStd 為資訊區內文中標（cx 117~240「父母的留戀…」）非 slot 0 編號；para_gap_slots 0 為 status-quo（Owner 定案 B：不依資訊區真實佈局重定；黑 W7 欄標樣式與個案中標移資訊區＋多欄位佈局為後續專項 GAPS #13）。Sprint 34 量測釐清：個案中標＝單一 11.4pt，掃描見的 12.9pt NotoSans 全 33 個案扉頁 0 命中、全書 81 span 皆序文標題句（PDF 3/6/8/12/14/16/174 左半），屬 推薦序大標-黑體，非本樣式變體",
    "para_gap_slots": 0,
    "size_pt": 11.4,
    "source_font": "NotoSansCJKtc-Medium"
@@ -122,7 +122,7 @@
    "font_family": "思源黑體 TC",
    "font_weight": "bold",
    "indent_chars": 0,
-   "note": "個案扉頁 slot 0 欄標（cx 354，Sprint 37 建模，Owner 定案升級 C，33 個案扉頁一手量測）：DFHeiStd-W7 對映思源黑體 Bold（§8 可散布，W7＝Bold，思源黑體有 Bold 檔不 fallback；別於章名明 W7 用 heavy＝思源宋體無 Bold 檔）；首字頂 92.1＝天頭 92.09（承 A、indent 0、lead_offset 0，墨頂差為字型 bearing）、縱向 4~6 字佔 block slot 0 一行、para_gap 0（與大標 slot 1 相鄰）。size 11.5pt×26 頁（資訊頁欄標「個案資料／廖心筠整理師」等）主流建模，10.5pt×7 頁（訪談頁欄標「理解與祝福」）變體記錄（GAPS #13，主流建模）。Sprint 35 揭露此 slot 0 原被 Sprint 25 誤讀為個案中標 11.4pt／虛構 Case 編號 13pt，本 Sprint 正名建模；個案中標移資訊區＋資訊區多欄位佈局（cx 93~231 slot 5~11）為 Sprint 38 專項",
+   "note": "個案扉頁 slot 0 欄標（cx 354，Sprint 37 建模，Owner 定案升級 C，33 個案扉頁一手量測）：DFHeiStd-W7 對映思源黑體 Bold（§8 可散布，W7＝Bold，思源黑體有 Bold 檔不 fallback；別於章名明 W7 用 heavy＝思源宋體無 Bold 檔）；首字頂 92.1＝天頭 92.09（承 A、indent 0、lead_offset 0，墨頂差為字型 bearing）、縱向 4~6 字佔 block slot 0 一行、para_gap 0（與大標 slot 1 相鄰）。size 11.5pt×26 頁（資訊頁欄標「欄標甲／欄標乙」等）主流建模，10.5pt×7 頁（訪談頁欄標「欄標戊」）變體記錄（GAPS #13，主流建模）。Sprint 35 揭露此 slot 0 原被 Sprint 25 誤讀為個案中標 11.4pt／虛構 Case 編號 13pt，本 Sprint 正名建模；個案中標移資訊區＋資訊區多欄位佈局（cx 93~231 slot 5~11）為 Sprint 38 專項",
    "para_gap_slots": 0,
    "size_pt": 11.5,
    "source_font": "DFHeiStd-W7"
@@ -342,7 +342,7 @@
     "base_size_pt": 11.5
    },
    "mirror": true,
-   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0＝黑 W7 欄標（DFHeiStd-W7 11.5pt×26 頁／10.5pt×7 頁「個案資料／廖心筠整理／鄧惠文醫師／心理師訪談／理解與祝福」，Sprint 35 兩路探針 33 頁量測；非個案中標、非 Case 編號）；個案中標 11.4pt 副標（【格局】【居住者】）實在資訊區 cx 93~231（Sprint 35 勘正 Sprint 25「slot 0 cx 354.24」誤讀）；Case 編號＝頁腳 PepitaMT 9pt「Case N」左下三件組（原記「slot 0 Case 編號黑 W5 13pt『01』」否決＝黑體與大字數字編號全書 0 命中）。已知差異（GAPS #13）：slot 0 黑 W7 欄標樣式已建模（Sprint 37 新增 個案欄標-黑W7 思源黑體 Bold 11.5pt slot 0，Owner 定案升級 C；render PNG 墨跡 cx 354.2＝line_axis、preflight 12/12、兩後端 parity）、個案中標移資訊區＋多欄位佈局（slot 2~4 空欄＋slot 5~11 標籤／內文／13pt 中標交替，線性堆疊不可表達需新機制）為 Sprint 38 專項、雙線菱形框（美術資產不生成，Sprint 15 決議）。扉頁大標與內文 gap 已修（Sprint 33：拆 個案扉頁大標-NotoSans para_gap 0，內文落 slot 2）、內頁大標 usage 分屬 個案大標-NotoSans（para_gap 1）"
+   "evidence": "版心承 A 一手驗證（p20/36/54… 數十頁互證，Sprint 25，tools/measure_case_page.py）：內文天頭 92.09pt=32.49mm、扉頁內文首行縮排 116.47=92.09+2×12.08、內文自 slot 2 起（首字 top 145.75）；個案大標-NotoSans 17.9pt 落 slot 1（右頁行軸 331.25 vs 實測 331.28 差 0.03pt，驗右頁 line_axis 公式）、大標首字墨頂 98.05、字距 18.36pt（§10 換算 18.8 差 0.44 記錄）；slot 0＝黑 W7 欄標（DFHeiStd-W7 11.5pt×26 頁／10.5pt×7 頁「欄標甲／欄標乙／欄標丙／欄標丁／欄標戊」，Sprint 35 兩路探針 33 頁量測；非個案中標、非 Case 編號）；個案中標 11.4pt 副標（【欄位甲】【欄位乙】）實在資訊區 cx 93~231（Sprint 35 勘正 Sprint 25「slot 0 cx 354.24」誤讀）；Case 編號＝頁腳 PepitaMT 9pt「Case N」左下三件組（原記「slot 0 Case 編號黑 W5 13pt『01』」否決＝黑體與大字數字編號全書 0 命中）。已知差異（GAPS #13）：slot 0 黑 W7 欄標樣式已建模（Sprint 37 新增 個案欄標-黑W7 思源黑體 Bold 11.5pt slot 0，Owner 定案升級 C；render PNG 墨跡 cx 354.2＝line_axis、preflight 12/12、兩後端 parity）、個案中標移資訊區＋多欄位佈局（slot 2~4 空欄＋slot 5~11 標籤／內文／13pt 中標交替，線性堆疊不可表達需新機制）為 Sprint 38 專項、雙線菱形框（美術資產不生成，Sprint 15 決議）。扉頁大標與內文 gap 已修（Sprint 33：拆 個案扉頁大標-NotoSans para_gap 0，內文落 slot 2）、內頁大標 usage 分屬 個案大標-NotoSans（para_gap 1）"
   },
   "D-目錄": {
    "margins_mm": {
