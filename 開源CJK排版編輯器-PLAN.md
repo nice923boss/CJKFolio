@@ -368,6 +368,20 @@ CJKFolio/
 - **進度（2026-07-17 Sprint 80）**：模版庫面板 UI [實作]／[Shell]（§4.3「模版庫」UI 半邊，關 GAPS #39 (a) 可自主子項；R2 零新技術＝核心 Sprint 77 已備、接線承 Sprint 78〜79 模式）。新增 editor/library_panel.py（77 行）`TemplateLibraryDialog`（list_templates 清單：正常項「名稱（檔名）」、壞檔項標註 error 且套用守門警示；「套用選取模版」＝_apply_template_path 回呼、錯誤留內嵌警示列不污染現態；select_path 程式化選取供離屏驗證）。app 新「模版」選單＝「模版庫（套用整份模版）…」（v1 目錄＝內建 templates/，使用者庫目錄慣例後續 #39 (b)）＋「併入萃取草稿…」（QFileDialog 選 extract-styles 產物 → session.merge_draft 一步 undo，added／skipped 列 statusBar 不沉默）；_apply_template_path＝load_template → session.apply_template（一步 undo；文件引用缺樣式 KeyError 守門）。測試 659 不變（UI 層，核心 Sprint 77 已入基線）、typecheck（含 editor）0、smoke 擴 C15（草稿併入 2 樣式列報 → 另存演進模版 → 庫清單 2 項與壞檔套用守門 → 套用整份模版 → 一步 undo 回原）C1〜C15 全過。[Shell]／待 Owner（#19）＝真視窗選單與對話框手感。**未完**：使用者模版庫目錄慣例（#39 (b)）、樣式級選擇性匯入（#39 (e)）、樣式繼承視覺化。
 - Phase 3 可自主項至此全數收口（樣式系統資料面＋UI、模版庫、萃取＋一鍵併入、色票、docx、AI 指派＋校正 UI）；Phase 3 收尾判定待 Owner（先例 Sprint 39／66 AskUserQuestion 定案）。
 
+#### Phase 3 收尾判定（2026-07-18 Sprint 81，Owner 定案收尾轉 Phase 4）
+
+**Phase 3 可自主項全數收口，收尾轉 Phase 4。** honest review 實查（非橡皮圖章）：
+
+- §6 交付清單逐項有一手驗證：樣式修改核心（Sprint 67 style_editing.set_paragraph_style／set_character_style＋session 快照三元組）＋樣式繼承（Sprint 68 styles._resolve_styles 載入期扁平化＋編輯期級聯）＋新增／刪除（Sprint 69 add_／remove_paragraph_style）＋模版另存（Sprint 70 template_to_dict／save_template round-trip 相等）＋樣式管理 UI（Sprint 71 StyleEditDialog）＋docx 匯入（Sprint 72 docx_import.import_docx，stdlib OOXML 三層標題鏈）＋AI 輔助指派（Sprint 73 ai_style.suggest_styles／apply_suggestions）＋參考萃取（Sprint 74 reference_extract.scan_pdf／map_font／propose_styles／extract_draft）＋樣式改名（Sprint 75 rename_ 模版與文件雙層 _commit_pair 單一 undo）＋色票管理（Sprint 76 ColorSwatch／resolve_text_cmyk 兩後端同源）＋模版庫（Sprint 77 template_library.list_templates／merge_draft_styles＋session.apply_template／merge_draft）＋樣式 UI 補全（Sprint 78 改名入口＋色票面板）＋AI 指派校正 UI（Sprint 79 ai_assign.AssignReviewDialog 批次改派單一 undo）＋模版庫面板（Sprint 80 library_panel）；`pytest spikes tests` 659 綠、typecheck（py_compile 含 editor）EXIT=0、離屏 smoke C1〜C15 全過、模版 templates/neizai-zhengli.json 實查命中 18 段落／9 字元樣式＋7 主版（A〜G）＋3 色票（暖黑／紙白／虛線灰，結構化 cmyk）。
+- Phase 3 DoD 機制級達成：「從零建立一套新書樣式模版」資料面完備（新增／繼承／修改／刪除／改名／另存落檔）＋UI（StyleEditDialog 雙擊編輯、選單新增／刪除／改名／另存、色票面板、模版庫面板套用整份），「套用成書」走 session.apply_template＋book@1 組裝；「匯入 txt／md／docx 書稿經 AI 指派＋人工校正」＝txt／md／docx 三入口（結構優先不經 AI）＋ai_style 候選集指派＋ai_assign 逐段確認批次改派校正 UI。
+- 誠實差異：docx 匯入無真 Word（中文版）／LibreOffice 產檔一手實測（以手工 OOXML 邊界＋python-docx 產生器獨立路徑驗，GAPS #35 (a)）；AI 指派真 endpoint 連線於 CLI 已實測私有 endpoint（Sprint 73 R5），editor 內真視窗表格連線屬 Owner hands-on。
+
+**正式 sign-off 待 Owner（R5 人類抽檢，執行工程師不代行）**：GAPS #19 真視窗批次（Phase 3 新增 UI 手感＝樣式管理雙擊編輯／新增／刪除／改名／另存、色票面板、AI 指派校正表格、模版庫面板、docx 真檔匯入；說明選單十項）；連同 Phase 1 遺留 GAPS #10（Spike 1 對比圖）與 #23（斷行逐行一致率）同批可做，均不阻擋轉場（Phase 1／2 收尾先例）。
+
+**剩餘項處置**：全數彙整 GAPS #40 Phase 3 Known Limitations（甲 Owner hands-on sign-off；乙 UI 延伸與後續片＝樣式繼承視覺化、改基底、主版 spec 引用色票、色票改名、使用者模版目錄慣例、併入覆蓋選項、樣式級選擇性匯入、AI 背景執行緒、真 Word docx 實測；丙 後續 Phase 既定＝PPI 重採樣／彩色 CMYK／目錄自動生成／圖文繞排／注音 ruby，皆 Phase 4），開源釋出前以 Known Limitations 公開承認（R7）。
+
+**下個 Sprint**：Phase 4 開工首項＝PDF/X-4 匯出選項（擴充既有自寫 PDF/X-1a:2001 後端，§9 印前輸出規格「X-4 選項」）。
+
 ### Phase 4：印刷級輸出與進階排版（8〜12 週）[實作]
 
 - PDF/X-1a 預設、X-4 選項；CMYK 與單 K 文字、出血 3mm、裁切標記、輸出色彩描述檔；字型嵌入子集化與授權檢查；禁則／約物擠壓微調；目錄自動生成；圖文繞排；注音 ruby；縱中橫精修；preflight 面板。
@@ -546,6 +560,7 @@ CJKFolio/
 | 2026-07-17（Sprint 78，樣式 UI 補全批次） | 改名入口與色票面板定案（關 #34 改名 UI＋#38 (a)）：改名走 QInputDialog 真視窗路徑、參數注入可旁路（離屏可驗，承 _create_style 慣例）；色票清單項標籤帶 cmyk 值註記（selected_swatch 取「（」前名稱）；SwatchEditDialog cmyk 以逗號分隔字串輸入、值轉換與驗證一律由核心 COLOR_FIELDS 執行（UI 零驗證邏輯＝單一事實來源）；新增色票預設 K100 起始值（InDesign 新色票慣例，雙擊改值）；app.py 樣式選單域回呼抽 style_actions.py mixin（行數紀律分檔，先例 ai_panel／style_panel；搬移行為不變、孤兒 import 同步清） | R2 零新技術（先例 Sprint 61〜65／71 接線模式）；基線 655 不變 0 退步、typecheck（含 editor）0；離屏 smoke 擴 C13（改名全書同步＋衝突守門＋色票全回路＋六步 undo 回原）；R5＝smoke C13 即席全回路（真視窗手感 Owner-hands-on 不代行） |
 | 2026-07-17（Sprint 79，AI 指派校正 UI） | 逐段確認與批次改派形態定案（§4.4 介面承諾，關 #36 (a)(b) 可自主子項）：批次改派＝**單一 undo 步**（editing.change_paragraph_styles 多段純層＋session.apply_para_styles 復用 _commit_pair〔文件變模版不變〕＝零新 session 原語；亦為 #24 跨段套段落樣式多段 API 地基）；校正表格預設勾選＝「有建議且異於現行」（AI 定位初稿，人工最後把關）、載荷只含勾選且異於現行段；建議下拉候選集＝模版實際段落樣式（§4.4 修正 3 同構）；批次降級警告顯示於對話框不沉默；suggest 可注入（離屏可驗；真呼叫未設定 AI 顯示訊息不擋流程＝誠實失敗）；v1 同步呼叫凍視窗誠實記錄（背景執行緒後續） | R2 零新技術（suggest_styles Sprint 73 已驗＋接線先例）；基線 655→659（+4）0 退步、typecheck 0、smoke 擴 C14 全過；R5＝smoke C14 即席全回路＋核心 4 測試（真視窗表格手感與真 endpoint 連線 Owner-hands-on；CLI 同核心 Sprint 73 已實測 endpoint）；R6 pre-mortem 三風險（批次拆多 undo 步／預設全勾誤採／未知樣式污染現態）皆測試釘死 |
 | 2026-07-17（Sprint 80，模版庫面板 UI） | 模版庫面板定案（關 #39 (a)）：庫對話框列 list_templates 清單（壞檔標註且套用守門＝不沉默不擋清單的 UI 延伸）；「套用整份模版」走 session.apply_template 一步 undo（文件引用缺樣式 KeyError 錯誤留警示列不污染現態）；「併入萃取草稿」走 session.merge_draft 一步 undo（added／skipped 列 statusBar）；v1 庫目錄＝內建 templates/（使用者庫目錄慣例與樣式級選擇性匯入屬後續）。Phase 3 可自主項至此全數收口，收尾判定待 Owner（先例 Sprint 39／66） | R2 零新技術（核心 Sprint 77＋接線先例 Sprint 78〜79）；基線 659 不變 0 退步、typecheck 0、smoke 擴 C15 全過；R5＝smoke C15 即席全回路（真視窗手感 Owner-hands-on 不代行） |
+| 2026-07-18（Sprint 81，Owner AskUserQuestion 定案「收尾轉 Phase 4」） | Phase 3 收尾判定定案（[Doc] 無程式碼變更）：honest review 實查 §6 Phase 3 交付逐項收口（樣式修改／繼承／新增刪除／改名／另存＋docx 匯入＋AI 指派＋參考萃取＋色票管理＋模版庫＋樣式與模版庫 UI，Sprint 67〜80 各檔關鍵函式 grep 實查非空殼），659 綠、typecheck（含 editor）0、smoke C1〜C15 全過、模版實查 18 段落／9 字元／7 主版（A〜G）／3 色票；Phase 3 機制級 DoD 達成（從零建立模版資料面＋UI 完備、套用成書、txt／md／docx 匯入＋AI 指派校正）。剩項全數彙整 GAPS #40 Known Limitations（甲 Owner hands-on sign-off＝#19 連同 Phase 1／2 遺留 #10／#23；乙 UI 延伸與後續片；丙 後續 Phase 既定＝PPI／彩色 CMYK／目錄自動生成／圖文繞排 皆 Phase 4），均不阻擋轉場。正式 sign-off（R5 人類抽檢）待 Owner、執行工程師不代行。下個 Sprint 轉 Phase 4 首項＝PDF/X-4 匯出選項（擴充自寫 PDF/X-1a:2001 後端） | Owner AskUserQuestion 定案（收尾轉 Phase 4）＋honest review（§6 清單對照 Sprint 67〜80 一手驗證記錄＋本場次基線複驗 659／typecheck 0／smoke C15＋模版 JSON 實查＋各檔函式 grep）＋Phase 1／2 收尾先例（Sprint 39／66：hands-on sign-off 並行不阻擋）＋honest-planning R5／R7 |
 
 ## 11. 證據附錄（關鍵引用）
 

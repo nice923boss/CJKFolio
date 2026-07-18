@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.76.0（2026-07-18，Sprint 81）Phase 3 收尾判定（[Doc]，收尾轉 Phase 4）
+
+### 收尾判定（honest review，無程式碼變更）
+
+- **Phase 3 可自主項全數收口，Owner AskUserQuestion 定案收尾轉 Phase 4。** honest review 實查 §6 Phase 3 交付逐項收口（Sprint 67〜80）：
+  - 樣式修改核心（style_editing.set_paragraph_style／set_character_style）＋繼承（styles._resolve_styles 載入期扁平化＋編輯期級聯）＋新增／刪除（add_／remove_）＋改名（rename_ 模版與文件雙層 _commit_pair 單一 undo）＋另存（template_to_dict／save_template round-trip 相等）。
+  - docx 匯入（docx_import.import_docx，stdlib OOXML 三層標題鏈）＋AI 輔助指派（ai_style.suggest_styles／apply_suggestions）＋參考萃取（reference_extract.scan_pdf／map_font／propose_styles／extract_draft）＋色票管理（ColorSwatch／resolve_text_cmyk 兩後端同源）＋模版庫（template_library＋session.apply_template／merge_draft）。
+  - UI：樣式管理（StyleEditDialog）＋改名入口＋色票面板＋AI 指派校正表格（AssignReviewDialog）＋模版庫面板（library_panel）。
+- Phase 3 機制級 DoD 達成：「從零建立一套新書樣式模版」資料面完備（新增／繼承／修改／刪除／改名／另存）＋UI，「套用成書」走 session.apply_template＋book@1 組裝，「txt／md／docx 匯入經 AI 指派＋人工校正」全鏈可跑。
+
+### 驗證
+
+- honest review 實查（非橡皮圖章）：模版 templates/neizai-zhengli.json 命中 **18 段落／9 字元樣式＋7 主版（A〜G）＋3 色票**（結構化 cmyk）；Sprint 67〜80 各檔關鍵函式 grep 皆真實定義（非空殼）。
+- 基線複驗：`pytest spikes tests` **659 passed / 0 failed**；typecheck EXIT=0（`py_compile` 含 editor/*.py）；離屏 smoke **C1〜C15 全過**。工作樹乾淨、Sprint 80 已提交。
+- 剩項全數彙整 **GAPS #40** Phase 3 Known Limitations（甲 Owner hands-on sign-off、乙 UI 延伸與後續片、丙 後續 Phase 既定），均不阻擋轉場。
+
+### 誠實範圍（honest-planning R3／R5／R7）
+
+- [Doc]：無程式碼變更；本 Sprint 僅 honest review＋文件收尾（PLAN §6 Phase 3 收尾判定小節＋§10 決議紀錄＋GAPS #40＋本條）。
+- 誠實差異：docx 匯入無真 Word（中文）／LibreOffice 一手實測（手工 OOXML＋python-docx 產生器路徑驗，#35 (a)）；AI 指派真 endpoint 於 CLI 已實測（Sprint 73），editor 內真視窗連線屬 Owner hands-on。
+
+### 待 Owner 真實素材驗收（R5，執行工程師不代行）
+
+- GAPS #19 真視窗批次（Phase 3 新增 UI 手感：樣式管理／色票面板／AI 指派校正表格／模版庫面板／docx 真檔匯入；說明選單十項）；連同 #10（Spike 1 對比圖）／#23（斷行逐行一致率）同批可做。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 開工首項＝PDF/X-4 匯出選項（擴充既有自寫 PDF/X-1a:2001 後端，§9「X-4 選項」）。
+
 ## v0.75.0（2026-07-17，Sprint 80）模版庫面板 UI（清單套用＋草稿併入入口）
 
 ### 新增
