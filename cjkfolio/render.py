@@ -22,7 +22,12 @@ from .layout import (
     style_advance_pt,
     style_line_slots,
 )
-from .placement import ASCENT_RATIO, horizontal_cell_advance_pt, ruby_axis_and_top
+from .placement import (
+    ASCENT_RATIO,
+    TCY_SIZE_RATIO,
+    horizontal_cell_advance_pt,
+    ruby_axis_and_top,
+)
 from .primitives import (
     StrokeLine,
     cip_frame_rect,
@@ -188,7 +193,8 @@ def _render_horizontal_strip(shaper, text, size_pt, scale):
 def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, scale,
               ink=0):
     """縱中橫：短數字串橫排塞進一個字槽，行軸置中。回傳缺字來源字元。"""
-    strip, missing = _render_horizontal_strip(shaper, text, size_pt * 0.92, scale)
+    strip, missing = _render_horizontal_strip(shaper, text, size_pt * TCY_SIZE_RATIO,
+                                              scale)
     em_px = round(size_pt * scale)
     if strip.width > em_px:  # 塞不下就等比縮
         strip = strip.resize((em_px, round(strip.height * em_px / strip.width)))

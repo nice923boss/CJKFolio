@@ -1,0 +1,15 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "縱中橫排法樣張",
+  "template": "neizai-zhengli",
+  "master": "A-內文版",
+  "language": "zh-TW"
+ },
+ "paragraphs": [
+  {"style": "內文-明體直排", "text": "直排書把西文塞進字行有兩種排法，正立與旋轉。以下自擬短句逐一示範，內容與參考書無關。"},
+  {"style": "內文-明體直排", "text": "收納的順序是 1.分類，2.留下常用的，3.其餘捐出，一格放 12 件就夠。"},
+  {"style": "內文-明體直排", "text": "櫃子買自 IKEA，收據與 DM 一起回收，尺寸 2.0 公尺，出版年 1966。"},
+  {"style": "內文-明體直排", "text": "她邊聽 podcast 邊整理，把 Chanel 的紙袋與 Céline 的盒子都收進同一層。"}
+ ]
+}

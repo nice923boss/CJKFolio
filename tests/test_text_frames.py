@@ -351,7 +351,7 @@ def test_thread_member_page_beyond_flow_fast_fail(template):
 
 def test_frame_cells_carry_source_span(template):
     """框 cells span＝來源 text（normalize 前）座標：Cc 剝除位移、latin 整串。"""
-    src = "客\x07廳AB側寫"
+    src = "客\x07廳ab側寫"   # 小寫＝旋轉拉丁整串一格（全大寫走逐字正立，見 test_tcy）
     doc = make_doc([{**FRAME, "text": src}])
     placed = layout_text_frame(doc.text_frames[0], template, A_GRID(template))
     cells = [c for fl in placed.lines for c in fl.line.cells]

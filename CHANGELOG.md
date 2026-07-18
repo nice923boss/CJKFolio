@@ -2,6 +2,33 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.83.0（2026-07-18，Sprint 88）縱中橫精修（Phase 4 續項）
+
+### 新增
+
+- [實作] 縱中橫（tate-chu-yoko）排法精修（§6「縱中橫精修」；規則對表真書 179 頁全掃）：
+  - `tools/measure_tcy_spans.py`（新）：以「span 所在 line 的書寫方向」分類真書全部西文 span（正立 vs 旋轉），交叉統計文字形態，並偵測「逐字正立」群組（同欄且縱向間距≈字距）。輸出 assets/reference/tcy_measurements.json（本機不入 repo）。
+  - `cjkfolio/engine.py`：`_flush_ascii`→`_flush_latin`（改吃 offsets／start，逐字 cell 各得自身 span）。直排新增兩條正立規則：數字列標記 `\d{1,2}\.?`（「1.」）走單一 tcy 格；全大寫縮寫逐字正立各佔一槽（`IKEA` 4 格、`DM` 2 格）。`_is_run_char` 直排改收「拉丁字母（含重音，新增 `_is_latin_letter`）＋半形數字＋句點」：重音不再拆斷西文詞（`Hermès`／`Céline` 整詞一串旋轉），句點併入使小數（`2.0`）整串旋轉而非拆成三格。
+  - `cjkfolio/placement.py`：`TCY_SIZE_RATIO` 0.92→**1.0**（真書內文級 11.5pt 的「1.」span size 亦為 11.5，不縮字；墨寬超 1em 時仍等比壓縮）；`cjkfolio/render.py` `_draw_tcy` 改用此常數（原硬寫 0.92，兩後端自此單一事實來源）。
+  - `samples/tcy-forms.doc.json`（新，自擬）：四種形態示範樣張。
+
+### 驗證
+
+- 基線 **728 passed / 0 failed**（712→728，+16：tokenize 正立 4＋旋轉 4＋provenance 2＋橫排不受影響 1＋幾何純函式 2＋端到端 PDF／PNG 2＋雙位數回歸 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R1 一手證據（A 級，`python tools/measure_tcy_spans.py`）：真書 179 頁 ASCII span 669（內文層 39），形態 × 排法**零反例**：正立＝單數字 9、列標記「1.」3、單一大寫字母 9；旋轉＝含小寫詞 16、四位數 1、小數 1。逐字正立群組實測 `DM` 2 槽、`IKEA` 4 槽，縱向間距 12.07≈§1 字距 12.08。不縮字證據＝「1.」span size 11.5＝內文級、墨寬 9.2 < 1em。
+- R5 真實素材驗收（真書第一章本機素材，紅線不入 repo）：render 22 頁、禁則 0 違規（頁數與 Sprint 11 記錄一致）；export PDF preflight 12/12；Gate 4 以量測真書的**同一分類器**獨立解析本產品輸出，`Hermès`／`Chanel`／`Céline` 各為單一旋轉 span（2.95〜3.65 槽，對表真書 2.72〜3.20 槽，字型不同故墨高略長），先前重音會把詞拆成三段的情形消失。
+- R5 自擬樣張（samples/tcy-forms）：輸出分類表與真書逐類同形（列標記正立 3、單字母正立 6、`IKEA` 4 槽＋`DM` 2 槽逐字正立、`podcast`／`Chanel`／`Céline` 旋轉、`1966`／`2.0` 旋轉）；preflight 12/12；PNG 親 Read 目視四種形態皆正確。逐字正立 step 實測 11.69 經同欄探針複驗＝該行齊行擠入後的行級字距（同欄 CJK 字步距亦 11.69），非 tcy 幾何偏差。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [實作]：規則層與幾何常數修正，兩後端共用既有繪製路徑。R2：無新外部依賴、無新機制，無需 spike。R1 證據＝真書 179 頁全掃（A 級一手，工具入 repo 可重現）＋輸出探針實測（A 級）。
+- 行為變更（誠實記錄）：既有測試兩處以大寫「AB」當旋轉拉丁樣本，改小寫「ab」以保留原意（逐字正立 span 由 test_tcy 覆蓋）；真書第一章齊行統計撐開 1→2 行（重音併串使 `Hermès` 由 4 格縮為 3 格，行內容量改變），超容忍仍 0、頁數仍 22。
+- 誠實差異（GAPS #48）：全大寫夾數字（`MP3`／`A1`）走旋轉、單一小寫字母走旋轉（真書皆無樣本）；`IKEA` 這類逐字正立串可在字間斷行（真書樣本未跨行，未驗）；列標記上限 2 位數字帶點。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項：圖文繞排（§6 清單最後一項可自主者；約物擠壓微調待 R2 spike＋R5 素材，見 GAPS #45）。
+
 ## v0.82.0（2026-07-18，Sprint 87）preflight 面板（Phase 4 續項）
 
 ### 新增

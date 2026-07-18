@@ -11,7 +11,9 @@ from dataclasses import dataclass
 # 與 render._render_horizontal_strip 同源的基線比例（水平字條）
 ASCENT_RATIO = 0.88
 DESCENT_RATIO = 0.32
-TCY_SIZE_RATIO = 0.92  # 縱中橫縮字比例（同 render._draw_tcy）
+# 縱中橫級數比例：真書內文級 11.5pt 的「1.」span size 亦為 11.5（不縮字，墨寬
+# 9.2pt < 1em），故取 1.0；僅墨寬超過 1em 時才等比壓縮（見 tcy_placements）。
+TCY_SIZE_RATIO = 1.0
 RUBY_SIZE_RATIO = 0.5  # 注音／ruby 相對 base 字級（CLREQ 慣例：約半形）
 
 

@@ -63,11 +63,11 @@ def test_tokenize_span_covers_input():
 
 
 def test_tokenize_span_with_offsets_maps_to_source():
-    src = "發\x07言AB"
+    src = "發\x07言ab"   # 小寫＝旋轉拉丁整串一格（全大寫走逐字正立，見 test_tcy）
     norm, offs = normalize_with_offsets(src)
     cells = tokenize(norm, offsets=offs)
     assert [c.span for c in cells] == [(0, 1), (2, 3), (3, 5)]
-    assert src[3:5] == "AB"
+    assert src[3:5] == "ab"
 
 
 # ---------- cells_from_runs：文件座標基底 ----------

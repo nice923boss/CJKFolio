@@ -9,10 +9,13 @@
   溢出，Sprint 11 依參考書 −0.4pt 齊行實測）；連續句逗超過擠入上限時改「追出」
   （錨字連同整串句逗下移，本行由齊行撐開）。
 - 行尾禁則：開引號括號不得懸行尾，退至下一行。
-- 縱中橫：1〜2 位數字直立橫排（tcy）；3 位以上數字與拉丁串旋轉 90 度（latin），串不拆。
+- 縱中橫：1〜2 位數字（可帶列標記尾點「1.」）與全大寫縮寫逐字直立橫排（tcy）；
+  含小寫的西文詞、3 位以上數字、小數旋轉 90 度（latin），串不拆（Sprint 88 精修，
+  規則對表真書 179 頁全掃）。
 - Line 帶 cap（該行內容容量）與 para_end（段末行），供 layout 層齊行
   （非段末行行首行尾雙錨定，字距均勻縮放）。
 """
+import re
 import unicodedata
 from dataclasses import dataclass, replace
 from math import ceil
@@ -22,6 +25,9 @@ from typing import Optional
 LINE_START_FORBIDDEN = set("，。、：；！？」』）〕》〉｝〗…‥·．％")
 # 行尾禁則（不得懸在行尾）
 LINE_END_FORBIDDEN = set("「『（〔《〈｛〖")
+
+# 走縱中橫的數字串：1〜2 位數字，可帶列標記尾點（真書 p10「1.」「2.」「3.」）
+_TCY_NUMERIC = re.compile(r"\d{1,2}\.?")
 
 # 行首禁則擠入上限（槽）：整串句逗溢出超過此值改追出（參考書實測 ±0.4pt
 # 對應 ±1 槽；連續兩句逗跨行為罕見情形，容忍至 2）
@@ -107,22 +113,40 @@ def normalize(text: str) -> str:
     return normalize_with_offsets(text)[0]
 
 
-def _flush_ascii(run: str, out: list, char_style=None, vertical: bool = True,
-                 span=None) -> None:
+def _flush_latin(run: str, out: list, char_style, vertical: bool, offsets,
+                 start: int) -> None:
+    """西文 run → cells（直排分正立與旋轉；橫排一律 LTR 不轉）。
+
+    直排排法依真書 179 頁全掃（Sprint 88，tools/measure_tcy_spans.py）：
+    正立（縱中橫，一枚一槽）＝1〜2 位數字，可帶列標記尾點（「1.」）；全大寫縮寫
+    逐字正立（'IKEA' 4 槽、'DM' 2 槽）。其餘旋轉（含小寫的西文詞、3 位以上數字、
+    小數「2.0」）。
+    """
     if not run:
         return
-    # 直排：1〜2 位數字走縱中橫（tcy）；橫排數字/拉丁一律正常 LTR，不轉。
-    if vertical and run.isdigit() and len(run) <= 2:
-        out.append(Cell(run, "tcy", 1, char_style, span))
+    end = start + len(run)
+    if vertical and _TCY_NUMERIC.fullmatch(run):
+        out.append(Cell(run, "tcy", 1, char_style, _span(offsets, start, end)))
+    elif vertical and run.isalpha() and run.isupper():
+        out.extend(Cell(ch, "tcy", 1, char_style, _span(offsets, i, i + 1))
+                   for i, ch in enumerate(run, start))
     else:
-        out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5)), char_style, span))
+        out.append(Cell(run, "latin", max(1, ceil(len(run) * 0.5)), char_style,
+                        _span(offsets, start, end)))
+
+
+def _is_latin_letter(ch: str) -> bool:
+    """拉丁字母（含重音變體）：真書把整個西文詞當一串旋轉，重音不得斷詞
+    （'Hermès'／'Céline' 各為單一旋轉 span）。全形拉丁不算（維持全形字槽）。"""
+    return ch.isalpha() and unicodedata.name(ch, "").startswith("LATIN ")
 
 
 def _is_run_char(ch: str, vertical: bool) -> bool:
-    # 直排：只把英數收成串（拉丁串旋轉、短數字縱中橫）。
+    # 直排：拉丁字母（含重音）、半形數字與句點收成一串（句點須併入才分得出
+    # 列標記「1.」與小數「2.0」）。
     # 橫排：整段連續 ascii（含空格、連字號、句點）收成一個 latin run，走自然寬。
     if vertical:
-        return ch.isascii() and ch.isalnum()
+        return _is_latin_letter(ch) or ch == "." or (ch.isascii() and ch.isdigit())
     return ch.isascii()
 
 
@@ -147,13 +171,13 @@ def tokenize(text: str, char_style=None, vertical: bool = True, offsets=None) ->
                 run_start = i
             run += ch
             continue
-        _flush_ascii(run, cells, char_style, vertical, _span(offsets, run_start, i))
+        _flush_latin(run, cells, char_style, vertical, offsets, run_start)
         run = ""
         if ch in (" ", "　"):
             cells.append(Cell(ch, "space", 1, char_style, _span(offsets, i, i + 1)))
         else:
             cells.append(Cell(ch, "cjk", 1, char_style, _span(offsets, i, i + 1)))
-    _flush_ascii(run, cells, char_style, vertical, _span(offsets, run_start, len(text)))
+    _flush_latin(run, cells, char_style, vertical, offsets, run_start)
     return cells
 
 
