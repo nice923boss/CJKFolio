@@ -201,9 +201,11 @@ def cmd_export_pdf(args) -> int:
         output_condition_identifier=args.output_condition_identifier,
         output_condition=args.output_condition,
         icc_profile=args.icc, image_base_dir=Path(args.document).parent,
-        pdfx=args.pdfx,
+        pdfx=args.pdfx, crop_marks=args.crop_marks,
     )
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
+    if result.crop_marks:
+        print("裁切標記：8 條單 K 角標（MediaBox 外擴、BleedBox=trim+出血）")
     print(f"{result.pdfx_label} 識別：OutputIntent {result.output_condition_identifier}"
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     if result.images_placed:
@@ -315,6 +317,8 @@ def main(argv=None) -> int:
                        help="嵌入 DestOutputProfile 的 CMYK 輸出 ICC 檔（自訂識別時必填）")
     p_pdf.add_argument("--pdfx", choices=["x-1a", "x-4"], default="x-1a",
                        help="PDF/X 一致性形態（預設 x-1a:2001；x-4:2010 須以 --icc 提供 ICC）")
+    p_pdf.add_argument("--crop-marks", action="store_true",
+                       help="加裁切標記（MediaBox 外擴、BleedBox=trim+出血、8 條單 K 角標）")
     p_pdf.set_defaults(func=cmd_export_pdf)
 
     p_asm = sub.add_parser("assemble",

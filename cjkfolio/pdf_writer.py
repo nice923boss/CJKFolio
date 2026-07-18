@@ -1,7 +1,8 @@
 """PDF 寫出層第一片（PLAN Phase 1，向 PDF/X-1a DoD 推進）。
 
 範圍（Sprint 8 決議）：
-- 盒框依 PLAN §9：MediaBox 154×216mm、TrimBox 148×210mm 置中、BleedBox＝MediaBox。
+- 盒框依 PLAN §9：MediaBox 154×216mm、TrimBox 148×210mm 置中、BleedBox＝MediaBox
+  （無裁切標記時）；crop_marks=True 時 MediaBox 外擴、BleedBox 縮回 trim＋出血。
 - 文字一律 DeviceCMYK 單 K92（§9 內文 K90〜92 區間，v1 定 0.92）。
 - 字型子集嵌入：CFF（思源，CID-keyed）不保留 GID、內容流用原 CID 走 charset
   對映（InDesign 同款形態）；TTF（辰宇／粉圓）retain_gids＋CIDToGIDMap /Identity。
@@ -43,6 +44,7 @@ from .placement import (
 )
 from .primitives import (
     cip_frame_rect,
+    crop_mark_lines,
     figure_slot_edges,
     figure_slot_rect,
     fit_image_rect,
@@ -61,6 +63,13 @@ from .styles import DEFAULT_TEXT_CMYK, resolve_text_cmyk
 
 BLEED_MM = 3.0
 TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92；styles 單一來源）
+
+# 裁切標記（Sprint 83，opt-in；§9「裁切標記置於出血外 offset 約 3mm」）：內端落在
+# BleedBox 邊（距 trim＝出血），向外延伸 MARK_LENGTH_MM；MediaBox 於 BleedBox 外再擴
+# MARK_LENGTH_MM 以容標記。標記單 K registration（§9 全 CMYK、避高 TAC）、hairline 線寬。
+MARK_LENGTH_MM = 3.0
+MARK_CMYK = (0.0, 0.0, 0.0, 1.0)
+MARK_WIDTH_PT = 0.25
 
 @dataclass(frozen=True)
 class PdfxProfile:
@@ -98,11 +107,21 @@ KNOWN_PRINT_CONDITIONS = frozenset({
 })
 
 
-def page_boxes_pt(template, bleed_mm: float = BLEED_MM):
-    """(MediaBox, TrimBox)，皆 pt；BleedBox＝MediaBox（§9）。"""
+def page_boxes_pt(template, bleed_mm: float = BLEED_MM,
+                  mark_margin_mm: float = 0.0):
+    """(MediaBox, TrimBox, BleedBox)，皆 pt。
+
+    無裁切標記（mark_margin_mm=0）時 BleedBox＝MediaBox（§9）；開啟標記時 MediaBox
+    較 BleedBox 於四邊各外擴 mark_margin_mm（標記居於兩者之間），TrimBox 恆置中。
+    """
     w, h = mm_to_pt(template.page_width_mm), mm_to_pt(template.page_height_mm)
     b = mm_to_pt(bleed_mm)
-    return (0.0, 0.0, w + 2 * b, h + 2 * b), (b, b, b + w, b + h)
+    mk = mm_to_pt(mark_margin_mm)
+    o = b + mk  # MediaBox 左下 → TrimBox 左下偏移
+    media = (0.0, 0.0, w + 2 * o, h + 2 * o)
+    trim = (o, o, o + w, o + h)
+    bleed = (mk, mk, mk + w + 2 * b, mk + h + 2 * b)
+    return media, trim, bleed
 
 
 def _fmt(v: float) -> str:
@@ -284,7 +303,8 @@ class _Content:
 class _PdfPageWriter:
     """把 LayoutPage 轉為內容流；幾何與 render.PageRenderer 同源（placement 層）。"""
 
-    def __init__(self, template, master_name: str, font_dir=None):
+    def __init__(self, template, master_name: str, font_dir=None,
+                 mark_margin_pt: float = 0.0):
         self.template = template
         self.master = template.masters[master_name]
         self.registry = FontRegistry(font_dir or DEFAULT_FONT_DIR)
@@ -294,6 +314,10 @@ class _PdfPageWriter:
         self.fonts_used: set = set()
         self.notdef_warnings: list = []
         self.bleed_pt = mm_to_pt(BLEED_MM)
+        self.mark_margin_pt = mark_margin_pt  # MediaBox 於 BleedBox 外的裁切標記餘裕
+        # 內容座標原點偏移（MediaBox 左下 → TrimBox 左下）：無標記時＝出血，
+        # 開啟標記時＝出血＋標記餘裕（外擴 MediaBox 不得位移內文相對 trim）
+        self.origin_pt = self.bleed_pt + mark_margin_pt
         self.page_h_pt = mm_to_pt(template.page_height_mm)
 
     def _shaper_for(self, style):
@@ -318,8 +342,8 @@ class _PdfPageWriter:
                 if msg not in self.notdef_warnings:
                     self.notdef_warnings.append(msg)
             code = font.use(pl.gid, pl.ch)
-            x = self.bleed_pt + pl.x_pt
-            y = self.page_h_pt + self.bleed_pt - pl.y_pt  # top-down → y-up
+            x = self.origin_pt + pl.x_pt
+            y = self.page_h_pt + self.origin_pt - pl.y_pt  # top-down → y-up
             content.show(font.res_name, code, x, y, pl.size_pt, pl.rotated)
 
     def _footer(self, content: _Content, book_number: int, footer_texts: dict) -> None:
@@ -418,8 +442,8 @@ class _PdfPageWriter:
             self.master, horizontal_left_x_pt(self.master, book_number),
             n_lines, self.master.frame,
         )
-        x_ll = self.bleed_pt + rect.x0
-        y_ll = self.page_h_pt + self.bleed_pt - rect.y1  # top-down 下緣 → y-up 左下角
+        x_ll = self.origin_pt + rect.x0
+        y_ll = self.page_h_pt + self.origin_pt - rect.y1  # top-down 下緣 → y-up 左下角
         content.stroke_rect(rect.cmyk, rect.line_width_pt, x_ll, y_ll,
                             rect.x1 - rect.x0, rect.y1 - rect.y0)
 
@@ -429,10 +453,10 @@ class _PdfPageWriter:
         gaps = rule_break_ranges(self.template, self.master, rule_breaks, book_number)
         for line in toc_rule_segments(mm_to_pt(self.template.page_width_mm),
                                       self.master.rule, gaps):
-            y_up = self.page_h_pt + self.bleed_pt - line.y0  # top-down → y-up（水平線 y0=y1）
+            y_up = self.page_h_pt + self.origin_pt - line.y0  # top-down → y-up（水平線 y0=y1）
             content.stroke_line(line.cmyk, line.line_width_pt,
-                                self.bleed_pt + line.x0, y_up,
-                                self.bleed_pt + line.x1, y_up,
+                                self.origin_pt + line.x0, y_up,
+                                self.origin_pt + line.x1, y_up,
                                 line.dash_on_pt, line.dash_off_pt)
 
     def _figure(self, content: _Content, book_number: int) -> None:
@@ -445,8 +469,8 @@ class _PdfPageWriter:
         for edge in figure_slot_edges(rect, self.master.figure):
             content.stroke_line(
                 edge.cmyk, edge.line_width_pt,
-                self.bleed_pt + edge.x0, self.page_h_pt + self.bleed_pt - edge.y0,
-                self.bleed_pt + edge.x1, self.page_h_pt + self.bleed_pt - edge.y1,
+                self.origin_pt + edge.x0, self.page_h_pt + self.origin_pt - edge.y0,
+                self.origin_pt + edge.x1, self.page_h_pt + self.origin_pt - edge.y1,
                 edge.dash_on_pt, edge.dash_off_pt)
 
     def _image(self, content: _Content, entry, book_number: int) -> None:
@@ -467,7 +491,7 @@ class _PdfPageWriter:
         box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], emb.width, emb.height)
         content.draw_image(
             emb.res_name, box.x1 - box.x0, box.y1 - box.y0,
-            self.bleed_pt + box.x0, self.page_h_pt + self.bleed_pt - box.y1)
+            self.origin_pt + box.x0, self.page_h_pt + self.origin_pt - box.y1)
 
     def _text_frame(self, content: _Content, placement) -> None:
         """獨立文字框（Sprint 55）：欄幾何取 frames.FramePlacement（與 render
@@ -503,8 +527,8 @@ class _PdfPageWriter:
             if m.leader_y1_pt > m.leader_y0_pt:  # 重疊守護（violations 已列不沉默）
                 content.stroke_line(
                     toc.leader_cmyk, toc.leader_width_pt,
-                    self.bleed_pt + axis, self.page_h_pt + self.bleed_pt - m.leader_y0_pt,
-                    self.bleed_pt + axis, self.page_h_pt + self.bleed_pt - m.leader_y1_pt,
+                    self.origin_pt + axis, self.page_h_pt + self.origin_pt - m.leader_y0_pt,
+                    self.origin_pt + axis, self.page_h_pt + self.origin_pt - m.leader_y1_pt,
                 )
             cstyle = self.template.character_styles[m.char_style]
             key, shaper = self._shaper_for(cstyle)
@@ -514,14 +538,30 @@ class _PdfPageWriter:
                 self._emit(content, key, tcy_placements(
                     shaper, digit, axis, cell_top, m.digit_size_pt, m.digit_advance_pt))
 
+    def _crop_marks(self, content: _Content) -> None:
+        """裁切標記（Sprint 83，opt-in）：8 條角標於 trim 外、BleedBox 與 MediaBox 之間；
+        單 K registration 描邊，與既有向量原件共用 stroke_line 路徑（獨立 q…Q，不觸
+        preflight rg/RG）。內端距 trim＝出血（落 BleedBox 邊），外端達 MediaBox 邊。"""
+        trim_w = mm_to_pt(self.template.page_width_mm)
+        trim_h = mm_to_pt(self.template.page_height_mm)
+        for line in crop_mark_lines(trim_w, trim_h, offset_pt=self.bleed_pt,
+                                    length_pt=self.mark_margin_pt, cmyk=MARK_CMYK,
+                                    line_width_pt=MARK_WIDTH_PT):
+            content.stroke_line(
+                line.cmyk, line.line_width_pt,
+                self.origin_pt + line.x0, self.page_h_pt + self.origin_pt - line.y0,
+                self.origin_pt + line.x1, self.page_h_pt + self.origin_pt - line.y1)
+
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True, toc_marks=(), rule_breaks=(),
-                   images=(), frames=()) -> bytes:
+                   images=(), frames=(), crop_marks: bool = False) -> bytes:
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = self.template.masters[page.master]
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
         content = _Content()
+        if crop_marks:  # 裁切標記（trim 外，與內容不重疊；底層裝飾先 emit）
+            self._crop_marks(content)
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先 emit）
         if not vertical and self.master.frame and page.placed:
             self._frame(content, page, book_number)
@@ -563,6 +603,7 @@ class PdfResult:
     justify_stats: dict
     images_placed: int = 0  # 嵌入的 DeviceGray 影像 XObject 數（同路徑去重；灰階單 K）
     pdfx_label: str = "PDF/X-1a:2001"  # 一致性形態標籤（X-1a 預設；X-4 選項）
+    crop_marks: bool = False  # 是否含裁切標記（opt-in；MediaBox 外擴、BleedBox=trim+出血）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -570,7 +611,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                output_condition_identifier: str = "JC200103",
                output_condition: str = "Japan Color 2001 Coated",
                icc_profile=None, image_base_dir=None,
-               pdfx: str = "x-1a") -> PdfResult:
+               pdfx: str = "x-1a", crop_marks: bool = False) -> PdfResult:
     """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
     pages=None 全頁；否則為版面頁號清單（1 起算）。
@@ -579,6 +620,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     X-4（ISO 15930-7）：強制嵌 DestOutputProfile，故 icc_profile 必填（registry
     免嵌不足），header 升 1.6、GTS_PDFXVersion=PDF/X-4 且無 GTS_PDFXConformance。
     置入圖（doc.images）以 DeviceGray XObject 嵌入，路徑相對 image_base_dir 解析。
+    crop_marks=True 加裁切標記（§9）：MediaBox 於 BleedBox 外擴 MARK_LENGTH_MM、
+    BleedBox 縮回 trim＋出血、8 條單 K 角標；預設 False 時輸出與無標記相同（BleedBox
+    ＝MediaBox，向後相容）。
     """
     if pdfx not in PDFX_PROFILES:
         raise ValueError(
@@ -601,8 +645,10 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             f"印刷條件識別 {output_condition_identifier!r} 不在已知 ICC registry 名單，"
             f"{profile.label} 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
         )
+    mark_margin_mm = MARK_LENGTH_MM if crop_marks else 0.0
     layout = layout_document(doc, template)
-    writer = _PdfPageWriter(template, doc.master, font_dir=font_dir)
+    writer = _PdfPageWriter(template, doc.master, font_dir=font_dir,
+                            mark_margin_pt=mm_to_pt(mark_margin_mm))
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
@@ -628,7 +674,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             toc_marks=layout.toc_marks.get(page.number, ()),
             rule_breaks=layout.rule_breaks.get(page.number, ()),
             images=images_by_page.get(page.number, ()),
-            frames=frames_by_page.get(page.number, ())))
+            frames=frames_by_page.get(page.number, ()),
+            crop_marks=crop_marks))
 
     pdf = _PdfBuilder(compress=compress)
     embedded = []
@@ -646,7 +693,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     if image_refs:
         res_parts.append(f"/XObject << {' '.join(image_refs)} >>")
     resources_num = pdf.add(f"<< {' '.join(res_parts)} >>")
-    media, trim = page_boxes_pt(template)
+    media, trim, bleed = page_boxes_pt(template, mark_margin_mm=mark_margin_mm)
     box = lambda b: f"[{_fmt(b[0])} {_fmt(b[1])} {_fmt(b[2])} {_fmt(b[3])}]"  # noqa: E731
     pages_num = pdf.reserve()
     kids = []
@@ -654,7 +701,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         content_num = pdf.stream("", content)
         kids.append(pdf.add(
             f"<< /Type /Page /Parent {pages_num} 0 R /MediaBox {box(media)} "
-            f"/TrimBox {box(trim)} /BleedBox {box(media)} "
+            f"/TrimBox {box(trim)} /BleedBox {box(bleed)} "
             f"/Resources {resources_num} 0 R /Contents {content_num} 0 R >>"
         ))
     pdf.set(pages_num,
@@ -711,4 +758,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         justify_stats=dict(layout.justify_stats),
         images_placed=len(writer._images),
         pdfx_label=profile.label,
+        crop_marks=crop_marks,
     )

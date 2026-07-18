@@ -2,6 +2,35 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.78.0（2026-07-18，Sprint 83）裁切標記（trim marks，Phase 4 續項）
+
+### 新增
+
+- [實作] 裁切標記（§9「裁切標記置於出血外 offset 約 3mm」；opt-in，擴充既有向量原件層）：
+  - `cjkfolio/primitives.py`：新增 `crop_mark_lines` 純函式（8 條角標：4 角各 2 條延伸該角相交的裁切邊、內端距 trim＝出血〔落 BleedBox 邊、不侵入活區〕、外端達 MediaBox 邊；標記色與線寬由呼叫端傳入）。
+  - `cjkfolio/pdf_writer.py`：常數 `MARK_LENGTH_MM=3.0`／`MARK_CMYK=(0,0,0,1)`（單 K registration，§9 全 CMYK、避高 TAC）／`MARK_WIDTH_PT=0.25`（hairline）。`page_boxes_pt` 回傳擴為 `(media, trim, bleed)`＋`mark_margin_mm` 參數：無標記（=0）時 BleedBox＝MediaBox（向後相容），有標記時 MediaBox 於 BleedBox 外各邊擴 `MARK_LENGTH_MM`、BleedBox 縮回 trim＋出血、TrimBox 恆置中。`_PdfPageWriter` 加 `origin_pt`（＝出血＋標記餘裕，取代內容座標偏移，外擴 MediaBox 不位移內文相對 trim）＋`_crop_marks`（復用 `stroke_line` 獨立 q…Q，不觸 preflight rg/RG）。`export_pdf` 加 `crop_marks` 參數（預設 False）＋`PdfResult.crop_marks`。
+  - CLI `export-pdf` 加 `--crop-marks`。
+
+### 驗證
+
+- 基線 **680 passed / 0 failed**（668→680，+12：crop_mark_lines 純函式 3＋page_boxes 2＋匯出盒框／8 段／幾何 parity／內文不位移／preflight／CLI／預設無標記 7）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C15 0 退步。繁中標點 grep 無破折號。
+- R5 真實素材驗收（紅線自擬 samples/chapter-opening，out/ 不入 repo）：CLI `export-pdf --crop-marks` → PyMuPDF 獨立解析（Gate 4）：MediaBox 160×222mm／BleedBox 154×216mm／TrimBox 148×210mm 巢狀正確、8 條 m/l/S 角標、單 K `0 0 0 1 K`、無 rg/RG、preflight **12/12**；渲染整張 MediaBox 為 PNG 親 Read：四角 L 形角標落於裁切邊延伸線、內端貼 BleedBox 邊外端達 MediaBox 邊、與裁切角留出血間隙（放大左上角複驗兩垂直交會線）。
+- 回歸：預設無標記匯出 BleedBox＝MediaBox、內容流 **0** 角標線段，680 全綠。
+
+### 誠實範圍（honest-planning R1／R2／R3／R5／R6）
+
+- [實作]：裁切標記匯出，pytest 基線驗＋PyMuPDF 獨立解析＋PNG 親驗。
+- R2：無新外部依賴（復用向量原件與盒框），為既有能力的幾何擴充，無需新 spike（先例 Sprint 14／15 向量原件）。R1 證據＝印前完稿慣例（B 級）＋輸出探針實測（A 級）。
+- 誠實差異：§9「BleedBox＝MediaBox」僅無標記時成立；有標記時 BleedBox=trim+出血、MediaBox 外擴（正確印前設定）。
+
+### 待 Owner 真實素材驗收（R5，執行工程師不代行）
+
+- 認證級 preflight 與實檔送印刷廠打樣＝Phase 4 DoD（Owner hands-on，同 GAPS #11／#18／#41／#42）。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項（依 §6 清單：字型授權檢查、目錄自動生成、圖文繞排、注音 ruby、縱中橫精修、preflight 面板等，擇一 TDD）。
+
 ## v0.77.0（2026-07-18，Sprint 82）PDF/X-4:2010 匯出選項（Phase 4 首項）
 
 ### 新增

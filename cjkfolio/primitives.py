@@ -85,6 +85,34 @@ def toc_rule_segments(page_width_pt: float, rule, gaps=()) -> tuple:
     )
 
 
+def crop_mark_lines(trim_w_pt: float, trim_h_pt: float, *, offset_pt: float,
+                    length_pt: float, cmyk: tuple, line_width_pt: float) -> tuple:
+    """裁切標記（trim marks）：8 條角標（top-down pt，trim 左上＝原點）。
+
+    每個 trim 角產出 2 條角標，各延伸該角相交的一條裁切邊（上／下邊向左右、左／右邊
+    向上下）：內端距 trim 邊 offset_pt（取＝出血，落在 BleedBox 邊、不侵入活區），向外
+    延伸 length_pt。標記落在 trim 外（座標可為負或超出 trim_w/h），由 pdf_writer 加
+    origin 偏移後落入外擴 MediaBox（BleedBox 與 MediaBox 之間）。標記色一律單 K
+    （registration，PLAN §9 全 CMYK、避高 TAC；trim 外於裁切後不入成品）。
+    """
+    w, h, o, ell = trim_w_pt, trim_h_pt, offset_pt, length_pt
+
+    def ln(x0: float, y0: float, x1: float, y1: float) -> StrokeLine:
+        return StrokeLine(x0=x0, y0=y0, x1=x1, y1=y1, cmyk=cmyk,
+                          line_width_pt=line_width_pt)
+
+    return (
+        ln(-(o + ell), 0.0, -o, 0.0),        # 左上 水平（延伸上邊向左）
+        ln(0.0, -(o + ell), 0.0, -o),        # 左上 垂直（延伸左邊向上）
+        ln(w + o, 0.0, w + o + ell, 0.0),    # 右上 水平
+        ln(w, -(o + ell), w, -o),            # 右上 垂直
+        ln(-(o + ell), h, -o, h),            # 左下 水平
+        ln(0.0, h + o, 0.0, h + o + ell),    # 左下 垂直
+        ln(w + o, h, w + o + ell, h),        # 右下 水平
+        ln(w, h + o, w, h + o + ell),        # 右下 垂直
+    )
+
+
 def cip_frame_rect(master, left_x_pt: float, n_lines: int, frame) -> StrokeRect:
     """CIP 細框（top-down pt）：圍住橫排 CIP 內容網格盒，外留 pad。
 

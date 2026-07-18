@@ -55,11 +55,12 @@ BODY_500 = (
 # ---------- 純數學 ----------
 
 def test_page_boxes_pt(template):
-    media, trim = page_boxes_pt(template)
+    media, trim, bleed = page_boxes_pt(template)
     assert media == pytest.approx((0.0, 0.0, mm_to_pt(154), mm_to_pt(216)))
     assert trim == pytest.approx(
         (BLEED_PT, BLEED_PT, BLEED_PT + mm_to_pt(148), BLEED_PT + mm_to_pt(210))
     )
+    assert bleed == media  # 無裁切標記：BleedBox＝MediaBox（§9）
 
 
 def test_subset_tag_deterministic():
