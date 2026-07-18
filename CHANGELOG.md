@@ -2,6 +2,36 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.77.0（2026-07-18，Sprint 82）PDF/X-4:2010 匯出選項（Phase 4 首項）
+
+### 新增
+
+- [實作] PDF/X-4:2010 匯出選項（§9「X-4 選項」；擴充既有自寫 PDF/X-1a:2001 後端）：
+  - `cjkfolio/pdf_writer.py`：新增 `PdfxProfile` 形態表 `PDFX_PROFILES`（x-1a／x-4：version／conformance／header／require_embedded_icc／allow_transparency／label）；`export_pdf` 加 `pdfx` 參數（預設 x-1a 向後相容）＋ `PdfResult.pdfx_label`。X-4 相對 X-1a＝header 升 1.6、Info 與 XMP `GTS_PDFXVersion=PDF/X-4` 且**無 `GTS_PDFXConformance`**、**強制嵌 DestOutputProfile ICC**（registry 免嵌不足，未給 `icc_profile` 快速失敗）；未知 pdfx 形態快速失敗。
+  - `cjkfolio/pdfx_meta.py`：`xmp_packet` 的 `conformance` 支援 None（X-4 省略 GTS_PDFXConformance 兩鍵；X-1a 帶 conformance 者輸出位元不變）。
+  - `cjkfolio/preflight.py`：`check_pdfx1a`→`check_pdfx(path, profile)`（相容包裝保留）；X-4 規則集依形態調整 header 1.6／GTS_PDFXVersion PDF/X-4／無 Conformance／OutputIntent 須嵌 ICC，且**排除 no-transparency**（X-4 允許實時透明）＝11 規則。
+  - CLI `export-pdf` 與 `preflight` 加 `--pdfx x-1a|x-4`。
+
+### 驗證
+
+- 基線 **668 passed / 0 failed**（659→668，+9：X-4 匯出 6＋X-4 preflight 3）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C15 0 退步。繁中標點 grep 無破折號。
+- R5 真實素材驗收（紅線自擬 samples/case-divider＋真 CMYK ICC，out/ 不入 repo）：CLI `export-pdf --pdfx x-4 --icc RSWOP.icm`（Windows 內建 218KB CMYK prtr 輸出描述檔）→ PyMuPDF 獨立解析（Gate 4）：header `%PDF-1.6`、Info `GTS_PDFXVersion PDF/X-4` 且**無** Conformance、DestOutputProfile 嵌入 218103 bytes（class prtr／space CMYK／N 4）、XMP 含 PDF/X-4 且無 Conformance；`preflight --pdfx x-4` **11/11 全過**。
+- 回歸：預設 X-1a 複驗 header `%PDF-1.3`、registry 免嵌、`preflight` **12/12** 不退步。
+
+### 誠實範圍（honest-planning R1／R2／R3／R5／R6）
+
+- [實作]：X-4 匯出選項＋X-4 規則集 preflight，pytest 基線驗＋PyMuPDF 獨立解析＋真 CMYK ICC。
+- R2：無新外部依賴（復用 PDF 寫出層＋fitz），X-4 為已實作 X-1a 的格式變體，無需新 spike（先例 Sprint 10 直接做 X-1a）。R1 證據＝ISO 15930-7:2010 規格（B 級）＋輸出探針實測（A 級）。
+- 誠實差異：X-4 允許的透明／圖層（OCG）／ICC-based 色彩，本產品全 device CMYK/gray 內容不產生（X-4 匯出＝X-1a 內容的形態變體，非缺陷＝§9 全 CMYK 鐵律）。
+
+### 待 Owner 真實素材驗收（R5，執行工程師不代行）
+
+- 認證級 preflight（Acrobat／印廠）與實檔送印刷廠打樣＝Phase 4 DoD（Owner hands-on，同 GAPS #11／#18／#41）；內建自由散布 CMYK ICC 未備，使用者自備 `--icc`。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項（依 §6 清單：裁切標記、CMYK 深化、目錄自動生成、圖文繞排、注音 ruby、縱中橫精修、preflight 面板等，擇一 TDD）。
+
 ## v0.76.0（2026-07-18，Sprint 81）Phase 3 收尾判定（[Doc]，收尾轉 Phase 4）
 
 ### 收尾判定（honest review，無程式碼變更）

@@ -469,6 +469,86 @@ def test_export_pdfx_icc_rejects_wrong_profile(template, tmp_path):
                    output_condition_identifier="ShopX", icc_profile=mntr)
 
 
+# ---------- PDF/X-4:2010 匯出選項（Sprint 82，Phase 4 首項；§9「X-4 選項」） ----------
+
+@needs_fonts
+def test_export_pdfx4_header_and_identification(template, tmp_path):
+    """X-4：header 1.6、Info /GTS_PDFXVersion (PDF/X-4)、無 /GTS_PDFXConformance。"""
+    icc = tmp_path / "fake.icc"
+    icc.write_bytes(fake_icc())
+    doc = make_doc([{"text": "X-4 識別。", "style": "內文-明體直排"}])
+    out = tmp_path / "x4.pdf"
+    result = export_pdf(doc, template, out, footer=False,
+                        output_condition_identifier="ShopX Custom",
+                        output_condition="測試條件", icc_profile=icc, pdfx="x-4")
+    assert out.read_bytes().startswith(b"%PDF-1.6"), "X-4:2010 須為 PDF 1.6"
+    assert result.pdfx_label == "PDF/X-4"
+
+    pdf = fitz.open(str(out))
+    _, info = _info_dict(pdf)
+    assert re.search(r"/GTS_PDFXVersion\s*\(PDF/X-4\)", info)
+    assert "/GTS_PDFXConformance" not in info, "X-4 不使用 GTS_PDFXConformance"
+    assert re.search(r"/Trapped\s*/False", info)
+
+
+@needs_fonts
+def test_export_pdfx4_xmp_pdfxid(template, tmp_path):
+    """X-4 XMP：pdfxid GTS_PDFXVersion PDF/X-4，無 GTS_PDFXConformance 鍵。"""
+    icc = tmp_path / "fake.icc"
+    icc.write_bytes(fake_icc())
+    doc = make_doc([{"text": "X-4 中繼。", "style": "內文-明體直排"}])
+    out = tmp_path / "x4xmp.pdf"
+    export_pdf(doc, template, out, footer=False,
+               output_condition_identifier="ShopX", icc_profile=icc, pdfx="x-4")
+    xmp = fitz.open(str(out)).get_xml_metadata()
+    assert "PDF/X-4" in xmp
+    assert "GTS_PDFXConformance" not in xmp, "X-4 XMP 不含 Conformance 鍵"
+    assert "GTS_PDFXVersion" in xmp
+
+
+@needs_fonts
+def test_export_pdfx4_requires_embedded_icc(template, tmp_path):
+    """X-4 強制嵌 DestOutputProfile：未給 ICC 或僅 registry 名皆快速失敗。"""
+    doc = make_doc([{"text": "X-4 需 ICC。", "style": "內文-明體直排"}])
+    with pytest.raises(ValueError, match="X-4"):
+        export_pdf(doc, template, tmp_path / "n.pdf", footer=False, pdfx="x-4")
+    with pytest.raises(ValueError, match="X-4"):  # registry 名（X-1a 免嵌）對 X-4 仍不足
+        export_pdf(doc, template, tmp_path / "r.pdf", footer=False,
+                   output_condition_identifier="JC200103", pdfx="x-4")
+
+
+@needs_fonts
+def test_export_pdfx4_embeds_output_intent_icc(template, tmp_path):
+    icc = tmp_path / "fake.icc"
+    icc.write_bytes(fake_icc())
+    doc = make_doc([{"text": "X-4 描述檔。", "style": "內文-明體直排"}])
+    out = tmp_path / "x4icc.pdf"
+    result = export_pdf(doc, template, out, footer=False,
+                        output_condition_identifier="ShopX", icc_profile=icc, pdfx="x-4")
+    assert result.icc_embedded is True
+    _, oi = _output_intent(fitz.open(str(out)))
+    m = re.search(r"/DestOutputProfile\s+(\d+)\s+0\s+R", oi)
+    assert m, f"X-4 須嵌 DestOutputProfile：{oi}"
+
+
+@needs_fonts
+def test_export_pdf_default_profile_is_x1a(template, tmp_path):
+    """§9 X-1a 預設不變：header 1.3、GTS_PDFXConformance 齊備。"""
+    doc = make_doc([{"text": "預設 X-1a。", "style": "內文-明體直排"}])
+    out = tmp_path / "def.pdf"
+    result = export_pdf(doc, template, out, footer=False)
+    assert out.read_bytes().startswith(b"%PDF-1.3")
+    assert result.pdfx_label == "PDF/X-1a:2001"
+    _, info = _info_dict(fitz.open(str(out)))
+    assert re.search(r"/GTS_PDFXConformance\s*\(PDF/X-1a:2001\)", info)
+
+
+def test_export_pdf_rejects_unknown_profile(template, tmp_path):
+    doc = make_doc([{"text": "壞。", "style": "內文-明體直排"}])
+    with pytest.raises(ValueError, match="pdfx"):
+        export_pdf(doc, template, tmp_path / "u.pdf", footer=False, pdfx="x-9")
+
+
 @needs_fonts
 def test_export_pdfx_requires_title(template, tmp_path):
     doc = document_from_dict({

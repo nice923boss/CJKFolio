@@ -9,7 +9,7 @@ import pytest
 
 from cjkfolio.document import document_from_dict
 from cjkfolio.pdf_writer import export_pdf
-from cjkfolio.preflight import RULE_IDS, check_pdfx1a
+from cjkfolio.preflight import RULE_IDS, check_pdfx, check_pdfx1a
 from cjkfolio.styles import load_template
 
 fitz = pytest.importorskip("fitz")
@@ -70,6 +70,42 @@ def test_preflight_passes_with_custom_icc(template, tmp_path):
                output_condition="測試條件", icc_profile=icc)
     report = check_pdfx1a(out)
     assert report.ok, [f for f in report.findings if not f.ok]
+
+
+# ---------- PDF/X-4:2010 preflight（Sprint 82，Phase 4 首項） ----------
+
+@needs_fonts
+def test_preflight_x4_passes_on_exported_pdf(template, tmp_path):
+    """X-4 檔（嵌 ICC）過 X-4 規則集；X-4 排除 no-transparency（X-4 允許透明）。"""
+    icc = tmp_path / "fake.icc"
+    icc.write_bytes(fake_icc())
+    out = tmp_path / "x4.pdf"
+    export_pdf(make_doc(), template, out,
+               output_condition_identifier="ShopX", icc_profile=icc, pdfx="x-4")
+    report = check_pdfx(out, profile="x-4")
+    assert report.ok, [f for f in report.findings if not f.ok]
+    rules = {f.rule for f in report.findings}
+    assert "no-transparency" not in rules, "X-4 允許透明，不列此規則"
+    assert {"header-version", "info-identification", "output-intent"} <= rules
+
+
+@needs_fonts
+def test_preflight_x4_rejects_x1a_pdf(template, tmp_path):
+    """X-1a 檔（header 1.3、有 Conformance、registry 免嵌 ICC）跑 X-4 規則逐條落網。"""
+    out = tmp_path / "x1a.pdf"
+    export_pdf(make_doc(), template, out)  # 預設 X-1a、registry 識別免嵌 ICC
+    report = check_pdfx(out, profile="x-4")
+    bad = _failed_rules(report)
+    assert "header-version" in bad          # 1.3 ≠ X-4 的 1.6
+    assert "info-identification" in bad      # GTS_PDFXVersion 非 PDF/X-4
+    assert "output-intent" in bad            # X-4 須嵌 DestOutputProfile
+
+
+def test_preflight_rejects_unknown_profile(tmp_path):
+    path = tmp_path / "x.pdf"
+    path.write_bytes(b"%PDF-1.3\n%%EOF")
+    with pytest.raises(ValueError, match="profile"):
+        check_pdfx(path, profile="x-9")
 
 
 def test_preflight_fails_on_plain_pdf(tmp_path):

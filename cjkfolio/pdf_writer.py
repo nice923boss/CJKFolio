@@ -62,8 +62,31 @@ from .styles import DEFAULT_TEXT_CMYK, resolve_text_cmyk
 BLEED_MM = 3.0
 TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92；styles 單一來源）
 
-PDFX_VERSION = "PDF/X-1:2001"       # Info /GTS_PDFXVersion（ISO 15930-1）
-PDFX_CONFORMANCE = "PDF/X-1a:2001"  # Info /GTS_PDFXConformance
+@dataclass(frozen=True)
+class PdfxProfile:
+    """一種 PDF/X 一致性形態（§9：X-1a 預設、X-4 選項）。"""
+    key: str                    # CLI 選值："x-1a" | "x-4"
+    version: str                # Info／XMP GTS_PDFXVersion
+    conformance: str | None     # Info／XMP GTS_PDFXConformance（X-4 無此鍵＝None）
+    header: str                 # PDF header 版本（X-1a:2001＝1.3；X-4:2010＝1.6）
+    require_embedded_icc: bool  # X-4 強制嵌 DestOutputProfile（registry 免嵌不足）
+    allow_transparency: bool    # X-4 允許實時透明（X-1a 禁止）
+    label: str                  # 人讀一致性標籤（CLI 與 PdfResult）
+
+
+PDFX_PROFILES = {
+    "x-1a": PdfxProfile(
+        "x-1a", "PDF/X-1:2001", "PDF/X-1a:2001", "1.3",
+        require_embedded_icc=False, allow_transparency=False,
+        label="PDF/X-1a:2001"),
+    "x-4": PdfxProfile(
+        "x-4", "PDF/X-4", None, "1.6",
+        require_embedded_icc=True, allow_transparency=True,
+        label="PDF/X-4"),
+}
+
+PDFX_VERSION = PDFX_PROFILES["x-1a"].version       # Info /GTS_PDFXVersion（ISO 15930-1）
+PDFX_CONFORMANCE = PDFX_PROFILES["x-1a"].conformance  # Info /GTS_PDFXConformance
 REGISTRY_URL = "http://www.color.org"
 # ICC 特性化資料登錄名（www.color.org/chardata）常用子集；命中者依 ISO 15930-1
 # 可免嵌 DestOutputProfile。未列名（印廠自訂條件）須以 icc_profile 補描述檔。
@@ -539,29 +562,44 @@ class PdfResult:
     icc_embedded: bool
     justify_stats: dict
     images_placed: int = 0  # 嵌入的 DeviceGray 影像 XObject 數（同路徑去重；灰階單 K）
+    pdfx_label: str = "PDF/X-1a:2001"  # 一致性形態標籤（X-1a 預設；X-4 選項）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                first_page: int = 1, font_dir=None, compress: bool = True,
                output_condition_identifier: str = "JC200103",
                output_condition: str = "Japan Color 2001 Coated",
-               icc_profile=None, image_base_dir=None) -> PdfResult:
-    """文件＋模版 → PDF/X-1a:2001。pages=None 全頁；否則為版面頁號清單（1 起算）。
+               icc_profile=None, image_base_dir=None,
+               pdfx: str = "x-1a") -> PdfResult:
+    """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
-    output_condition_identifier 命中 KNOWN_PRINT_CONDITIONS（ICC registry 名）時
-    免嵌描述檔；自訂識別必須以 icc_profile 提供 CMYK 輸出 ICC。
+    pages=None 全頁；否則為版面頁號清單（1 起算）。
+    X-1a：output_condition_identifier 命中 KNOWN_PRINT_CONDITIONS（ICC registry 名）
+    時免嵌描述檔；自訂識別須以 icc_profile 提供 CMYK 輸出 ICC。
+    X-4（ISO 15930-7）：強制嵌 DestOutputProfile，故 icc_profile 必填（registry
+    免嵌不足），header 升 1.6、GTS_PDFXVersion=PDF/X-4 且無 GTS_PDFXConformance。
     置入圖（doc.images）以 DeviceGray XObject 嵌入，路徑相對 image_base_dir 解析。
     """
+    if pdfx not in PDFX_PROFILES:
+        raise ValueError(
+            f"未知 pdfx 形態 {pdfx!r}，可選 {sorted(PDFX_PROFILES)}")
+    profile = PDFX_PROFILES[pdfx]
     if not doc.title:
-        raise ValueError("PDF/X-1a 要求 Info /Title：文件 meta.title 不可為空")
+        raise ValueError(
+            f"{profile.label} 要求 Info /Title：文件 meta.title 不可為空")
     icc_bytes = None
     if icc_profile is not None:
         icc_bytes = Path(icc_profile).read_bytes()
         _validate_output_profile(icc_bytes, icc_profile)
+    elif profile.require_embedded_icc:
+        raise ValueError(
+            f"{profile.label} 要求嵌入 DestOutputProfile（registry 識別不足）："
+            "請以 icc_profile 提供 CMYK 輸出 ICC 描述檔"
+        )
     elif output_condition_identifier not in KNOWN_PRINT_CONDITIONS:
         raise ValueError(
             f"印刷條件識別 {output_condition_identifier!r} 不在已知 ICC registry 名單，"
-            "X-1a 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
+            f"{profile.label} 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
         )
     layout = layout_document(doc, template)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir)
@@ -621,7 +659,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         ))
     pdf.set(pages_num,
             f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>")
-    # --- PDF/X-1a:2001 識別（§9 預設 X-1a；形態依 ISO 15930-1）---
+    # --- PDF/X 識別（§9 預設 X-1a:2001／ISO 15930-1；X-4:2010／ISO 15930-7 選項）---
     oi_parts = [
         "/Type /OutputIntent", "/S /GTS_PDFX",
         f"/OutputConditionIdentifier {_pdf_string(output_condition_identifier)}",
@@ -639,7 +677,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     xmp_num = pdf.stream(
         " /Type /Metadata /Subtype /XML",
         xmp_packet(doc.title, now.isoformat(timespec="seconds"),
-                   PDFX_VERSION, PDFX_CONFORMANCE),
+                   profile.version, profile.conformance),
         compress=False,  # metadata stream 不壓縮，外部工具可直讀
     )
     catalog_num = pdf.add(
@@ -648,16 +686,19 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         f"/ViewerPreferences << /Direction /R2L >> >>"
     )
     date = _pdf_date(now)
+    gts = f"/GTS_PDFXVersion ({profile.version})"
+    if profile.conformance is not None:  # X-4 無 GTS_PDFXConformance
+        gts += f" /GTS_PDFXConformance ({profile.conformance})"
     info_num = pdf.add(
         f"<< /Title {_pdf_text_string(doc.title)} "
         f"/Producer (CJKFolio) /Creator (CJKFolio) "
         f"/CreationDate ({date}) /ModDate ({date}) /Trapped /False "
-        f"/GTS_PDFXVersion ({PDFX_VERSION}) /GTS_PDFXConformance ({PDFX_CONFORMANCE}) >>"
+        f"{gts} >>"
     )
 
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(pdf.build(catalog_num, info_num, version="1.3"))
+    out.write_bytes(pdf.build(catalog_num, info_num, version=profile.header))
     return PdfResult(
         path=out,
         page_count=len(contents),
@@ -669,4 +710,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         icc_embedded=icc_bytes is not None,
         justify_stats=dict(layout.justify_stats),
         images_placed=len(writer._images),
+        pdfx_label=profile.label,
     )

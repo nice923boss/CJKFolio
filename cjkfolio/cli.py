@@ -28,7 +28,7 @@ from .document import (
 from .docx_import import import_docx
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
-from .preflight import check_pdfx1a
+from .preflight import check_pdfx
 from .reference_extract import extract_draft
 from .render import render_document
 from .styles import load_template, save_template
@@ -201,9 +201,10 @@ def cmd_export_pdf(args) -> int:
         output_condition_identifier=args.output_condition_identifier,
         output_condition=args.output_condition,
         icc_profile=args.icc, image_base_dir=Path(args.document).parent,
+        pdfx=args.pdfx,
     )
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
-    print(f"PDF/X-1a:2001 識別：OutputIntent {result.output_condition_identifier}"
+    print(f"{result.pdfx_label} 識別：OutputIntent {result.output_condition_identifier}"
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     if result.images_placed:
         print(f"置入圖：{result.images_placed} 張（DeviceGray 影像 XObject，灰階單 K）")
@@ -229,7 +230,7 @@ def cmd_assemble(args) -> int:
 
 
 def cmd_preflight(args) -> int:
-    report = check_pdfx1a(args.pdf)
+    report = check_pdfx(args.pdf, profile=args.pdfx)
     for finding in report.findings:
         print(f"{'通過' if finding.ok else '不過'}｜{finding.rule}：{finding.detail}")
     print("未涵蓋（誠實聲明）：" + "；".join(report.not_covered))
@@ -312,6 +313,8 @@ def main(argv=None) -> int:
                        help="印刷條件人讀描述")
     p_pdf.add_argument("--icc", default=None,
                        help="嵌入 DestOutputProfile 的 CMYK 輸出 ICC 檔（自訂識別時必填）")
+    p_pdf.add_argument("--pdfx", choices=["x-1a", "x-4"], default="x-1a",
+                       help="PDF/X 一致性形態（預設 x-1a:2001；x-4:2010 須以 --icc 提供 ICC）")
     p_pdf.set_defaults(func=cmd_export_pdf)
 
     p_asm = sub.add_parser("assemble",
@@ -320,8 +323,10 @@ def main(argv=None) -> int:
     p_asm.add_argument("-o", "--output", required=True)
     p_asm.set_defaults(func=cmd_assemble)
 
-    p_pre = sub.add_parser("preflight", help="PDF/X-1a 機械檢查（自寫規則；非 Acrobat 認證級）")
+    p_pre = sub.add_parser("preflight", help="PDF/X 機械檢查（自寫規則；非 Acrobat 認證級）")
     p_pre.add_argument("pdf")
+    p_pre.add_argument("--pdfx", choices=["x-1a", "x-4"], default="x-1a",
+                       help="以此 PDF/X 形態的規則集檢查（預設 x-1a）")
     p_pre.set_defaults(func=cmd_preflight)
 
     args = parser.parse_args(argv)

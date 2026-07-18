@@ -11,7 +11,7 @@ from pathlib import Path
 
 import fitz
 
-from .pdf_writer import KNOWN_PRINT_CONDITIONS, PDFX_CONFORMANCE, PDFX_VERSION
+from .pdf_writer import KNOWN_PRINT_CONDITIONS, PDFX_PROFILES
 
 RULE_IDS = (
     "header-version",       # %PDF-1.3（X-1a:2001 基於 PDF 1.3）
@@ -84,7 +84,7 @@ def _contains(outer, inner, eps: float = 0.02) -> bool:
             and inner.x1 <= outer.x1 + eps and inner.y1 <= outer.y1 + eps)
 
 
-def _check_output_intent(doc, catalog: str):
+def _check_output_intent(doc, catalog: str, require_icc: bool = False):
     blob = None
     m = re.search(r"/OutputIntents\s*\[(.*?)\]", catalog, re.S)
     if m:
@@ -100,7 +100,7 @@ def _check_output_intent(doc, catalog: str):
             [blob] if "/S" in blob else [])
     x_ois = [c for c in candidates if re.search(r"/S\s*/GTS_PDFX(?![A-Za-z])", c)]
     if len(x_ois) != 1:
-        return False, f"GTS_PDFX OutputIntent 數量 {len(x_ois)}（X-1a 須恰為 1）"
+        return False, f"GTS_PDFX OutputIntent 數量 {len(x_ois)}（PDF/X 須恰為 1）"
 
     oi, problems = x_ois[0], []
     ident_m = re.search(r"/OutputConditionIdentifier\s*(\([^)]*\)|<[0-9A-Fa-f\s]+>)", oi)
@@ -108,8 +108,11 @@ def _check_output_intent(doc, catalog: str):
     if not ident:
         problems.append("缺 /OutputConditionIdentifier")
     dest = re.search(r"/DestOutputProfile\s+(\d+)\s+0\s+R", oi)
-    if not dest and ident not in KNOWN_PRINT_CONDITIONS:
-        problems.append(f"識別 {ident!r} 非已知 registry 條目且未嵌 DestOutputProfile")
+    if not dest:
+        if require_icc:  # X-4：registry 免嵌不足，須嵌 DestOutputProfile
+            problems.append("X-4 須嵌 DestOutputProfile（registry 識別不足）")
+        elif ident not in KNOWN_PRINT_CONDITIONS:
+            problems.append(f"識別 {ident!r} 非已知 registry 條目且未嵌 DestOutputProfile")
     if dest:
         icc_x = int(dest.group(1))
         try:
@@ -125,18 +128,29 @@ def _check_output_intent(doc, catalog: str):
     return True, f"OutputIntent {ident}" + ("（嵌 ICC）" if dest else "（registry 識別，免嵌）")
 
 
-def check_pdfx1a(path) -> PreflightReport:
-    """對單一 PDF 跑 X-1a 機械規則，回傳逐條 PASS／FAIL 報告。"""
+def check_pdfx(path, profile: str = "x-1a") -> PreflightReport:
+    """對單一 PDF 跑指定 PDF/X 形態的機械規則，回傳逐條 PASS／FAIL 報告。
+
+    profile="x-1a"（預設）或 "x-4"。X-4 header 為 1.6、GTS_PDFXVersion=PDF/X-4
+    且無 GTS_PDFXConformance、OutputIntent 須嵌 DestOutputProfile、且允許透明
+    （故不列 no-transparency 規則）。
+    """
+    if profile not in PDFX_PROFILES:
+        raise ValueError(
+            f"未知 preflight profile {profile!r}，可選 {sorted(PDFX_PROFILES)}")
+    prof = PDFX_PROFILES[profile]
     path = Path(path)
     findings = []
 
     def add(rule: str, ok, detail: str) -> None:
         findings.append(Finding(rule, bool(ok), detail))
 
+    header_bytes = f"%PDF-{prof.header}".encode("latin-1")
     with path.open("rb") as f:
         head = f.read(9)
-    add("header-version", head.startswith(b"%PDF-1.3"),
-        f"header {head[:8].decode('latin-1', 'replace')}（X-1a:2001 須 %PDF-1.3）")
+    add("header-version", head.startswith(header_bytes),
+        f"header {head[:8].decode('latin-1', 'replace')}"
+        f"（{prof.label} 須 %PDF-{prof.header}）")
 
     doc = fitz.open(str(path))
     try:
@@ -164,14 +178,19 @@ def check_pdfx1a(path) -> PreflightReport:
                 problems.append(f"缺 {key}")
         if not re.search(r"/Trapped\s*/(True|False)(?![A-Za-z])", info):
             problems.append("缺 /Trapped（須 /True 或 /False）")
-        if not re.search(r"/GTS_PDFXVersion\s*\(" + re.escape(PDFX_VERSION) + r"\)", info):
-            problems.append(f"GTS_PDFXVersion 非 ({PDFX_VERSION})")
-        if not re.search(r"/GTS_PDFXConformance\s*\(" + re.escape(PDFX_CONFORMANCE) + r"\)", info):
-            problems.append(f"GTS_PDFXConformance 非 ({PDFX_CONFORMANCE})")
+        if not re.search(r"/GTS_PDFXVersion\s*\(" + re.escape(prof.version) + r"\)", info):
+            problems.append(f"GTS_PDFXVersion 非 ({prof.version})")
+        if prof.conformance is not None:
+            if not re.search(
+                    r"/GTS_PDFXConformance\s*\(" + re.escape(prof.conformance) + r"\)", info):
+                problems.append(f"GTS_PDFXConformance 非 ({prof.conformance})")
+        elif re.search(r"/GTS_PDFXConformance", info):
+            problems.append("X-4 不得帶 GTS_PDFXConformance")
         add("info-identification", not problems,
             "Info 識別齊備" if not problems else "；".join(problems))
 
-        add("output-intent", *_check_output_intent(doc, catalog))
+        add("output-intent",
+            *_check_output_intent(doc, catalog, require_icc=prof.require_embedded_icc))
 
         problems = []
         for page in doc:
@@ -231,10 +250,11 @@ def check_pdfx1a(path) -> PreflightReport:
         add("no-lzw", not lzw,
             "無 LZWDecode" if not lzw else f"obj {lzw[:6]} 用 LZWDecode（X-1a 禁止）")
 
-        tr_pat = re.compile(r"/(SMask|Transparency)(?![A-Za-z0-9])")
-        trans = [x for x, s in objs if tr_pat.search(re.sub(r"/SMask\s*/None", "", s))]
-        add("no-transparency", not trans,
-            "無透明" if not trans else f"obj {trans[:6]} 含 SMask／Transparency")
+        if not prof.allow_transparency:  # X-4 允許實時透明，不列此規則
+            tr_pat = re.compile(r"/(SMask|Transparency)(?![A-Za-z0-9])")
+            trans = [x for x, s in objs if tr_pat.search(re.sub(r"/SMask\s*/None", "", s))]
+            add("no-transparency", not trans,
+                "無透明" if not trans else f"obj {trans[:6]} 含 SMask／Transparency")
 
         ia_pat = re.compile(r"/(Annots|AcroForm|JavaScript|OpenAction|AA)(?![A-Za-z0-9+])")
         inter = [x for x, s in objs if ia_pat.search(s)]
@@ -253,3 +273,8 @@ def check_pdfx1a(path) -> PreflightReport:
     finally:
         doc.close()
     return PreflightReport(path=path, findings=tuple(findings))
+
+
+def check_pdfx1a(path) -> PreflightReport:
+    """X-1a:2001 機械 preflight（check_pdfx 的相容包裝，既有呼叫端維持不變）。"""
+    return check_pdfx(path, profile="x-1a")
