@@ -2,6 +2,62 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.101.0（2026-07-19，Sprint 107）編輯器稿件匯入與匯入端預設值修正
+
+### 問題
+
+兩件事，第二件是查第一件時翻出來的。
+
+其一，三個匯入器（txt／md／docx）自 Phase 1 起只有 CLI 入口。編輯器的選單列是「編輯／樣式／模版／圖片／檢查／設定／說明」，沒有「檔案」。使用者想把自己的稿件放進 APP，得先開終端機跑 `python -m cjkfolio.cli import-txt`，產出 doc.json 再開啟，等於 APP 不能獨立完成「開一本新稿」。
+
+其二，Sprint 105 把「新稿掛哪張主版」從寫死的「A-內文版」搬進 `Template.default_master`，但同一組硬編碼還有一處沒搬：`import_txt` 的 `DEFAULT_BODY_STYLE`＝「內文-明體直排」，是第一本書的樣式名，而 CLI `--style` 的預設值直接指向它。一手實測：
+
+```
+$ python -m cjkfolio.cli import-txt 稿.txt -o doc.json --template templates/jiejiao-manxing.json
+匯入完成：2 段 → doc.json          ← exit 0
+$ python -m cjkfolio.cli render doc.json -o out/ --template templates/jiejiao-manxing.json
+錯誤：文件引用模版沒有的樣式：['內文-明體直排']
+```
+
+匯入端回報成功、產出的卻是壞文件，錯誤延到渲染才現形。
+
+### 新增
+
+- [實作] `editor/import_core.py`：匯入判定層（Qt 無關，入 pytest 基線，同 Sprint 100 `preflight_core`／104 `ai_assign_core` 的分層）。`import_manuscript` 依副檔名分派 `.txt`／`.md`／`.markdown`／`.docx`，**三個預設值（template_id、master、內文樣式）一律由當前模版推導**，並在回傳前確認 `default_master` 確實存在於該模版的主版清單。可在匯入時判定的錯，不留給下游。
+- [實作] `editor/import_actions.py`：呈現層。「檔案 → 匯入稿件…（txt／md／docx）」，換稿後畫布回第一頁重繪，statusBar 報段數、頁數與樣式分布；txt 另提示「可用『樣式 → AI 樣式指派』分派結構」，該提示是純文字入口通往 AI 指派的唯一導引。
+- [實作] `cjkfolio/session.py::replace_document`：整份換文件。**游標歸零**（新稿段數與舊稿無關，沿用舊游標會指到不存在的段），入統一 undo 歷史，樣式缺失於套用前重排 KeyError 快速失敗且狀態不變。
+- [實作] `tests/test_manuscript_import.py`：25 測試。
+- [實作] `editor/smoke_import.py`：離屏 C22。
+
+### 修正
+
+- [實作] **匯入端不再寫死內文樣式**：判定層與 CLI `--style` 兩處同源修正，未指定時取 `template.md_mapping["paragraph"]`；顯式 `--style` 仍優先。守門測試不驗字串相等，而驗「三格式的匯入產物皆須直接 `layout_document` 排得出來」，把這類延遲失敗擋在匯入當下。
+
+### 行為
+
+- **匯入即取代整份文件，不設 modal 確認**。取代的事實與復原方式（一步 Ctrl+Z）寫在 statusBar，且 offscreen 驗證跑不了 modal。與 Sprint 77 套用整份模版一致。
+- **AI 金鑰預設值走 `local/ai-config.local.json`，不入程式碼**（Owner 定案，PLAN §10）。AI 設定面板開啟時本就自動帶入既有值，體驗等同「預設已填好」，而程式碼與 repo 零金鑰、§8 金鑰紅線一字不動。原有私有設定備份為 `.bak-tailscale`，不覆蓋丟失。
+
+### 驗證
+
+- 基線 **961 → 986 passed（+25）/ 0 failed**、typecheck EXIT_CODE=0、smoke C1〜C22 全過（0 退步）。
+- 新增 25 測試：模版推導三格式各一／《街角慢行》模版下 txt 不得取到第一本書的樣式／大小寫副檔名／**三格式產物皆須直接排得出來**／不支援副檔名訊息含該副檔名與支援清單／缺 `default_master` 明確失敗／CLI 不給 `--style` 取模版內文樣式＋顯式 `--style` 仍優先／`replace_document` 的換稿重排、游標歸零、一步 undo 回原、樣式缺失不入歷史、同物件 no-op。
+- 離屏 C22：md 真素材換稿並落到**現行模版**的樣式、回第一頁、畫布重繪、Ctrl+Z 回原稿、txt 全掛內文並提示接 AI、docx 三層對映；不支援格式／缺檔／取消三路皆據實提示且原稿一字不動。
+- **R5 真實素材驗收＝使用者情境的完整鏈路**：《街角慢行》第一章剝除全部 markdown 標記為無結構 txt（11 段 613 字）→ 匯入（全掛「內文-宋體直排」、master 甲-內文）→ AI 分析（真 NVIDIA endpoint，1 批 50.9s，建議非空 11/11、**候選集越界建議 0 筆**）→ 與原稿結構一致 **10/11** → 匯出 PDF。
+- **Gate 4 獨立複驗**（PyMuPDF 1.27.2 直讀 PDF 物件，不呼叫本專案任何渲染器或檢查器）：3 頁 617 span，內文 `SourceHanSerifTC-Regular` 10.5pt×597 span、小節標 `SourceHanSansTC-Bold` 11.5pt×16 span，與模版宣告（思源宋體 10.5／思源黑體 11.5）逐項吻合。**AI 判出的層級確實在版面上分化為不同字型與字級**，非僅資料層的樣式字串。
+
+### 未做
+
+- **匯入即取代整份文件**，無「插入至游標」「附加至書末」（GAPS #61 (a)）。
+- **模版 id 取自 `doc.template` 字串，而 `apply_template` 換模版時不更新該欄位**（既有不一致，非本 Sprint 引入）：套用他本書模版後再匯入，新稿的 `template` 欄位會記成舊模版 id。樣式與主版皆取自現行 `session.template` 故版面正確，受影響的只有 JSON 的 id 欄位與其後的 CLI 再處理（(b)）。
+- docx 仍是 Sprint 72 的 v1 解析（表格、圖片、註腳、追蹤修訂不處理，(c)）；匯入不產節首標記（(d)）；真視窗手感待 Owner 批次（(e)、GAPS #19）。
+- AI 指派的引文誤判（10/11 的那 1）為 §4.4 修正 2 已定案的層級模糊，由人工校正兜底，不補。
+
+### 待 Owner 真實素材驗收
+
+- 真視窗開啟「檔案 → 匯入稿件…」，以自己的 txt／Word 稿實測對話框與匯入後的畫布觀感。
+- 真 Word（中文版「標題 1」）／LibreOffice／Google Docs 匯出的 docx 仍無一手實測（GAPS #35 (a)）。
+
 ## v0.100.0（2026-07-18，Sprint 106）效能量測與基線（關 GAPS #56 丙(12)）
 
 ### 問題

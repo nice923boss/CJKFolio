@@ -58,6 +58,7 @@ from editor.canvas import (  # noqa: E402
 )
 from editor.canvas_view import CanvasView  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
+from editor.import_actions import ImportActionsMixin  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
 from editor.style_panel import StylePanel  # noqa: E402
@@ -69,7 +70,7 @@ AUTHOR = "製作者：黃政文"
 
 
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
-                   ImageActionsMixin, QMainWindow):
+                   ImageActionsMixin, ImportActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
@@ -111,6 +112,11 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         credit = QLabel(AUTHOR)
         credit.setStyleSheet("color:#999; font-size:11px; padding:0 8px;")
         self.statusBar().addPermanentWidget(credit)
+
+        file_menu = self.menuBar().addMenu("檔案")
+        import_action = QAction("匯入稿件…（txt／md／docx）", self)
+        import_action.triggered.connect(lambda: self._import_manuscript_dialog())
+        file_menu.addAction(import_action)
 
         edit_menu = self.menuBar().addMenu("編輯")
         undo_action = QAction("復原", self)

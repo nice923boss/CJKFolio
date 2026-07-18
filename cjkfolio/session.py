@@ -232,6 +232,25 @@ class EditSession:
         return self._commit_pair(
             change_paragraph_styles(self._document, assignments), self._template)
 
+    def replace_document(self, document: Document):
+        """整份換文件（Sprint 107 稿件匯入）：游標歸零，入統一 undo 歷史。
+
+        游標歸零而非沿用：新稿的段數與舊稿無關，沿用舊游標會指到不存在的段。
+        與文字、樣式、圖片編輯共用同一條歷史，故誤匯入一步 Ctrl+Z 即回到匯入前的
+        稿件（同 Sprint 67 模版編輯、Sprint 102 圖片編輯的處置）。文件引用現行模版
+        沒有的樣式時，於套用前的重排 KeyError 快速失敗、狀態不變不入歷史。
+        """
+        if document is self._document:
+            return None
+        new_layout = layout_with_wrap(document, self._template)  # 套用前快速失敗
+        self._undo.append((self._document, self._template, self._cursor))
+        self._redo.clear()
+        self._document = document
+        self._cursor = DocCursor(0, 0)
+        self._layout = new_layout
+        self._pending_insert = None
+        return self._state_result()
+
     def place_image(self, path: str, page: int, rect):
         """置入一張 rect 圖（Sprint 102 畫布拖放）：入統一 undo 歷史。
 

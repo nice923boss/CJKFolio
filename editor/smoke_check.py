@@ -47,6 +47,7 @@ from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
 from editor.smoke_ai import check_ai_assign  # noqa: E402
 from editor.smoke_images import check_images, check_wrap_ui  # noqa: E402
+from editor.smoke_import import check_import  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -616,12 +617,16 @@ def main() -> int:
     # C21 AI 指派背景執行緒（抽於 editor/smoke_ai.py，同上）
     check_ai_assign(EditorWindow, DOC)
 
+    # C22 稿件匯入（抽於 editor/smoke_import.py，同上）
+    check_import(EditorWindow, DOC, ROOT)
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
         "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
         "＋preflight 面板＋背景執行緒與快取＋X-4 與 ICC 選取＋畫布置圖 UI"
         "＋文繞圖參數 UI（畫布所見即繞排所得）＋AI 指派背景執行緒（段序失效守門）"
+        "＋稿件匯入（txt／md／docx 落到現行模版樣式，壞稿不進畫布）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

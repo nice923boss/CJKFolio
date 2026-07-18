@@ -73,9 +73,12 @@ def _import_target(args, template):
 def cmd_import_txt(args) -> int:
     template = load_template(args.template)
     template_id, master = _import_target(args, template)
+    # 未指定即取該模版的內文樣式：寫死第一本書的樣式名會讓第二本書匯入 exit 0
+    # 卻產出 render 才爆的文件（Sprint 107；同 Sprint 105 把 master 搬進模版）
     doc = import_txt_file(
         args.input,
-        default_style=args.style,
+        default_style=args.style or template.md_mapping.get(
+            "paragraph", DEFAULT_BODY_STYLE),
         title=args.title or Path(args.input).stem,
         template_id=template_id,
         master=master,
@@ -338,7 +341,8 @@ def main(argv=None) -> int:
     p_import = sub.add_parser("import-txt", help="txt 匯入為文件 JSON（空行切段，全掛預設樣式）")
     p_import.add_argument("input")
     p_import.add_argument("-o", "--output", required=True)
-    p_import.add_argument("--style", default=DEFAULT_BODY_STYLE)
+    p_import.add_argument("--style", default="",
+                          help="全掛哪個段落樣式（預設取模版 md_mapping 的 paragraph）")
     p_import.add_argument("--title", default="")
     p_import.add_argument("--template", default=str(DEFAULT_TEMPLATE))
     p_import.add_argument("--master", default="",
