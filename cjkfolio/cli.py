@@ -26,9 +26,15 @@ from .document import (
     unknown_style_refs,
 )
 from .docx_import import import_docx
+from .images import MIN_IMAGE_PPI
 from .md_import import import_markdown_file
 from .pdf_writer import export_pdf
-from .preflight import check_pdfx, preflight_summary
+from .preflight import (
+    check_image_resolution,
+    check_pdfx,
+    image_resolution_summary,
+    preflight_summary,
+)
 from .reference_extract import extract_draft
 from .render import render_document
 from .styles import load_template, save_template
@@ -210,6 +216,10 @@ def cmd_export_pdf(args) -> int:
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     if result.images_placed:
         print(f"置入圖：{result.images_placed} 張（DeviceGray 影像 XObject，灰階單 K）")
+        for warning in result.ppi_warnings:
+            print(warning)
+        if not result.ppi_warnings:
+            print("影像解析度：置入影像實效 PPI 皆達 §9 300ppi 下限")
     print(_justify_line(result.justify_stats))
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:
@@ -262,6 +272,13 @@ def cmd_preflight(args) -> int:
         print(f"{'通過' if finding.ok else '不過'}｜{finding.rule}：{finding.detail}")
     print("未涵蓋（誠實聲明）：" + "；".join(report.not_covered))
     print(f"結論：{preflight_summary(report)}")
+    # 影像解析度為 §9 印廠條件（非 X-1a 條款）：獨立規則集，不影響 X 合規判定
+    img = check_image_resolution(args.pdf, min_ppi=args.min_ppi)
+    for f in img.findings:
+        print(f"{'達標' if f.ok else '不足'}｜影像解析度：頁 {f.page} obj {f.xref} "
+              f"{f.px_w}×{f.px_h}px 繪 {f.draw_w_pt:.1f}×{f.draw_h_pt:.1f}pt "
+              f"＝ {f.ppi:.0f}ppi")
+    print(f"影像解析度（§9，非 X-1a 條款）：{image_resolution_summary(img)}")
     return 0 if report.ok else 1
 
 
@@ -359,6 +376,8 @@ def main(argv=None) -> int:
     p_pre.add_argument("pdf")
     p_pre.add_argument("--pdfx", choices=["x-1a", "x-4"], default="x-1a",
                        help="以此 PDF/X 形態的規則集檢查（預設 x-1a）")
+    p_pre.add_argument("--min-ppi", type=float, default=MIN_IMAGE_PPI,
+                       help="影像實效解析度下限（§9 連續調 300〜350ppi，預設 300）")
     p_pre.set_defaults(func=cmd_preflight)
 
     args = parser.parse_args(argv)

@@ -25,7 +25,12 @@ from pathlib import Path
 
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
 from .frames import resolve_text_frames
-from .images import EmbeddedImage, resolve_placed_images
+from .images import (
+    EmbeddedImage,
+    ImageResolution,
+    resolution_warnings,
+    resolve_placed_images,
+)
 from .pdf_fonts import EmbeddedFont
 from .pdfx_meta import xmp_packet
 from .layout import (
@@ -313,6 +318,8 @@ class _PdfPageWriter:
         self._shapers: dict = {}
         self._fonts: dict = {}
         self._images: dict = {}  # 解析後路徑 → EmbeddedImage（跨頁去重）
+        # 逐次置入的解析度紀錄（同圖多次置入各記一筆＝各自繪製尺寸不同）
+        self._image_resolutions: list = []
         self.fonts_used: set = set()
         self.notdef_warnings: list = []
         self.bleed_pt = mm_to_pt(BLEED_MM)
@@ -479,7 +486,8 @@ class _PdfPageWriter:
                 self.origin_pt + edge.x1, self.page_h_pt + self.origin_pt - edge.y1,
                 edge.dash_on_pt, edge.dash_off_pt)
 
-    def _image(self, content: _Content, entry, book_number: int) -> None:
+    def _image(self, content: _Content, entry, book_number: int,
+               page_number: int) -> None:
         """置入圖：等比縮放置中（contain）DeviceGray 影像，與 render._draw_image
         幾何同源（fit_image_rect）；top-down 下緣 → y-up 左下角。
         entry＝(解析後路徑, PIL "L" 影像, rect|None)；rect＝任意圖框（trim pt、
@@ -495,6 +503,10 @@ class _PdfPageWriter:
                                     self.master.figure)
             rect = (slot.x0, slot.y0, slot.x1, slot.y1)
         box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], emb.width, emb.height)
+        self._image_resolutions.append(ImageResolution(
+            path=Path(path).name, page=page_number,
+            px_w=emb.width, px_h=emb.height,
+            draw_w_pt=box.x1 - box.x0, draw_h_pt=box.y1 - box.y0))
         content.draw_image(
             emb.res_name, box.x1 - box.x0, box.y1 - box.y0,
             self.origin_pt + box.x0, self.page_h_pt + self.origin_pt - box.y1)
@@ -580,7 +592,7 @@ class _PdfPageWriter:
         if vertical and self.master.figure and page.placed and not slot_filled:
             self._figure(content, book_number)
         for entry in images:  # 文件序＝繪製序
-            self._image(content, entry, book_number)
+            self._image(content, entry, book_number, page.number)
         if vertical:
             self._vertical_body(content, page, book_number)
         else:
@@ -611,6 +623,8 @@ class PdfResult:
     pdfx_label: str = "PDF/X-1a:2001"  # 一致性形態標籤（X-1a 預設；X-4 選項）
     crop_marks: bool = False  # 是否含裁切標記（opt-in；MediaBox 外擴、BleedBox=trim+出血）
     license_warnings: tuple = ()  # 嵌入字型授權警告（fsType 不可嵌入／子集政策衝突）
+    image_resolutions: tuple = ()  # 逐次置入的 ImageResolution（來源像素＋繪製尺寸）
+    ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -767,4 +781,6 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         pdfx_label=profile.label,
         crop_marks=crop_marks,
         license_warnings=tuple(license_warnings(writer.fonts_used)),
+        image_resolutions=tuple(writer._image_resolutions),
+        ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),
     )

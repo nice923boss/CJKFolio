@@ -9,7 +9,7 @@
 | --- | --- |
 | `cip-copyright.doc.json` | 橫排版權頁-CIP 樣張（虛構書目）。示範 Sprint 13 的橫排版面軸（horizontal-tb）與 Sprint 14 的 CIP 細框向量原件（cip-box，兩後端 CMYK 描邊）。 |
 | `toc.doc.json` | 直排目錄樣張（虛構條目）。示範 Sprint 15 的目錄天頭水平虛線（toc-rule，灰 K57、dash [3 2]，貫穿頁寬含出血）與 Sprint 16 的條目頁碼＋引導線（page_no 直排逐位底錨對齊＋行軸垂直引導線 0.1pt K92），兩後端同源。 |
-| `wrap-demo.doc.json` | 圖文繞排樣張（自擬內文＋自擬照片）。示範 Sprint 89 的 `PlacedImage.wrap`：圖框成排除區，受影響行槽的內文避開圖的字軸範圍並留 `wrap_margin_mm` 一字格。搭配 `wrap-photo.png`＝程式生成的灰階漸層佔位圖（幾何形狀，非任何實際攝影或參考書圖像）。 |
+| `wrap-demo.doc.json` | 圖文繞排樣張（自擬內文＋自擬照片）。示範 Sprint 89 的 `PlacedImage.wrap`：圖框成排除區，受影響行槽的內文避開圖的字軸範圍並留 `wrap_margin_mm` 一字格。搭配 `wrap-photo.png`＝程式生成的灰階漸層佔位圖（幾何形狀，非任何實際攝影或參考書圖像）。此圖為幾何示範用途，360×270px 置入後實效 218ppi，故匯出時會列 Sprint 91 的解析度警告（預期行為，非缺陷；示範檔非送印稿）。 |
 
 | `punct-squeeze.doc.json` | 標點擠壓樣張（自擬內文）。同一句話排兩次：上段走 `內文-明體直排`（未擠壓），下段走 `內文-標點擠壓`（開啟）。示範 Sprint 90 的 `ParagraphStyle.punct_squeeze`＝CLREQ §3.1.6.1 相鄰約物減半形（規則 2〜6）。搭配 `punct-squeeze.template.json`＝內建模版加一款 `based_on: 內文-明體直排` 的子樣式（由 `save_template` 產出，僅 `punct_squeeze` 與 `note` 為自身宣告，其餘承基底）。 |
 

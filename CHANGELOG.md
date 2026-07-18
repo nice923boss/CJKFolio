@@ -2,6 +2,41 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.86.0（2026-07-18，Sprint 91）影像解析度 PPI 檢核（關 GAPS #29 (b)）
+
+### 新增
+
+- [實作] 影像實效解析度檢核（§9「連續調影像 300〜350ppi」）。產出側與驗證側兩條獨立路徑（Gate 4 紀律）：
+  - `cjkfolio/images.py`：常數 `PT_PER_INCH`／`MIN_IMAGE_PPI=300.0`／`PPI_TOLERANCE=0.5`；`effective_ppi`（實效 PPI＝像素數 ÷ 繪製英吋數，**影像自身 DPI metadata 不參與**）；`ImageResolution`（來源像素＋`fit_image_rect` 繪製尺寸，`ppi` 取兩軸較差者）；`meets_ppi`（兩側共用判定，門檻語意不分歧）；`resolution_warnings`。
+  - `cjkfolio/pdf_writer.py`：`_PdfPageWriter._image` 逐次置入記錄解析度（同圖多次置入各記一筆），`PdfResult.image_resolutions`／`ppi_warnings`（不沉默、不擋流程，同 Sprint 84 授權檢查慣例）。
+  - `cjkfolio/preflight.py`：`check_image_resolution`／`ImageResolutionReport`／`ImageFinding`／`image_resolution_summary`，以 PyMuPDF `get_image_info(xrefs=True)` 自已寫出 PDF 反算，不看產出側任何中間值。
+  - `cjkfolio/cli.py`：`export-pdf` 列解析度警告行（零警告時明確報達標）；`preflight` 加 `--min-ppi` 與影像分區列印。
+
+### 變更
+
+- `preflight.NOT_COVERED` 的影像解析度條目改為指向獨立檢查器（PPI 非 ISO 15930-1 條款故不入 X-1a 規則集，**規則數維持 12**；併入會使合規 PDF 被誤判不合規，並混淆標準合規與印廠品質條件）。誠實聲明不失效，測試釘死。
+- `samples/README.md`：註記 `wrap-photo.png`（幾何佔位圖 218ppi）匯出時會列解析度警告屬預期行為（示範檔非送印稿）。
+
+### 修正
+
+- 恰足門檻的送印圖被判「不足」卻顯示 300ppi 的假陽性：真書 p138 送印圖實效 299.999996ppi（PDF 座標浮點誤差 4e-6）。加 `PPI_TOLERANCE=0.5`（＝報告顯示精度，四捨五入至整數 ppi），使「顯示 300ppi 卻判不足」的自相矛盾不可能出現；四項邊界測試釘死。修正後真書複驗 85/94 達標。
+
+### 驗證
+
+- 基線 **817 passed / 0 failed**（789→817，+28：`effective_ppi` 4＋`ImageResolution.ppi` 2＋`resolution_warnings` 5＋浮點容差 4＋匯出整合 3＋獨立檢查 4＋交叉驗證與規則集守門 4＋CLI 2）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C16 全過 0 退步。繁中標點 grep 無破折號。
+- R1 證據：PLAN §9 條文（B 級）＋**真書送印稿逐張實測（A 級）**＋輸出探針實測（A 級）。
+- R5 真實素材驗收（真書《內在整理》為本機素材，紅線不入 repo；out/ 已於 .gitignore）：
+  - 以本產品檢查器解析真書送印稿 179 頁 94 次影像置入：**中位數恰 300ppi、連續調照片零不足**（§9 門檻與真實印廠實務對齊的一手佐證）；9 筆不足全屬點陣圖示類（出版社標章 186×71px 三次置入 138／206／255ppi、版權頁 3×3〜16×16px 小圖示 141ppi）。
+  - 抽真書 300ppi 印刷級照片（1757×2391px）經本產品 G-圖文版槽式置入：CLI 匯出報「實效 PPI 皆達 §9 300ppi 下限」、獨立 `check_image_resolution` 判 477ppi 達標、preflight **12/12**、render PNG 親 Read 目視（照片 contain 置中落 photo-slot、圖說直排在右）。
+  - 反例（既有 samples/wrap-demo，218ppi）：匯出列警告、preflight 影像區判不足而 X-1a 仍 12/12 通過（證 PPI 不影響合規判定）。
+- Gate 4（PyMuPDF 獨立解析，與產出側不同實作）：wrap-demo 手算 217.78ppi 與檢查器 218 吻合；測試釘死兩側同值（abs 0.5）。
+- 回歸：真書第一章 render 22 頁、禁則 0 違規、齊行擠入 10／撐開 2，與 Sprint 11／88／89／90 記錄逐項一致。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [實作]：純邏輯層＋檢查器，兩後端繪圖與 editor 畫布零改動。
+- **未涵蓋**（GAPS #51）：§9「點陣線稿 1200ppi」不驗（線稿與連續調之別屬內容語意，機器不可判）；不重採樣（影像編修非排版，設計行為）；上限 350ppi 不檢；editor preflight 面板未列影像區（承 #47）；PNG 預覽無 PPI 語意故不檢。
+
 ## v0.85.0（2026-07-18，Sprint 90）標點擠壓（Phase 4 末項，關 GAPS #45）
 
 ### 新增

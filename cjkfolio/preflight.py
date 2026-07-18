@@ -11,6 +11,7 @@ from pathlib import Path
 
 import fitz
 
+from .images import MIN_IMAGE_PPI, effective_ppi, meets_ppi
 from .pdf_writer import KNOWN_PRINT_CONDITIONS, PDFX_PROFILES
 
 RULE_IDS = (
@@ -30,7 +31,8 @@ RULE_IDS = (
 
 NOT_COVERED = (
     "疊印與 ExtGState 細節",
-    "影像解析度 PPI（Sprint 50 置入嵌原生解析度、未重採樣至 §9 300-350ppi；"
+    "影像解析度 PPI（非 ISO 15930-1 條款故不入本規則集，另由 check_image_resolution "
+    "依 §9 300ppi 下限檢查；置入嵌原生解析度、不重採樣；"
     "影像色彩空間由 color-cmyk-only 涵蓋，DeviceGray 合法、DeviceRGB 判失敗）",
     "油墨總量 TAC",
     "字型授權嵌入旗標",
@@ -285,3 +287,72 @@ def preflight_summary(report: PreflightReport) -> str:
     passed = sum(1 for f in report.findings if f.ok)
     verdict = "全數通過" if report.ok else "未通過"
     return f"{verdict}（{passed}/{len(report.findings)}）"
+
+
+# ---------- 影像解析度（§9 印廠條件，非 X-1a 標準條款故獨立規則集） ----------
+
+@dataclass(frozen=True)
+class ImageFinding:
+    """PDF 內單次影像置入的解析度判定（自 PDF 反算，不看產出側中間值）。"""
+    page: int          # PDF 頁碼（1 起算）
+    xref: int          # 影像 XObject 物件號
+    px_w: int
+    px_h: int
+    draw_w_pt: float
+    draw_h_pt: float
+    ppi: float
+    ok: bool
+
+
+@dataclass(frozen=True)
+class ImageResolutionReport:
+    path: Path
+    min_ppi: float
+    findings: tuple
+
+    @property
+    def ok(self) -> bool:
+        return all(f.ok for f in self.findings)
+
+
+def check_image_resolution(path, min_ppi: float = MIN_IMAGE_PPI) -> ImageResolutionReport:
+    """以 PyMuPDF 獨立解析 PDF，逐次影像置入反算實效 PPI（Gate 4）。
+
+    PPI 不屬 ISO 15930-1（X-1a）條款，故不入 check_pdfx 規則集：低解析度不使
+    PDF 失去 X-1a 合規性，只是印刷品質風險（§9 連續調 300〜350ppi）。同一影像
+    XObject 置入多次則各記一筆（各自繪製尺寸不同）。
+
+    v1 只驗連續調下限：§9「點陣線稿 1200ppi」需知該圖為線稿（內容語意，機器不可判），
+    不在此檢查（誠實記錄於 GAPS）。
+    """
+    p = Path(path)
+    findings = []
+    doc = fitz.open(p)
+    try:
+        for page in doc:
+            for info in page.get_image_info(xrefs=True):
+                bbox = fitz.Rect(info["bbox"])
+                px_w, px_h = int(info["width"]), int(info["height"])
+                ppi = min(effective_ppi(px_w, bbox.width),
+                          effective_ppi(px_h, bbox.height))
+                findings.append(ImageFinding(
+                    page=page.number + 1, xref=int(info.get("xref", 0)),
+                    px_w=px_w, px_h=px_h,
+                    draw_w_pt=bbox.width, draw_h_pt=bbox.height,
+                    ppi=ppi, ok=meets_ppi(ppi, min_ppi)))
+    finally:
+        doc.close()
+    return ImageResolutionReport(path=p, min_ppi=min_ppi, findings=tuple(findings))
+
+
+def image_resolution_summary(report: ImageResolutionReport) -> str:
+    """一行結論摘要（CLI 與後續面板共用，同 preflight_summary 慣例）。"""
+    if not report.findings:
+        return "無置入影像"
+    low = [f for f in report.findings if not f.ok]
+    if not low:
+        return (f"全數達標（{len(report.findings)}/{len(report.findings)} "
+                f"≥ {report.min_ppi:.0f}ppi）")
+    worst = min(f.ppi for f in low)
+    return (f"解析度不足 {len(low)}/{len(report.findings)} 張"
+            f"（最低 {worst:.0f}ppi < {report.min_ppi:.0f}ppi）")

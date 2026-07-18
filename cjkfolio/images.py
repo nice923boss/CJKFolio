@@ -5,12 +5,21 @@
 色彩空間決策、像素載入與 PDF 影像 XObject 形態；置入幾何（等比縮放置中）在
 primitives.fit_image_rect。
 
-v1 只支援灰階置入（§9「連續調影像／灰階照片走單 K」）；彩色 CMYK 影像與 300ppi
-重採樣屬 Phase 4（GAPS #18 認證級 preflight）。
+v1 只支援灰階置入（§9「連續調影像／灰階照片走單 K」）；彩色 CMYK 影像屬 Phase 4。
+解析度不足以警告呈現（Sprint 91，不重採樣、不擋流程）：重採樣會改動使用者素材的
+像素，屬影像編修而非排版，本產品只據實回報實效 PPI 供人決定換圖或縮小置入尺寸。
 """
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
+
+PT_PER_INCH = 72.0
+MIN_IMAGE_PPI = 300.0  # §9「連續調影像 300〜350ppi」的下限
+# 判定容差：PDF 座標為浮點，恰足門檻的送印稿會落在門檻下微量（參考書 p138 實測
+# 299.999996ppi，差 4e-6）。取 0.5＝報告顯示精度（四捨五入至整數 ppi），使「報告
+# 顯示 300ppi 卻判不足」的自相矛盾不可能出現。
+PPI_TOLERANCE = 0.5
 
 
 class ImageError(ValueError):
@@ -60,6 +69,57 @@ def resolve_placed_images(doc, masters_by_page: dict, base_dir=None) -> dict:
             cache[resolved] = open_grayscale(base / im.path)
         out.setdefault(im.page, []).append((resolved, cache[resolved], im.rect))
     return {page: tuple(entries) for page, entries in out.items()}
+
+
+def effective_ppi(px: int, draw_pt: float) -> float:
+    """實效解析度＝像素數 ÷ 繪製英吋數（1 英吋＝72pt）。
+
+    影像自身的 DPI metadata 不參與判定（置入後的實效值只由像素數與繪製尺寸決定）。
+    非正像素數或繪製尺寸快速失敗（系統邊界，同 fit_image_rect 慣例）。
+    """
+    if px <= 0:
+        raise ValueError(f"影像像素數須為正，得到 {px}")
+    if draw_pt <= 0:
+        raise ValueError(f"繪製尺寸須為正 pt，得到 {draw_pt}")
+    return px * PT_PER_INCH / draw_pt
+
+
+@dataclass(frozen=True)
+class ImageResolution:
+    """單張置入影像的解析度紀錄（來源像素數＋實際繪製尺寸）。"""
+    path: str          # 圖檔名（不含目錄）
+    page: int          # 版面頁號（1 起算，同 PlacedImage.page）
+    px_w: int
+    px_h: int
+    draw_w_pt: float
+    draw_h_pt: float
+
+    @property
+    def ppi(self) -> float:
+        """實效 PPI 取兩軸較差者（contain 等比縮放下兩軸同值）。"""
+        return min(effective_ppi(self.px_w, self.draw_w_pt),
+                   effective_ppi(self.px_h, self.draw_h_pt))
+
+
+def meets_ppi(ppi: float, min_ppi: float = MIN_IMAGE_PPI) -> bool:
+    """實效 PPI 是否達門檻（含 PPI_TOLERANCE 浮點容差）。
+
+    產出側 resolution_warnings 與驗證側 preflight.check_image_resolution 共用此
+    判定，兩側門檻語意不得分歧。
+    """
+    return ppi >= min_ppi - PPI_TOLERANCE
+
+
+def resolution_warnings(resolutions, min_ppi: float = MIN_IMAGE_PPI) -> list:
+    """彙整實效 PPI 低於門檻的影像警告（達標者不列）。
+
+    同字型授權檢查慣例（Sprint 84）：不沉默、不擋流程；印廠是否接受由使用者決定。
+    """
+    return [
+        f"影像解析度：頁 {r.page} {r.path} 實效 {r.ppi:.0f}ppi 低於 {min_ppi:.0f}ppi"
+        f"（§9 連續調影像 300〜350ppi；換高解析度圖或縮小置入尺寸）"
+        for r in resolutions if not meets_ppi(r.ppi, min_ppi)
+    ]
 
 
 class EmbeddedImage:
