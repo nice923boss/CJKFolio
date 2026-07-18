@@ -214,6 +214,11 @@ def cmd_export_pdf(args) -> int:
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:
         print(f"字型警告：{warning}")
+    if result.license_warnings:
+        for warning in result.license_warnings:
+            print(warning)
+    else:
+        print("字型授權：嵌入字型皆可合法嵌入子集（fsType 檢查）")
     for emb in result.embedded_fonts:
         print(f"嵌入字型：{emb['base']}（{emb['glyphs']} 字形，子集 {emb['bytes']:,} bytes）")
     return 0

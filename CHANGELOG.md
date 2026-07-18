@@ -2,6 +2,30 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.79.0（2026-07-18，Sprint 84）字型嵌入授權檢查（Phase 4 續項）
+
+### 新增
+
+- [實作] 字型嵌入授權檢查（§6「字型嵌入子集化與授權檢查」＋GAPS #2；§9「匯出時做授權檢查提示」機器實作）：
+  - `cjkfolio/font_license.py`：以 OpenType OS/2 `fsType` 嵌入權限位元為機器證據（A 級，讀實際字型位元組）。`embedding_permission` 判 Restricted License（bit 1）與 Bitmap Only（bit 9）不可嵌入輪廓、No Subsetting（bit 8）與本產品一律子集政策衝突（無 OS/2 表視為 fsType=0）。`license_warnings` 去重排序彙整不可嵌入／衝突字型警告，可嵌入者不列。
+  - `cjkfolio/pdf_writer.py`：`export_pdf` 於收集 `writer.fonts_used` 後跑檢查，加 `PdfResult.license_warnings`（不沉默、不擋流程，同 font_warnings 慣例）。
+  - CLI `export-pdf` 列印授權檢查行（零警告時明確報「皆可合法嵌入子集」）。
+
+### 驗證
+
+- 基線 **688 passed / 0 failed**（680→688，+8：純函式 embedding_permission 4＋license_warnings 3＋匯出整合 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C15 0 退步。繁中標點 grep 無破折號。
+- R5 真實素材驗收：內建六款字型（思源宋／黑、辰宇、粉圓）fsType 皆＝0x0000（Installable）→ CLI 匯出零授權警告親驗；受限字型路徑以 fontTools 改 fsType 再存獨立驗證（Restricted 0x0002／Bitmap 0x0200 判不可嵌入、No-subset 0x0100 判政策衝突，3 警告排序正確），不散布任何商用字型（紅線）。
+
+### 誠實範圍（honest-planning R1／R2／R3／R5）
+
+- [實作]：fsType 機器嵌入權限檢查，pytest 基線驗＋內建字型實測＋受限字型 fixture 獨立驗證。
+- R2：無新外部依賴（復用既有 fontTools TTFont），既有能力擴充無需新 spike。R1 證據＝OpenType OS/2 fsType 規格（B 級）＋fsType 實測（A 級）。
+- 誠實差異（GAPS #43）：v1 只驗 fsType 機器位元＝fsType 允許嵌入不等於商用授權允許散布；名義授權分類（§8 表商用字型名稱比對）與匯出前攔阻選項未做，使用者用商用字型仍自負授權責任。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項（依 §6 清單：目錄自動生成、圖文繞排、注音 ruby、縱中橫精修、preflight 面板等，擇一 TDD）。
+
 ## v0.78.0（2026-07-18，Sprint 83）裁切標記（trim marks，Phase 4 續項）
 
 ### 新增

@@ -42,6 +42,7 @@ from .placement import (
     tcy_placements,
     ttb_char_placements,
 )
+from .font_license import license_warnings
 from .primitives import (
     cip_frame_rect,
     crop_mark_lines,
@@ -604,6 +605,7 @@ class PdfResult:
     images_placed: int = 0  # 嵌入的 DeviceGray 影像 XObject 數（同路徑去重；灰階單 K）
     pdfx_label: str = "PDF/X-1a:2001"  # 一致性形態標籤（X-1a 預設；X-4 選項）
     crop_marks: bool = False  # 是否含裁切標記（opt-in；MediaBox 外擴、BleedBox=trim+出血）
+    license_warnings: tuple = ()  # 嵌入字型授權警告（fsType 不可嵌入／子集政策衝突）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -759,4 +761,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         images_placed=len(writer._images),
         pdfx_label=profile.label,
         crop_marks=crop_marks,
+        license_warnings=tuple(license_warnings(writer.fonts_used)),
     )
