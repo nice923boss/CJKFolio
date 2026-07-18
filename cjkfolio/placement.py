@@ -12,6 +12,26 @@ from dataclasses import dataclass
 ASCENT_RATIO = 0.88
 DESCENT_RATIO = 0.32
 TCY_SIZE_RATIO = 0.92  # 縱中橫縮字比例（同 render._draw_tcy）
+RUBY_SIZE_RATIO = 0.5  # 注音／ruby 相對 base 字級（CLREQ 慣例：約半形）
+
+
+def ruby_axis_and_top(base_axis_x_pt: float, cell_top_pt: float,
+                      base_advance_pt: float, base_size_pt: float, ruby_len: int,
+                      ratio: float = RUBY_SIZE_RATIO):
+    """直排 mono-ruby 幾何（純函式，兩後端共用）：ruby 置 base 右側鄰欄、垂直置中。
+
+    回傳 (ruby_axis_x_pt, ruby_top_pt, ruby_size_pt)：
+    - ruby_axis_x：base 行軸 ＋ base 字框右半 ＋ ruby 字框左半（緊鄰 base 右側，落欄間槽溝）。
+    - ruby_top：base 字槽中心 − ruby 串總高一半（ruby 串以 ttb 自 top 起排，故垂直置中於 base）。
+    - ruby_size：base 字級 × ratio。
+
+    直排 vertical-rl 中 ＋x 為頁面右向（注音置字右側，CLREQ）；v1 不做 ruby 驅動的
+    base 間距調整（ruby 較長時溢出欄溝，見 GAPS）。
+    """
+    ruby_size = base_size_pt * ratio
+    ruby_axis_x = base_axis_x_pt + base_size_pt / 2 + ruby_size / 2
+    ruby_top = cell_top_pt + base_advance_pt / 2 - ruby_len * ruby_size / 2
+    return ruby_axis_x, ruby_top, ruby_size
 
 
 @dataclass(frozen=True)

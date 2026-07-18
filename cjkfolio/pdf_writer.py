@@ -38,6 +38,7 @@ from .placement import (
     horizontal_cell_advance_pt,
     horizontal_placements,
     rotated_latin_placements,
+    ruby_axis_and_top,
     run_width_pt,
     tcy_placements,
     ttb_char_placements,
@@ -397,6 +398,10 @@ class _PdfPageWriter:
                     use_key, use_shaper, use_size = key, shaper, style.size_pt
                 if cell.kind == "cjk":
                     pls = ttb_char_placements(use_shaper, cell.text, axis, cell_top, use_size)
+                    if cell.ruby:  # 注音／ruby：字右側鄰欄、垂直置中（同 render 同源幾何、同字型與填色）
+                        rx, rtop, rsize = ruby_axis_and_top(
+                            axis, cell_top, adv, use_size, len(cell.ruby))
+                        pls = pls + ttb_char_placements(use_shaper, cell.ruby, rx, rtop, rsize)
                 elif cell.kind == "tcy":
                     pls = tcy_placements(use_shaper, cell.text, axis, cell_top, use_size, adv)
                 elif cell.kind == "latin":

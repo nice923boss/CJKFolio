@@ -14,7 +14,7 @@
   （非段末行行首行尾雙錨定，字距均勻縮放）。
 """
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 from typing import Optional
 
@@ -49,6 +49,8 @@ class Cell:
     char_style: Optional[str] = None  # 字元樣式名（run 模型；None＝依段落樣式）
     span: Optional[tuple] = None  # 文件 provenance：來源 text 半開區間 (start, end)。
     # 座標系＝tokenize 輸入 text；經 offsets 映射後＝文件段 text（normalize 前）座標。
+    ruby: Optional[str] = None  # 注音／ruby 標注（Sprint 86）：直排繪於字右側置中；
+    # 僅單字 base run 的 cjk cell 帶值（不影響 width／斷行禁則）。
 
 
 @dataclass(frozen=True)
@@ -163,10 +165,15 @@ def cells_from_runs(runs, vertical: bool = True) -> list:
     """
     cells: list = []
     base = 0
-    for text, char_style in runs:
+    for run in runs:  # run 為 (text, char_style) 或 (text, char_style, ruby)（相容）
+        text, char_style = run[0], run[1]
+        ruby = run[2] if len(run) > 2 else None
         norm, offs = normalize_with_offsets(text)
-        cells.extend(tokenize(norm, char_style, vertical,
-                              offsets=tuple(base + o for o in offs)))
+        produced = tokenize(norm, char_style, vertical,
+                            offsets=tuple(base + o for o in offs))
+        if ruby and produced:  # 單字 base（document 已守門）→ ruby 掛該 cell
+            produced = [replace(produced[0], ruby=ruby), *produced[1:]]
+        cells.extend(produced)
         base += len(text)
     return cells
 

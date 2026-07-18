@@ -2,6 +2,30 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.81.0（2026-07-18，Sprint 86）注音 ruby（Phase 4 續項）
+
+### 新增
+
+- [實作] 注音 ruby（§6「注音 ruby」；直排 mono-ruby 標注層，注音典型形態＝每漢字右側一組注音）：
+  - `cjkfolio/placement.py`：新增純函式 `ruby_axis_and_top`（ruby 置 base 右側鄰欄＋垂直置中於字槽，兩後端共用幾何）＋常數 `RUBY_SIZE_RATIO=0.5`。
+  - `cjkfolio/document.py`：`Run` 相容擴充 `ruby`（@2，非空字串、base text 須恰單一字守門＝v1 mono-ruby）；序列化帶 ruby 者不用 text 捷徑。
+  - `cjkfolio/engine.py`：`Cell` 加 `ruby`；`cells_from_runs` 相容 2／3 元組、ruby 掛單字 cjk cell（不影響 width／斷行禁則）。`cjkfolio/layout.py` runs 傳 ruby。
+  - `cjkfolio/render.py`／`cjkfolio/pdf_writer.py`：直排 body 於 cjk cell 後復用 `_draw_ttb_char`／`ttb_char_placements`（多字 ttb 串）繪 ruby，同字型同填色。ruby 為標注層，base 字流與整數槽寬模型不變。
+
+### 驗證
+
+- 基線 **711 passed / 0 failed**（702→711，+9：幾何純函式 2＋解析序列化驗證 4＋engine cell 1＋端到端 PDF／PNG 2）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C15 0 退步。繁中標點 grep 無破折號。
+- R5 真實素材驗收（真書《內在整理》無注音故自擬 samples/ruby-annotation.doc.json，不宣稱真書驗證）：CLI export-pdf → 注音 30 字形進子集、0 缺字警告、preflight 12/12、base「整理生活」＋注音「ㄓㄥˇㄌㄧˇㄕㄥㄏㄨㄛˊ」PyMuPDF 皆可抽取；CLI render PNG 親 Read 目視：直排右起首欄四字注音繪於字右側垂直置中、其餘句子無 ruby（base 流不變）。
+
+### 誠實範圍（honest-planning R1／R2／R5）
+
+- [實作]：直排 mono-ruby 標注層，pytest 基線＋端到端 PDF／PNG 驗證。R2：無新外部依賴（復用既有塑形與繪字），無需新 spike。R1 證據＝W3C CLREQ 直排 ruby 置右（B 級）＋思源宋體注音字形實測（A 級）＋渲染幾何實測（A 級）。
+- 誠實差異（GAPS #46）：v1 只 mono 單字 base（無 group／jukugo／拼音詞 ruby）；直排 only（無橫排 ruby）；無 ruby 驅動 base 間距調整（ruby 較長溢欄溝、緊行距可能與鄰欄重疊）；無注音符號組字精修（聲調位置依字型塑形）；ruby 同字型同填色。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項（依 §6 清單：圖文繞排、縱中橫精修、preflight 面板；約物擠壓微調待 R2 spike＋R5 素材，見 GAPS #45）。
+
 ## v0.80.0（2026-07-18，Sprint 85）目錄自動生成（Phase 4 續項）
 
 ### 新增

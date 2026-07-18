@@ -26,6 +26,8 @@ class DocumentError(ValueError):
 class Run:
     text: str
     char_style: Optional[str] = None
+    ruby: Optional[str] = None  # 注音／ruby 標注（Sprint 86，@2 相容擴充）：非空字串，
+    # 且 base text 須恰為單一字（v1 mono-ruby，注音典型形態）；直排繪於字右側置中。
 
 
 @dataclass(frozen=True)
@@ -90,7 +92,16 @@ def _runs_from_list(raw, idx: int) -> tuple:
         char_style = r.get("char_style")
         if char_style is not None and (not isinstance(char_style, str) or not char_style):
             raise DocumentError(f"paragraphs[{idx}].runs[{j}] char_style 需為非空字串")
-        runs.append(Run(r["text"], char_style))
+        ruby = r.get("ruby")
+        if ruby is not None:
+            if not isinstance(ruby, str) or not ruby:
+                raise DocumentError(f"paragraphs[{idx}].runs[{j}] ruby 需為非空字串")
+            if len(r["text"]) != 1:
+                raise DocumentError(
+                    f"paragraphs[{idx}].runs[{j}] 帶 ruby 的 run base text 須恰為單一字"
+                    f"（v1 mono-ruby），得到 {r['text']!r}"
+                )
+        runs.append(Run(r["text"], char_style, ruby))
     if not runs:
         raise DocumentError(f"paragraphs[{idx}].runs 不得為空陣列")
     return tuple(runs)
@@ -251,11 +262,13 @@ class Document:
 
 
 def _paragraph_to_dict(p: Paragraph) -> dict:
-    if len(p.runs) == 1 and p.runs[0].char_style is None:
+    if len(p.runs) == 1 and p.runs[0].char_style is None and p.runs[0].ruby is None:
         out = {"text": p.text, "style": p.style}
     else:
         runs = [
-            {"text": r.text, **({"char_style": r.char_style} if r.char_style else {})}
+            {"text": r.text,
+             **({"char_style": r.char_style} if r.char_style else {}),
+             **({"ruby": r.ruby} if r.ruby else {})}
             for r in p.runs
         ]
         out = {"style": p.style, "runs": runs}

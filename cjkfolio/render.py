@@ -22,7 +22,7 @@ from .layout import (
     style_advance_pt,
     style_line_slots,
 )
-from .placement import ASCENT_RATIO, horizontal_cell_advance_pt
+from .placement import ASCENT_RATIO, horizontal_cell_advance_pt, ruby_axis_and_top
 from .primitives import (
     StrokeLine,
     cip_frame_rect,
@@ -347,6 +347,11 @@ class PageRenderer:
                 ink = _ink_gray(resolve_text_cmyk(template, cstyle, style))
                 if cell.kind == "cjk":
                     missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale, ink)
+                    if cell.ruby:  # 注音／ruby：字右側鄰欄、垂直置中（同源幾何）
+                        rx, rtop, rsize = ruby_axis_and_top(
+                            axis, cell_top, adv, use_size, len(cell.ruby))
+                        missing = missing + _draw_ttb_char(
+                            img, use_shaper, cell.ruby, rx, rtop, rsize, self.scale, ink)
                 elif cell.kind == "tcy":
                     missing = _draw_tcy(img, use_shaper, cell.text, axis, cell_top, use_size, adv, self.scale, ink)
                 elif cell.kind == "latin":

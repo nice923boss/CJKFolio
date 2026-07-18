@@ -1,0 +1,18 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "注音標注樣張",
+  "template": "neizai-zhengli",
+  "master": "A-內文版",
+  "language": "zh-TW"
+ },
+ "paragraphs": [
+  {"style": "內文-明體直排", "runs": [
+    {"text": "整", "ruby": "ㄓㄥˇ"},
+    {"text": "理", "ruby": "ㄌㄧˇ"},
+    {"text": "生", "ruby": "ㄕㄥ"},
+    {"text": "活", "ruby": "ㄏㄨㄛˊ"},
+    {"text": "，把每一件物品放回它該在的位置。"}
+  ]}
+ ]
+}
