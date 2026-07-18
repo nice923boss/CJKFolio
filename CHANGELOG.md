@@ -2,6 +2,43 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.94.0（2026-07-18，Sprint 100）preflight 背景執行緒與快取（關 GAPS #47 (d)、#56 甲(1)）
+
+### 問題
+
+`_run_preflight` 過去在 GUI 執行緒上做「匯出臨時 PDF → 三項檢查」，實測**單一樣張就凍住視窗約 816 ms**，文件愈大愈久；且每次觸發都重跑一次完整匯出，即使文件一個字都沒改。
+
+### 新增
+
+- [實作] `editor/preflight_core.py`（Qt 無關，故背景執行緒與 pytest 都能跑）：
+  - `run_preflight_checks(doc, template, image_base_dir)`：匯出臨時 PDF/X-1a → `check_pdfx`／`check_image_resolution`／`check_ink_coverage`，回 `PreflightResults` 三份報告。這是把原本的判定層原樣搬出，**判定邏輯仍全在 `cjkfolio.preflight`**（已 pytest 驗），本層只管執行順序。
+  - `preflight_cache_key(doc, template, image_base_dir)`：sha256 指紋，涵蓋文件內容、模版、影像基準目錄、每張置入圖檔的大小與修改時間。快取的正確性全繫於此鍵，故逐項以測試釘死。
+- [實作] `editor/preflight_actions.py` 改為背景執行：`PreflightThread`（QThread 子類，跑不可變的 doc／template 快照）＋快取命中路徑＋重入守門＋關窗前收執行緒。
+
+### 行為
+
+- 首次檢查：statusBar 顯示「preflight 檢查中（背景執行，可繼續編輯）…」，**視窗不凍**，完成後才開面板。
+- 文件未變的二次檢查：直接沿用上次報告，statusBar 據實標「沿用上次結果（文件未變）」，**實測 816 ms 降到 2.6 ms**。
+- 文件在檢查期間被改動：報告照常呈現，但 statusBar 標「本報告為送檢當下的快照，其後的編輯未納入」，不假裝是最新結論。
+- 檢查進行中再次觸發：提示「preflight 檢查進行中，請稍候…」，不起第二輪。
+
+### 驗證
+
+- 基線 **884 → 891 passed（+7）/ 0 failed**、typecheck EXIT_CODE=0、smoke C1〜C17 全過（0 退步）。
+- 新增 `tests/test_preflight_cache.py` 7 測試：快取鍵決定性、文件改一字換鍵、模版改字級換鍵、基準目錄換鍵、置入圖檔位元組改變換鍵、缺圖仍算得出鍵、判定層回三份報告且 X-1a 12/12。
+- smoke 擴 C17：以**包住真檢查的探針**記錄實際執行緒 id 與呼叫次數，證明檢查跑在非 GUI 執行緒（tid 相異）、快取命中 0 次重跑、插字後重跑（2 次）、執行中再觸發不起第二輪。
+- **Gate 4 獨立驗證**（與 C17 不同方法）：主執行緒掛 20ms 心跳計時器，檢查期間心跳跳了 **40 次**（若凍住則為 0），檢查耗時 815.7 ms、X-1a 12/12、二次呼叫 2.6 ms 回同一份報告物件。
+
+### 未做
+
+- **快取只留最近一次**（單筆鍵值）。undo 回到上一版後再檢查會重跑，非命中。依真實用例再議，記於 GAPS #47 (f)。
+- **快取鍵不含字型檔案指紋**。會話中途在磁碟換掉字型檔會讓快取失效判斷失準，v1 以重啟編輯器處理，記於 GAPS #47 (f)。
+- 匯出仍是每輪重做一份完整 PDF（未做增量匯出或分章快取）。
+
+### 待 Owner
+
+- 真視窗手感（背景檢查期間繼續編輯的實際順暢度、statusBar 三種聲明的可讀性）待 Owner 實測，離屏只能驗執行緒與快取的行為（#19 批次）。
+
 ## v0.93.0（2026-07-18，Sprint 98）開源授權定案 AGPL-3.0-or-later（關 GAPS #55）
 
 ### 結論先講：授權是被相依鎖死的，不是偏好

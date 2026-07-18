@@ -4,51 +4,139 @@
 Sprint 94 起同一份臨時 PDF 也跑影像解析度與油墨總量兩項 §9 印廠條件檢查
 （非 X-1a 條款、不影響 X 合規結論，見 preflight_panel 說明）。
 
+Sprint 100 起改為背景執行緒＋快取（關 GAPS #47 (d)）：
+
+- 判定層全在 editor.preflight_core（Qt 無關、pytest 已驗），本檔只負責執行緒
+  調度與呈現，不重算也不修復。
+- 執行緒起跑時取的是文件與模版的當下快照（兩者皆 frozen dataclass，worker 讀
+  不到後續編輯），故報告永遠對應「送檢當下」的版本；期間文件被改動時於
+  statusBar 據實聲明是快照，不假裝是最新結論。
+- 快取只留最近一次（鍵見 preflight_core.preflight_cache_key），鍵一致才沿用。
+
 依賴 EditorWindow 提供的 self.doc／self.template／self._doc_path／self.statusBar()。
 """
-import tempfile
-from pathlib import Path
+from PySide6.QtCore import QCoreApplication, QThread, Signal
 
-from cjkfolio.pdf_writer import export_pdf
 from cjkfolio.preflight import (
-    check_image_resolution,
-    check_ink_coverage,
-    check_pdfx,
     image_resolution_summary,
     ink_coverage_summary,
     preflight_summary,
 )
+from editor.preflight_core import preflight_cache_key, run_preflight_checks
 from editor.preflight_panel import PreflightDialog
+
+
+class PreflightThread(QThread):
+    """在 GUI 執行緒之外跑匯出與三項檢查（doc／template 為不可變快照）。"""
+
+    done = Signal(object)    # PreflightResults
+    failed = Signal(str)
+
+    def __init__(self, doc, template, image_base_dir, parent=None) -> None:
+        super().__init__(parent)
+        self._doc = doc
+        self._template = template
+        self._image_base_dir = image_base_dir
+
+    def run(self) -> None:
+        try:
+            results = run_preflight_checks(self._doc, self._template,
+                                           self._image_base_dir)
+        except Exception as e:  # noqa: BLE001（匯出／檢查任何失敗都回主執行緒提示）
+            self.failed.emit(str(e))
+        else:
+            self.done.emit(results)
 
 
 class PreflightActionsMixin:
     """PDF/X preflight 面板入口（§6 Phase 4「preflight 面板」）。"""
 
-    def _run_preflight(self):
-        """把當前文件匯出臨時 PDF/X-1a → 三項機械檢查 → 結果面板。
+    # 類別層預設值＝實例未設定前的初值（不必動 EditorWindow.__init__）
+    _preflight_thread = None
+    _preflight_key = None          # 快取鍵（送檢當下的文件指紋）
+    _preflight_results = None      # 快取的三份報告
+    _preflight_pending_key = None  # 執行中那一輪的鍵
 
-        v1 只驗預設 X-1a（無需 ICC）；X-4 需自備輸出 ICC，editor 尚無 ICC 選取（後續）。
-        匯出／檢查失敗（如缺字型）以 statusBar 提示不 crash。回傳 X-1a report
-        （statusBar 與退出語意依 X-1a，印廠條件兩項只警示）供離屏驗證；
-        影像與墨量報告掛於面板（dlg.image_report／dlg.ink_report）。
+    def _run_preflight(self):
+        """啟動 preflight：快取命中即刻開面板，否則交背景執行緒。
+
+        回傳值：快取命中回 X-1a report（同 Sprint 87 語意）；改由背景跑時回 None，
+        報告於完成後經 _preflight_show 呈現（離屏驗證用 _preflight_wait 等待）。
         """
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                pdf_path = Path(td) / "preflight.pdf"
-                export_pdf(self.doc, self.template, pdf_path,
-                           image_base_dir=self._doc_path.parent)
-                report = check_pdfx(str(pdf_path), profile="x-1a")
-                image_report = check_image_resolution(str(pdf_path))
-                ink_report = check_ink_coverage(str(pdf_path))
-        except Exception as e:  # noqa: BLE001（匯出／檢查任何失敗都提示不中斷編輯）
-            self.statusBar().showMessage(f"preflight 匯出／檢查失敗：{e}")
+        if self._preflight_thread is not None:
+            self.statusBar().showMessage("preflight 檢查進行中，請稍候…")
             return None
+        key = preflight_cache_key(self.doc, self.template, self._doc_path.parent)
+        if key == self._preflight_key and self._preflight_results is not None:
+            self._preflight_show(self._preflight_results, cached=True)
+            return self._preflight_results.report
+
+        thread = PreflightThread(self.doc, self.template, self._doc_path.parent,
+                                 parent=self)
+        thread.done.connect(self._on_preflight_done)
+        thread.failed.connect(self._on_preflight_failed)
+        self._preflight_thread = thread
+        self._preflight_pending_key = key
+        self.statusBar().showMessage("preflight 檢查中（背景執行，可繼續編輯）…")
+        thread.start()
+        return None
+
+    def _preflight_wait(self, timeout_ms: int = 180000):
+        """等背景 preflight 跑完並派送結果（離屏驗證與測試用；真視窗由事件圈派送）。
+
+        回傳最近一份 X-1a report（逾時或失敗回 None）。
+        """
+        thread = self._preflight_thread
+        if thread is not None:
+            thread.wait(timeout_ms)
+            QCoreApplication.processEvents()  # 派送 worker 送回的佇列訊號
+        return self._preflight_results.report if self._preflight_results else None
+
+    def _on_preflight_done(self, results) -> None:
+        self._clear_preflight_thread()
+        self._preflight_key = self._preflight_pending_key
+        self._preflight_results = results
+        self._preflight_pending_key = None
+        self._preflight_show(results, cached=False)
+
+    def _on_preflight_failed(self, message: str) -> None:
+        self._clear_preflight_thread()
+        self._preflight_pending_key = None
+        self.statusBar().showMessage(f"preflight 匯出／檢查失敗：{message}")
+
+    def _clear_preflight_thread(self) -> None:
+        thread = self._preflight_thread
+        self._preflight_thread = None
+        if thread is not None:
+            thread.wait()
+            thread.deleteLater()
+
+    def _preflight_show(self, results, cached: bool) -> None:
+        """statusBar 摘要（印廠條件未達標時附註）＋結果面板。"""
         notes = []
-        if not image_report.ok:
-            notes.append(f"影像解析度：{image_resolution_summary(image_report)}")
-        if not ink_report.ok:
-            notes.append(f"油墨總量：{ink_coverage_summary(ink_report)}")
-        tail = ("；" + "；".join(notes)) if notes else ""
-        self.statusBar().showMessage(f"preflight：{preflight_summary(report)}{tail}")
-        PreflightDialog(report, image_report, ink_report, self).exec()
-        return report
+        if not results.image_report.ok:
+            notes.append(f"影像解析度：{image_resolution_summary(results.image_report)}")
+        if not results.ink_report.ok:
+            notes.append(f"油墨總量：{ink_coverage_summary(results.ink_report)}")
+        marks = list(notes)
+        if cached:
+            marks.append("沿用上次結果（文件未變）")
+        elif self._preflight_stale():
+            marks.append("本報告為送檢當下的快照，其後的編輯未納入")
+        tail = ("；" + "；".join(marks)) if marks else ""
+        self.statusBar().showMessage(
+            f"preflight：{preflight_summary(results.report)}{tail}")
+        PreflightDialog(results.report, results.image_report,
+                        results.ink_report, self).exec()
+
+    def _preflight_stale(self) -> bool:
+        """檢查期間文件是否已被改動（改動則報告只代表送檢當下）。"""
+        if self._preflight_key is None:
+            return False
+        return preflight_cache_key(
+            self.doc, self.template, self._doc_path.parent) != self._preflight_key
+
+    def closeEvent(self, event) -> None:
+        """關窗前收掉背景執行緒（避免 QThread 執行中被銷毀）。"""
+        self._clear_preflight_thread()
+        super().closeEvent(event)

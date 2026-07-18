@@ -18,6 +18,8 @@
   C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
   C16 preflight 面板（Sprint 87；Sprint 94 三分區）：匯出臨時 PDF → check_pdfx
      ＋check_image_resolution＋check_ink_coverage → 面板三分頁列規則與逐筆判定＋三行摘要
+  C17 preflight 背景執行緒與快取（Sprint 100）：檢查跑於非 GUI 執行緒、同文件二次
+     呼叫走快取（不重新匯出）、文件改動即失效重跑、執行中再觸發不重入
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -612,13 +614,14 @@ def main() -> int:
     from editor.preflight_panel import PreflightDialog
 
     def _run_panel(doc_path):
-        """跑一次 _run_preflight（面板不真開），回傳 (window, report, dialog)。"""
+        """跑一次 preflight 並等背景完成（面板不真開），回傳 (window, report, dialog)。"""
         win = EditorWindow(str(doc_path))
         cap = {}
         orig = PreflightDialog.exec
         PreflightDialog.exec = lambda dlg: cap.setdefault("dlg", dlg) or 0
         try:
-            rep = win._run_preflight()
+            win._run_preflight()
+            rep = win._preflight_wait()
         finally:
             PreflightDialog.exec = orig
         return win, rep, cap.get("dlg")
@@ -667,11 +670,83 @@ def main() -> int:
         "而 X-1a 仍 12/12（statusBar 附警示）；合成不過報告三區各列不過／不足／超標與未判讀"
     )
 
+    # C17 preflight 背景執行緒與快取（Sprint 100，關 GAPS #47 (d)）
+    import threading
+
+    from editor import preflight_actions as _pa
+
+    main_tid = threading.get_ident()
+    calls = []
+    real_checks = _pa.run_preflight_checks
+
+    def _spy(*args, **kwargs):
+        """包住真檢查（非替身）：記錄實際執行的執行緒與呼叫次數。"""
+        calls.append(threading.get_ident())
+        return real_checks(*args, **kwargs)
+
+    orig_exec17 = PreflightDialog.exec
+    PreflightDialog.exec = lambda dlg: 0
+    _pa.run_preflight_checks = _spy
+    try:
+        win17 = EditorWindow(str(DOC))
+        assert win17._run_preflight() is None, "首次應交背景執行緒（不同步回報告）"
+        assert "背景執行" in win17.statusBar().currentMessage(), "statusBar 未報背景執行中"
+        rep17 = win17._preflight_wait()
+        assert rep17 is not None and rep17.ok and len(rep17.findings) == 12, \
+            "背景跑出的 X-1a 報告不符（應 12/12）"
+        assert len(calls) == 1 and calls[0] != main_tid, \
+            f"檢查未跑在非 GUI 執行緒（calls={calls}）"
+        # 文件未變 → 二次呼叫走快取：同步回同一份報告，且不再跑一次檢查
+        rep17b = win17._run_preflight()
+        assert rep17b is rep17, "快取未命中（未回同一份報告物件）"
+        assert len(calls) == 1, f"快取命中卻又跑了檢查（calls={len(calls)}）"
+        assert "沿用上次結果" in win17.statusBar().currentMessage(), "快取命中未據實聲明"
+        # 文件改動 → 快取失效重跑
+        win17.session.insert(DocCursor(0, 0), "快取失效測試")
+        assert win17._run_preflight() is None, "文件改動後應重跑而非用快取"
+        assert win17._preflight_wait() is not None, "重跑未取得報告"
+        assert len(calls) == 2, f"文件改動後未重跑檢查（calls={len(calls)}）"
+    finally:
+        _pa.run_preflight_checks = real_checks
+        PreflightDialog.exec = orig_exec17
+
+    # 執行中再觸發不重入（以可控阻塞替身固定時序，判定層本身已由上段真檢查驗過）
+    gate = threading.Event()
+    entered = threading.Event()
+    stub_calls = []
+
+    def _blocking(*args, **kwargs):
+        stub_calls.append(1)
+        entered.set()
+        gate.wait(30)
+        return real_checks(*args, **kwargs)
+
+    _pa.run_preflight_checks = _blocking
+    PreflightDialog.exec = lambda dlg: 0
+    try:
+        win17b = EditorWindow(str(DOC))
+        win17b._run_preflight()
+        assert entered.wait(30), "背景執行緒未進入檢查"
+        assert win17b._run_preflight() is None, "執行中再觸發不應回報告"
+        assert "進行中" in win17b.statusBar().currentMessage(), "重入未提示進行中"
+        assert len(stub_calls) == 1, f"重入起了第二輪檢查（{len(stub_calls)}）"
+    finally:
+        gate.set()
+        win17b._preflight_wait()
+        _pa.run_preflight_checks = real_checks
+        PreflightDialog.exec = orig_exec17
+    print(
+        "C17 preflight 背景執行緒與快取：檢查跑於非 GUI 執行緒（tid 相異）→ 同文件"
+        "二次呼叫走快取（0 次重跑、statusBar 聲明沿用）→ 插字後快取失效重跑（2 次）"
+        "→ 執行中再觸發不重入（提示進行中、不起第二輪）"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
         "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
-        "＋preflight 面板（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
+        "＋preflight 面板＋preflight 背景執行緒與快取"
+        "（IME 直排組字、視覺對位與手感待 Owner 真視窗）"
     )
     return 0
 
