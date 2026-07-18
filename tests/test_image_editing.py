@@ -18,6 +18,7 @@ from cjkfolio.image_editing import (
     remove_image,
     resize_image,
     resize_rect,
+    set_image_wrap,
 )
 from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
@@ -243,8 +244,104 @@ def test_session_image_edits_are_redoable():
 
 
 def test_session_image_edit_does_not_disturb_text_layout():
-    """置入 rect 圖不改流排（wrap 由 layout_with_wrap 於渲染側處理，session 不繞排）。"""
+    """未開繞排的 rect 圖不改流排（wrap=False 為預設＝圖疊於文上，回歸鐵律）。"""
     session = EditSession(_doc(), load_template(TEMPLATE_PATH))
     before = len(session.layout.pages)
     session.place_image("photo.png", 1, (40.0, 100.0, 160.0, 220.0))
     assert len(session.layout.pages) == before
+
+
+# --- 繞排參數（Sprint 103，GAPS #49 (e)） ---------------------------------
+
+# 真書 PDF 53 R 半頁一手量測的圖框（tools/measure_wrap_pages.py，見 test_wrap.py）：
+# 跨 A-內文版數欄，故開繞排後受影響欄的行長變化在版面上可觀測。
+WRAP_RECT = (76.64, 289.01, 195.66, 467.54)
+
+
+def _wrap_doc() -> Document:
+    """長段落＋跨欄置入圖：繞排開關的效果可由逐欄行長觀測。"""
+    return Document(
+        title="繞排參數測試",
+        template="neizai-zhengli",
+        master="A-內文版",
+        paragraphs=(Paragraph(text="整理一個房間先要決定的不是收納盒。" * 40,
+                              style="內文-明體直排"),),
+        images=(PlacedImage(path="photo.png", page=1, rect=WRAP_RECT),),
+    )
+
+
+def _caps(session) -> dict:
+    """首頁逐欄行長 {slot: cap}（繞排把受影響欄的行裁短）。"""
+    return {pl.slot: pl.line.cap for pl in session.layout.pages[0].placed}
+
+
+def test_set_image_wrap_turns_wrap_on_with_margin():
+    doc = set_image_wrap(_doc([PlacedImage(path="p.png", page=1,
+                                           rect=(40.0, 100.0, 160.0, 220.0))]),
+                         0, wrap=True, margin_mm=2.5)
+    assert doc.images[0].wrap is True
+    assert doc.images[0].wrap_margin_mm == 2.5
+    assert doc.images[0].rect == (40.0, 100.0, 160.0, 220.0)  # 其餘欄位原樣
+
+
+def test_set_image_wrap_omitted_fields_keep_current_value():
+    """只改間隙不動開關（反之亦然）：未指定的欄位保持現值。"""
+    base = _doc([PlacedImage(path="p.png", page=1, rect=(40.0, 100.0, 160.0, 220.0),
+                             wrap=True, wrap_margin_mm=1.0)])
+    assert set_image_wrap(base, 0, margin_mm=3.0).images[0].wrap is True
+    assert set_image_wrap(base, 0, wrap=False).images[0].wrap_margin_mm == 1.0
+
+
+def test_set_image_wrap_no_op_returns_same_document():
+    """等值變更回原文件（session 據此判 no-op，不塞一步空 undo）。"""
+    base = _doc([PlacedImage(path="p.png", page=1, rect=(40.0, 100.0, 160.0, 220.0),
+                             wrap=True, wrap_margin_mm=2.0)])
+    assert set_image_wrap(base, 0, wrap=True, margin_mm=2.0) is base
+
+
+def test_set_image_wrap_rejects_slot_image():
+    """槽式圖（主版 figure 保留區定位）無座標故無排除區，快速失敗不默默略過。"""
+    with pytest.raises(ValueError, match="槽式"):
+        set_image_wrap(_doc([PlacedImage(path="p.png", page=1)]), 0, wrap=True)
+
+
+def test_set_image_wrap_rejects_negative_margin():
+    with pytest.raises(ValueError, match="間隙"):
+        set_image_wrap(_doc([PlacedImage(path="p.png", page=1,
+                                         rect=(40.0, 100.0, 160.0, 220.0))]),
+                       0, margin_mm=-0.5)
+
+
+def test_set_image_wrap_rejects_out_of_range_index():
+    with pytest.raises(ValueError, match="越界"):
+        set_image_wrap(_doc(), 0, wrap=True)
+
+
+def test_session_wrap_toggle_reflows_canvas_layout_and_undoes():
+    """畫布所見即繞排所得：session 重排入口與兩渲染後端同為 layout_with_wrap。"""
+    session = EditSession(_wrap_doc(), load_template(TEMPLATE_PATH))
+    full = _caps(session)
+    session.set_image_wrap(0, wrap=True)
+    wrapped = _caps(session)
+    shortened = [s for s, cap in wrapped.items() if cap < full.get(s, cap)]
+    assert shortened, f"開繞排後應有欄被圖裁切（行長 {full} → {wrapped}）"
+    session.undo()
+    assert _caps(session) == full, "undo 應回到未繞排的版面"
+
+
+def test_session_wrap_margin_widens_exclusion():
+    """加大間隙＝排除區外擴，受影響欄的行再短一截（間隙由使用者表達，不硬編）。"""
+    session = EditSession(_wrap_doc(), load_template(TEMPLATE_PATH))
+    session.set_image_wrap(0, wrap=True)
+    tight = _caps(session)
+    session.set_image_wrap(0, margin_mm=6.0)
+    loose = _caps(session)
+    assert any(loose[s] < tight[s] for s in tight), f"{tight} → {loose}"
+
+
+def test_session_wrap_no_op_does_not_add_undo_step():
+    session = EditSession(_wrap_doc(), load_template(TEMPLATE_PATH))
+    session.set_image_wrap(0, wrap=True)
+    assert session.set_image_wrap(0, wrap=True) is None
+    session.undo()
+    assert session.document.images[0].wrap is False  # 只回退一步即回到未繞排

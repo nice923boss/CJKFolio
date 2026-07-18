@@ -2,9 +2,13 @@
 
 純邏輯層（不碰 Qt／渲染），與 layout/engine 同屬 cjkfolio 核心、入 pytest 基線。
 編輯器 GUI（editor/）呼叫本層：畫布點選得文件游標（editor.canvas.resolve_hit
-的 para_idx／span），IME 提交文字經 apply_insert 插入 → layout_document 全文重排
+的 para_idx／span），IME 提交文字經 apply_insert 插入 → layout_with_wrap 全文重排
 → locate_cell 反查新游標畫布落點。這是 §7 Pre-mortem「畫布與排版核心同步／選取
 錯位」風險的可離屏驗證核心（IME 鍵盤輸入本身仍待 Owner 真視窗實測，GAPS #19）。
+
+重排入口＝layout_with_wrap（Sprint 103）而非 layout_document：與 render／pdf_writer
+兩後端同一入口，故編輯器畫布所見的斷行就是匯出所得。無 wrap 圖時它原樣回傳
+layout_document 的結果（wrap=False 為預設，既有輸出零變更）。
 
 游標座標系：DocCursor.caret＝段 text（normalize 前原字串）半開座標 [0, len]，
 與 Cell.span（Sprint 18 provenance）同座標系；插字與反查全在此座標系閉環。
@@ -15,7 +19,8 @@ from dataclasses import dataclass, replace
 from typing import Optional
 
 from .document import Document, Paragraph, Run
-from .layout import LayoutResult, layout_document
+from .layout import LayoutResult
+from .wrap import layout_with_wrap
 from .styles import Template
 
 
@@ -109,11 +114,11 @@ def apply_insert(
 ) -> EditResult:
     """完整編輯回路：插字 → 全文 reflow → 反查新游標畫布落點。
 
-    新 caret＝原 caret＋len(text)（落在最後一個插入字之後）；版面由 layout_document
+    新 caret＝原 caret＋len(text)（落在最後一個插入字之後）；版面由 layout_with_wrap
     確定性重排（Spike 3 實測純邏輯重排 7.67ms/章，互動級）。
     """
     new_doc = insert_text(doc, cursor, text)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(cursor.para_idx, cursor.caret + len(text))
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -190,7 +195,7 @@ def apply_delete(doc: Document, template: Template, drange: DocRange) -> EditRes
     locate_cell 回 None（address=None，合法）。
     """
     new_doc = delete_range(doc, drange)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(drange.para_idx, drange.start)
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -206,7 +211,7 @@ def apply_replace(
     新 caret＝drange.start＋len(text)（落在最後一個新字之後）。
     """
     new_doc = replace_range(doc, drange, text)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(drange.para_idx, drange.start + len(text))
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -298,7 +303,7 @@ def apply_delete_span(doc: Document, template: Template, span: DocSpan) -> EditR
     新 caret＝縫（start.para_idx, start.caret）；全刪空時該段無可見字格，address None。
     """
     new_doc = delete_span(doc, span)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(span.start.para_idx, span.start.caret)
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -314,7 +319,7 @@ def apply_replace_span(
     新 caret＝start.caret＋len(text)（落在最後一個新字之後、同一頭段內）。
     """
     new_doc = replace_span(doc, span, text)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(span.start.para_idx, span.start.caret + len(text))
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -331,7 +336,7 @@ def apply_char_style(
     保留原字元樣式。切割後連續同字元樣式的字元併為單一 run（避免碎片化，text 與視覺
     不變，同 InDesign 套字元樣式慣例）。空範圍（start==end）no-op 回原物件。
     系統邊界快速失敗：para_idx 越界 raise IndexError；start/end 越界或 start>end raise ValueError。
-    字元樣式名是否存在於模版不在此驗（純文件層），由 apply_style 的 layout_document 守門。
+    字元樣式名是否存在於模版不在此驗（純文件層），由 apply_style 的 layout_with_wrap 守門。
     """
     if not 0 <= drange.para_idx < len(doc.paragraphs):
         raise IndexError(
@@ -371,10 +376,10 @@ def apply_style(
     """完整編輯回路：套字元樣式 → 全文 reflow → 反查新游標畫布落點。
 
     新 caret＝drange.end（游標停在選取範圍尾）；套用不改 text，故 Cell.span 座標系不動、
-    字格 char_style 隨 run 模型流入渲染層。未知字元樣式名由 layout_document 守門（raise KeyError）。
+    字格 char_style 隨 run 模型流入渲染層。未知字元樣式名由 layout_with_wrap 守門（raise KeyError）。
     """
     new_doc = apply_char_style(doc, drange, char_style)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(drange.para_idx, drange.end)
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -391,7 +396,7 @@ def apply_char_style_span(
     尾段套 [0, end)，各段委派段內 apply_char_style（逐 run 切割＋相鄰同樣式併合）。同段
     （start.para_idx==end.para_idx）退化為段內 apply_char_style。空範圍 no-op 回原物件。
     系統邊界快速失敗同 delete_span（para_idx 越界 IndexError、caret 越界或起點晚於終點
-    ValueError）；字元樣式名有效性不在此驗（純文件層），由 apply_style_span 的 layout_document 守門。
+    ValueError）；字元樣式名有效性不在此驗（純文件層），由 apply_style_span 的 layout_with_wrap 守門。
     """
     _validate_span(doc, span)
     if span.start == span.end:  # 空範圍 no-op
@@ -416,10 +421,10 @@ def apply_style_span(
     """完整編輯回路：跨段套字元樣式 → 全文 reflow → 反查游標畫布落點。
 
     新 caret＝span.end（游標停在選取範圍尾）；套用不改 text，故 Cell.span 座標系不動、
-    字格 char_style 隨 run 模型流入渲染層。未知字元樣式名由 layout_document 守門（raise KeyError）。
+    字格 char_style 隨 run 模型流入渲染層。未知字元樣式名由 layout_with_wrap 守門（raise KeyError）。
     """
     new_doc = apply_char_style_span(doc, span, char_style)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(span.end.para_idx, span.end.caret)
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -433,7 +438,7 @@ def change_paragraph_style(doc: Document, para_idx: int, style: str) -> Document
     只換 Paragraph.style，其餘（runs 與字元樣式、page_no）不變；樣式相同為 no-op 回原
     物件。系統邊界快速失敗：para_idx 越界 raise IndexError；style 空字串 raise ValueError
     （守 document@2「段落需非空 style」不變式）。段落樣式名是否存在於模版不在此驗（純文件
-    層），由 apply_para_style 的 layout_document 守門（raise KeyError，同 apply_char_style
+    層），由 apply_para_style 的 layout_with_wrap 守門（raise KeyError，同 apply_char_style
     ／apply_style 慣例）。
     """
     if not 0 <= para_idx < len(doc.paragraphs):
@@ -475,10 +480,10 @@ def apply_para_style(
 
     改 cursor.para_idx 段的段落樣式為 style；段落樣式變更不改 text，故游標（para_idx／
     caret）保持不變，reflow 後 locate_cell 反查該游標的新畫布落點（換行／換頁時畫布落點
-    隨版面更新，文件座標不動）。未知段落樣式名由 layout_document 守門（raise KeyError）。
+    隨版面更新，文件座標不動）。未知段落樣式名由 layout_with_wrap 守門（raise KeyError）。
     """
     new_doc = change_paragraph_style(doc, cursor.para_idx, style)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     address = locate_cell(new_layout, cursor)
     return EditResult(
         document=new_doc, layout=new_layout, cursor=cursor, address=address
@@ -558,7 +563,7 @@ def apply_split(doc: Document, template: Template, cursor: DocCursor) -> EditRes
     新游標＝tail 段起點（para_idx+1, caret 0）；tail 為空段時無可見字格，address None。
     """
     new_doc = split_paragraph(doc, cursor)
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(cursor.para_idx + 1, 0)
     address = locate_cell(new_layout, new_cursor)
     return EditResult(
@@ -574,7 +579,7 @@ def apply_merge(doc: Document, template: Template, para_idx: int) -> EditResult:
     """
     new_doc = merge_paragraph(doc, para_idx)
     seam = len(doc.paragraphs[para_idx - 1].text)  # 前段原長（para_idx 已由 merge 驗證合法）
-    new_layout = layout_document(new_doc, template)
+    new_layout = layout_with_wrap(new_doc, template)
     new_cursor = DocCursor(para_idx - 1, seam)
     address = locate_cell(new_layout, new_cursor)
     return EditResult(

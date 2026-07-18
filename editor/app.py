@@ -163,6 +163,7 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, ImageActionsMixin,
         image_menu = self.menuBar().addMenu("圖片")
         for label, handler in (
             ("置入圖片（放在頁面中央）…", lambda: self._place_image_dialog()),
+            ("選取圖片的文繞圖設定…", lambda: self._edit_image_wrap()),
             ("移除選取的圖片", self._remove_selected_image),
         ):
             action = QAction(label, self)
@@ -306,7 +307,15 @@ class EditorWindow(StyleActionsMixin, PreflightActionsMixin, ImageActionsMixin,
         return scene, {it.data(0): it for it in items}
 
     def _rebuild(self) -> None:
-        """reflow 後重繪：換上新 scene，高亮與選取清空（舊 scene 連同其 item 一併丟棄）。"""
+        """reflow 後重繪：換上新 scene，高亮與選取清空（舊 scene 連同其 item 一併丟棄）。
+
+        先把 self.page 換成新版面中同一頁號的頁物件（Sprint 103）：self.page 是頁
+        物件快照，重排後不換即以舊幾何重繪＝畫面看不到這次重排（繞排開關與樣式
+        改動皆屬此類）。重排後頁數縮減時夾到末頁（該頁已不存在，退到仍在的最後
+        一頁而非炸掉）。
+        """
+        pages = self.layout_result.pages
+        self.page = pages[min(self.page.number, len(pages)) - 1]
         self.scene, self._item_by_key = self._make_scene()
         self.view.setScene(self.scene)
         self._highlight = None

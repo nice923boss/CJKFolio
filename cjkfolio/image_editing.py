@@ -92,6 +92,32 @@ def resize_image(doc: Document, idx: int, rect) -> Document:
     return replace(doc, images=doc.images[:idx] + (sized,) + doc.images[idx + 1:])
 
 
+def set_image_wrap(doc: Document, idx: int, *, wrap=None,
+                   margin_mm=None) -> Document:
+    """改第 idx 張圖的繞排參數（Sprint 103）：wrap 開關與 wrap_margin_mm 間隙。
+
+    兩個欄位皆選配，未指定者保持現值（只調間隙不必重述開關，反之亦然）。等值變更
+    回原文件物件，供 session 判 no-op 不塞一步空 undo（同 _commit_pair 慣例）。
+
+    槽式圖（rect None）無座標故無排除區可算，快速失敗而非默默忽略（與拖放同一條
+    規則，亦與 document.py「wrap 需搭 rect」的解析守門一致）。間隙為圖框四周額外
+    留白，語意上不可為負。
+    """
+    placed = _placed(doc, idx)
+    new_wrap = placed.wrap if wrap is None else bool(wrap)
+    new_margin = (placed.wrap_margin_mm if margin_mm is None else float(margin_mm))
+    if new_wrap and placed.rect is None:
+        raise ValueError(
+            f"置入圖 {idx} 為槽式（主版 figure 保留區定位），無座標可算繞排排除區"
+        )
+    if new_margin < 0:
+        raise ValueError(f"繞排間隙須為 ≥0 的毫米數，得到 {margin_mm!r}")
+    if new_wrap == placed.wrap and new_margin == placed.wrap_margin_mm:
+        return doc
+    changed = replace(placed, wrap=new_wrap, wrap_margin_mm=new_margin)
+    return replace(doc, images=doc.images[:idx] + (changed,) + doc.images[idx + 1:])
+
+
 def remove_image(doc: Document, idx: int) -> Document:
     """移除第 idx 張置入圖（槽式圖亦可移除，移除不需要座標）。"""
     _placed(doc, idx)

@@ -16,11 +16,61 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor, QPen
-from PySide6.QtWidgets import QFileDialog, QGraphicsRectItem
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QGraphicsRectItem,
+    QLabel,
+    QLineEdit,
+)
 
 from cjkfolio.image_editing import default_image_rect, resize_rect
 from cjkfolio.images import ImageError, open_placed
 from cjkfolio.render import mm_to_pt
+
+
+class WrapDialog(QDialog):
+    """文繞圖設定對話框（Sprint 103）：繞排開關與圖文間隙，按確定才提交一步。
+
+    兩個欄位一起提交＝調一次參數只留一步 undo（勾選框即時套用會使「開繞排並設
+    間隙」變成兩步歷史，同 Sprint 102「放開左鍵才提交」的取捨）。錯誤以內嵌警示
+    列顯示留在對話框內修正（非 modal 訊息＝離屏可驗，承 StyleEditDialog 慣例）。
+    """
+
+    def __init__(self, placed, on_apply, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("文繞圖設定")
+        self._on_apply = on_apply  # callable(wrap: bool, margin_text) -> str 或 None
+
+        form = QFormLayout(self)
+        head = QLabel(f"「{placed.path}」（頁 {placed.page}）")
+        head.setStyleSheet("font-weight:bold;")
+        form.addRow(head)
+        self._notice = QLabel("")
+        self._notice.setStyleSheet("color:#b00; font-size:11px;")
+        self._notice.setWordWrap(True)
+        form.addRow(self._notice)
+        self._wrap = QCheckBox("內文繞開這張圖（關閉＝圖疊在文字上）")
+        self._wrap.setChecked(placed.wrap)
+        form.addRow(self._wrap)
+        self._margin = QLineEdit(f"{placed.wrap_margin_mm:g}")
+        form.addRow("圖文間隙（mm）", self._margin)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._on_save)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+    def _on_save(self) -> None:
+        err = self._on_apply(self._wrap.isChecked(), self._margin.text())
+        if err:
+            self._notice.setText(err)
+            return
+        self.accept()
 
 
 class ImageActionsMixin:
@@ -215,6 +265,51 @@ class ImageActionsMixin:
         item.setZValue(z)
         self.scene.addItem(item)
         return item
+
+    # --- 繞排參數（Sprint 103） -------------------------------------------
+
+    def _edit_image_wrap(self, wrap=None, margin_text=None) -> None:
+        """選取圖的文繞圖設定（wrap 開關與 wrap_margin_mm 間隙）。
+
+        真視窗開對話框；帶參數呼叫則旁路對話框直接套用（離屏 smoke 可驗，承
+        _create_style 慣例）。未選取圖時據實提示（不猜使用者指的是哪張）。
+        """
+        if self._image_idx is None or self._image_idx >= len(self.doc.images):
+            self.statusBar().showMessage("先點選一張置入圖，再設定文繞圖")
+            return
+        placed = self.doc.images[self._image_idx]
+        if wrap is None and margin_text is None:
+            WrapDialog(placed, self._apply_image_wrap, self).exec()
+            return
+        err = self._apply_image_wrap(
+            placed.wrap if wrap is None else wrap,
+            placed.wrap_margin_mm if margin_text is None else margin_text)
+        if err:
+            self.statusBar().showMessage(err)
+
+    def _apply_image_wrap(self, wrap: bool, margin_text) -> str | None:
+        """套用繞排參數；回錯誤訊息（留在對話框修正）或 None（成功／無變更）。
+
+        間隙以字串進來（對話框輸入框），數字轉換的失敗留在此層報給使用者，不讓
+        非數字一路傳到核心才炸。
+        """
+        try:
+            margin_mm = float(margin_text)
+        except (TypeError, ValueError):
+            return f"間隙需為數字（毫米），得到「{margin_text}」"
+        idx = self._image_idx
+        try:
+            res = self.session.set_image_wrap(idx, wrap=wrap, margin_mm=margin_mm)
+        except ValueError as err:
+            return f"無法設定文繞圖：{err}"
+        if res is None:
+            self.statusBar().showMessage("文繞圖設定未變更")
+            return None
+        self._rebuild()
+        state = f"開啟（間隙 {margin_mm:g} mm）" if wrap else "關閉"
+        self.statusBar().showMessage(
+            f"圖 {idx} 文繞圖已{state}，內文已重排（Ctrl+Z 一步回原）")
+        return None
 
     # --- 移除 -------------------------------------------------------------
 

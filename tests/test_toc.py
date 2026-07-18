@@ -265,3 +265,41 @@ def test_auto_toc_export_end_to_end(template, tmp_path):
     toc_text = pdf[0].get_text()
     for it in items:
         assert str(it.page) in toc_text
+
+
+def test_auto_toc_page_numbers_account_for_wrap(template, tmp_path):
+    """帶 wrap 圖的書冊：條目頁碼須依繞排後的分頁（Sprint 103）。
+
+    目錄兩趟分頁原走 layout_document，與兩渲染後端的 layout_with_wrap 不同源，
+    故繞排把內文往後推時會印出比實際早的頁（實測差 1 頁）。
+    """
+    from PIL import Image
+
+    from cjkfolio.wrap import layout_with_wrap
+
+    photo = tmp_path / "photo.png"
+    Image.new("L", (360, 270), 128).save(photo)
+    body = [{"text": "整理一個房間先要決定的不是收納盒。" * 60,
+             "style": "內文-明體直排"}]
+    a = write_chapter(tmp_path, "wa", "A-內文版", body)
+    b = write_chapter(tmp_path, "wb", "A-內文版", body)
+    spec = book_dict([toc_chapter(), {"path": a, "toc_title": "第一章"},
+                      {"path": b, "toc_title": "第二章"}])
+    # 書冊層 wrap 圖：落在第二頁內文，繞排後把其後的內文往後推
+    spec["images"] = [{"path": "photo.png", "page": 2,
+                       "rect": [76.64, 180.0, 320.0, 540.0],
+                       "wrap": True, "wrap_margin_mm": 4.0}]
+    book = book_from_dict(spec)
+
+    doc = assemble_book_with_toc(book, template, base_dir=tmp_path)
+    printed = [int(p.page_no) for p in doc.paragraphs if p.page_no]
+
+    layout = layout_with_wrap(doc, template)
+    first_page_of = {}
+    for page in layout.pages:
+        for placed in page.placed:
+            first_page_of.setdefault(placed.para_idx, page.number)
+    body_starts = [first_page_of[i] for i in sorted(first_page_of) if i >= 3]
+
+    assert printed == body_starts, (
+        f"目錄印出 {printed}，繞排後實際章首頁 {body_starts}")

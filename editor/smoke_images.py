@@ -145,3 +145,77 @@ def check_images(EditorWindow, DOC, ROOT) -> None:
         "（途中只畫預覽、放開提交一步）→ 拖角等比縮放（比例守恆、對角固定）"
         "→ Delete 移除，三者各一步 undo 回原；缺圖不炸且據實提示"
     )
+
+
+def _caps(win) -> dict:
+    """首頁逐欄行長 {slot: cap}：繞排把受影響欄的行裁短，故可判畫布是否套繞排。"""
+    return {pl.slot: pl.line.cap for pl in win.layout_result.pages[0].placed}
+
+
+def _cell_count(win) -> int:
+    """互動層 body 字格數（鍵為 (placed_idx, cell_idx)）：繞排後字變少，畫布同步。"""
+    return len([it for it in win.scene.items()
+                if isinstance(it.data(0), tuple) and isinstance(it.data(0)[0], int)])
+
+
+def check_wrap_ui(EditorWindow, ROOT) -> None:
+    """跑 C20 並 print（斷言失敗即 AssertionError 中止整份 smoke）。
+
+    素材＝samples/wrap-demo.doc.json（Sprint 89 自擬樣張，已開 wrap），故可先驗
+    「開著繞排時畫布確實繞排」，再走 UI 關掉它驗回路與 undo。
+    """
+    from editor.image_actions import WrapDialog
+
+    win = EditorWindow(str(ROOT / "samples" / "wrap-demo.doc.json"))
+    assert win.doc.images[0].wrap is True, "樣張本應已開繞排"
+
+    # --- 畫布套繞排：被圖擋住的欄行長短於滿行，互動層字格數同步 ---
+    wrapped_caps = _caps(win)
+    wrapped_cells = _cell_count(win)
+    full_line = max(wrapped_caps.values())
+    blocked = [s for s, cap in wrapped_caps.items() if cap <= full_line / 2]
+    assert len(blocked) >= 6, f"畫布未套繞排（逐欄行長 {wrapped_caps}）"
+
+    # --- UI 關掉繞排：對話框回呼 → 畫布重排回滿行 → 一步 undo 回原 ---
+    win._select_image(0)
+    win._edit_image_wrap(wrap=False, margin_text="4.26")
+    assert win.doc.images[0].wrap is False, "UI 未關掉繞排"
+    off_caps = _caps(win)
+    assert not [s for s, cap in off_caps.items() if cap <= full_line / 2], \
+        f"關繞排後仍見被裁短的欄（{wrapped_caps} → {off_caps}）"
+    off_cells = _cell_count(win)
+    assert off_cells > wrapped_cells, \
+        f"關繞排後首頁字格數應回升（{wrapped_cells} → {off_cells}）"
+    win._on_undo()
+    assert win.doc.images[0].wrap is True, "一步 undo 應回到繞排開啟"
+    assert _caps(win) == wrapped_caps, "undo 後畫布版面應回原"
+
+    # --- 加大間隙＝排除區外擴（首頁容字再少一截），亦為一步 undo ---
+    win._select_image(0)
+    win._edit_image_wrap(margin_text="8.0")
+    loose_cells = _cell_count(win)
+    assert loose_cells < wrapped_cells, \
+        f"加大間隙未使排除區外擴（首頁字格 {wrapped_cells} → {loose_cells}）"
+    win._on_undo()
+    assert _cell_count(win) == wrapped_cells, "undo 應回到原間隙的版面"
+
+    # --- 對話框本體（真 widget 走 _on_save 回呼，不 exec） ---
+    dlg = WrapDialog(win.doc.images[0], win._apply_image_wrap)
+    assert dlg._wrap.isChecked() is True, "對話框應預填現行繞排開關"
+    assert dlg._margin.text() == "4.26", f"應預填現行間隙，得到 {dlg._margin.text()}"
+    dlg._margin.setText("不是數字")
+    dlg._on_save()
+    assert "需為數字" in dlg._notice.text(), f"非數字間隙未擋下：{dlg._notice.text()}"
+    assert win.doc.images[0].wrap_margin_mm == 4.26, "錯誤輸入不應改動文件"
+
+    # --- 未選取圖時據實提示（不猜使用者指哪張） ---
+    win._select_image(None)
+    win._edit_image_wrap(wrap=True)
+    assert "先點選一張置入圖" in win.statusBar().currentMessage(), \
+        f"未選取圖未據實提示：{win.statusBar().currentMessage()}"
+
+    print(
+        "C20 文繞圖參數 UI：畫布確實套繞排（受影響欄行長短於滿行、互動層字格同步）"
+        "→ UI 關繞排使內文回滿行、加大間隙使排除區外擴，兩者各一步 undo 回原"
+        "→ 對話框預填現值且非數字間隙擋在對話框內（文件不動）→ 未選取圖據實提示"
+    )

@@ -50,8 +50,15 @@ from .frame_editing import (
     locate_frame_cell,
 )
 from .frames import masters_for_layout, resolve_text_frames
-from .image_editing import move_image, place_image, remove_image, resize_image
-from .layout import LayoutResult, layout_document
+from .image_editing import (
+    move_image,
+    place_image,
+    remove_image,
+    resize_image,
+    set_image_wrap,
+)
+from .layout import LayoutResult
+from .wrap import layout_with_wrap
 from .style_editing import (
     add_character_style,
     add_paragraph_style,
@@ -83,7 +90,7 @@ class EditSession:
         self._template = template
         self._document = document
         self._cursor = DocCursor(0, 0)
-        self._layout = layout_document(document, template)
+        self._layout = layout_with_wrap(document, template)
         self._undo: list = []  # [(document, template, cursor)]，最舊→最新
         self._redo: list = []
         self._coalesce_window = coalesce_window  # 連續輸入合併時間窗（秒）
@@ -249,6 +256,16 @@ class EditSession:
         return self._commit_pair(
             remove_image(self._document, idx), self._template)
 
+    def set_image_wrap(self, idx: int, *, wrap=None, margin_mm=None):
+        """改繞排參數（Sprint 103）：入統一 undo 歷史，畫布即時重排。
+
+        未指定的欄位保持現值；等值變更 no-op 回 None（不入歷史）。繞排改變流排，
+        故本層的重排（layout_with_wrap）即是畫布所見的版面。
+        """
+        return self._commit_pair(
+            set_image_wrap(self._document, idx, wrap=wrap, margin_mm=margin_mm),
+            self._template)
+
     def update_para_style(self, name: str, changes: Mapping):
         """改段落樣式定義（§4.3「改樣式即全書套用」，Sprint 67）：全書重排入統一歷史。
 
@@ -337,7 +354,7 @@ class EditSession:
         兩側皆無變更＝no-op 不入 undo（同 _commit_template 慣例）。"""
         if document is self._document and template is self._template:
             return None
-        new_layout = layout_document(document, template)  # 套用前快速失敗
+        new_layout = layout_with_wrap(document, template)  # 套用前快速失敗
         self._undo.append((self._document, self._template, self._cursor))
         self._redo.clear()
         self._document = document
@@ -350,7 +367,7 @@ class EditSession:
         """模版變更入歷史（樣式編輯共用）：先重排快速失敗，再推快照切換現態。"""
         if template is self._template:
             return None  # 空／等值變更 no-op：不入 undo
-        new_layout = layout_document(self._document, template)  # 套用前快速失敗
+        new_layout = layout_with_wrap(self._document, template)  # 套用前快速失敗
         self._undo.append((self._document, self._template, self._cursor))
         self._redo.clear()
         self._template = template
@@ -387,7 +404,7 @@ class EditSession:
         self._document = document
         self._template = template
         self._cursor = cursor
-        self._layout = layout_document(document, template)
+        self._layout = layout_with_wrap(document, template)
         self._pending_insert = None
         return self._state_result()
 

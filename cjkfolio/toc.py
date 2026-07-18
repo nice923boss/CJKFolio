@@ -19,7 +19,7 @@ from typing import Optional
 
 from .book import Book, BookError, _resolve_chapter
 from .document import Document, Paragraph
-from .layout import layout_document
+from .wrap import layout_with_wrap
 
 
 @dataclass(frozen=True)
@@ -98,7 +98,9 @@ def _build(book: Book, template, base: Path, first_page: int):
     pass1 = Document(
         title=book.title, template=book.template, master=first_master,
         paragraphs=tuple(paragraphs), images=book.images)
-    result = layout_document(pass1, template)
+    # 與 render／pdf_writer 同一重排入口（Sprint 103）：書冊帶 wrap 圖時，繞排會
+    # 把內文往後推，用不繞排的分頁定條目頁碼會印出比實際早的頁（實測差 1 頁）。
+    result = layout_with_wrap(pass1, template, first_page=first_page)
     items: list = []
     paras = list(paragraphs)
     for pos, (mi, title) in zip(entry_positions, listed):
