@@ -1,0 +1,18 @@
+{
+ "schema": "cjkfolio/book@1",
+ "meta": {
+  "title": "整理練習（自動目錄樣張）",
+  "template": "neizai-zhengli"
+ },
+ "chapters": [
+  {"generate_toc": {
+     "heading": "把日子放回原位",
+     "heading_style": "目錄-部名",
+     "entry_style": "目錄-篇章條目",
+     "master": "D-目錄"
+  }},
+  {"path": "chapter-opening.doc.json", "toc_title": "第一章　安放與整理的提問"},
+  {"path": "case-divider.doc.json", "toc_title": "個案速寫　把家還原"},
+  {"path": "figure-page.doc.json", "toc_title": "客廳一景"}
+ ]
+}

@@ -2,6 +2,30 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.80.0（2026-07-18，Sprint 85）目錄自動生成（Phase 4 續項）
+
+### 新增
+
+- [實作] 目錄自動生成（§6「目錄自動生成」；關 GAPS #31 (c) 目錄頁碼手填痛點）：
+  - `cjkfolio/toc.py`：新增 `TocItem`／`assemble_book_with_toc`／`toc_items`。以兩趟穩定分頁自動計算列入章起始書頁號並填入目錄條目（無 fixpoint：目錄條目數＝列入章數為先驗定值，`page_no` 為掛段末行的非流排載體，回填不改分頁）。Pass 1 以 `page_no=None` 占位條目組裝＋流排定分頁、取各列入章章首版面頁號；Pass 2 回填書頁號（＝版面頁號＋first_page−1，同 render／pdf_writer）。
+  - `cjkfolio/book.py`：book@1 相容擴充 `chapters[].toc_title`（列入標題）＋ `generate_toc` 章（`entry_style`／`master` 必填、`heading`／`heading_style` 選配）；新增 `TocSpec`、`ChapterRef` 擴充 `toc_title`／`toc_spec`；抽出 `_resolve_chapter`（與 auto-TOC 共用章載入與驗證）；`assemble_book` 遇自動目錄章快速失敗導向 toc 模組（純 path 書冊行為不變）。
+  - CLI `assemble` 加 `--template`（含自動目錄章時必填，用以計算頁碼）／`--first-page`（須與最終 render／export 一致）；缺 `--template` 以 exit 2 明確報錯。
+
+### 驗證
+
+- 基線 **702 passed / 0 failed**（688→702，+14：解析與快速失敗 4＋頁碼計算與穩定性 4＋heading 選配／空目錄 3＋CLI 2＋端到端 1）；typecheck EXIT=0（含 editor/*.py）；editor 離屏 smoke C1〜C15 0 退步。繁中標點 grep 無破折號。
+- R5 真實素材驗收（紅線自擬 samples/book-auto-toc.json）：CLI `assemble --template` → 自動頁碼「第一章→2、個案速寫→4、客廳一景→5」；獨立 layout 對照各主版首頁 3/3 吻合（B-部扉 2／C-個案扉頁 4／G-圖文版 5）；export PDF → PyMuPDF 獨立讀目錄頁（頁 1）含數字 2/4/5＋部名首字＋preflight 12/12。組裝產出 JSON 親 Read 確認條目 `page_no`＝'2'／'4'／'5'、部名 `page_no`＝None。
+
+### 誠實範圍（honest-planning R1／R2／R5／R7／R8）
+
+- [實作]：auto-TOC 資料流，pytest 基線＋端到端 PDF 驗證。R2：無新外部依賴（純邏輯承 book@1／layout），無需新 spike（先例 Sprint 52 組裝）。R1 證據＝目錄頁型 A 級量測（Sprint 21/24）＋輸出探針實測（A 級）。
+- 排序決策（R7／R8，登記 GAPS #45）：PLAN §6 清單本項前之「禁則／約物擠壓微調」依 R1／R2／R5 順延（真書 §1 實測句逗置中無半形擠壓〔#9〕、通用 opt-in 需 mojikumi 擠壓表 spike＋整數槽 vs float 寬模型評估、且缺採用 aki 的真實 R5 素材），改做本項先行，非沉默跳過。
+- 誠實差異（GAPS #44）：目錄標題來自 manifest `toc_title` 顯式宣告（非章首自動抽取）；first_page 須與 render 手動對齊；條目樣式單一、無多層目錄縮排階層／摘要層；只列 path 章章首頁，章內小節不列入。
+
+### 下個 Sprint 預定範圍
+
+- Phase 4 續項（依 §6 清單：圖文繞排、注音 ruby、縱中橫精修、preflight 面板；約物擠壓微調待 R2 spike＋R5 素材備妥後專項，見 GAPS #45）。
+
 ## v0.79.0（2026-07-18，Sprint 84）字型嵌入授權檢查（Phase 4 續項）
 
 ### 新增

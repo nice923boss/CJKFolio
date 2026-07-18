@@ -226,11 +226,31 @@ def cmd_export_pdf(args) -> int:
 
 def cmd_assemble(args) -> int:
     book = load_book(args.book)
-    doc = assemble_book(book, base_dir=Path(args.book).parent)
+    base = Path(args.book).parent
+    has_toc = any(ch.toc_spec for ch in book.chapters)
+    items = ()
+    if has_toc:
+        if not args.template:
+            print("錯誤：此書冊含自動目錄章（generate_toc），需 --template <模版路徑> "
+                  "以計算目錄頁碼", file=sys.stderr)
+            return 2
+        from .toc import assemble_book_with_toc, toc_items
+        template = load_template(args.template)
+        items = toc_items(book, template, base_dir=base, first_page=args.first_page)
+        doc = assemble_book_with_toc(book, template, base_dir=base,
+                                     first_page=args.first_page)
+    else:
+        doc = assemble_book(book, base_dir=base)
     save_document(doc, args.output)
     marks = sum(1 for p in doc.paragraphs if p.master)
     print(f"組裝完成：{len(book.chapters)} 章 → {len(doc.paragraphs)} 段"
           f"（{marks} 個節首標記）→ {args.output}")
+    if has_toc:
+        if items:
+            print("自動目錄（first-page=%d）：%s" % (
+                args.first_page, "；".join(f"{it.title}→{it.page}" for it in items)))
+        else:
+            print("自動目錄：（無列入章 toc_title）")
     if doc.images:
         print(f"書冊層級置入圖：{len(doc.images)} 張（page＝全書版面頁號）")
     return 0
@@ -330,6 +350,10 @@ def main(argv=None) -> int:
                            help="書冊清單 JSON 組裝為單一多主版文件 JSON（章序即節序，章首掛節首標記）")
     p_asm.add_argument("book", help="書冊清單 JSON（cjkfolio/book@1；章路徑相對此檔目錄）")
     p_asm.add_argument("-o", "--output", required=True)
+    p_asm.add_argument("--template",
+                       help="模版路徑；含自動目錄章（generate_toc）時必填，用以計算目錄頁碼")
+    p_asm.add_argument("--first-page", type=int, default=1,
+                       help="首頁書頁碼（自動目錄頁碼依此換算，須與最終 render／export 一致）")
     p_asm.set_defaults(func=cmd_assemble)
 
     p_pre = sub.add_parser("preflight", help="PDF/X 機械檢查（自寫規則；非 Acrobat 認證級）")
