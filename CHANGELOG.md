@@ -2,6 +2,38 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.90.0（2026-07-18，Sprint 95）Phase 4 收尾判定（[Doc]，收尾轉 Phase 5）
+
+### 收尾判定（honest review，無程式碼變更）
+
+- **Phase 4 可自主項全數收口，Owner AskUserQuestion 定案收尾轉 Phase 5。** honest review 實查 §6 Phase 4 交付逐項收口（Sprint 82〜94）：
+  - 印刷級輸出：PDF/X-1a 預設（Sprint 10）＋X-4 選項（`pdf_writer.PDFX_PROFILES` 形態表、CLI `--pdfx`）、CMYK 與單 K 文字（`styles.DEFAULT_TEXT_CMYK`）、出血 3mm（`BLEED_MM`／`page_boxes_pt`）、裁切標記（`primitives.crop_mark_lines`、CLI `--crop-marks`）、輸出色彩描述檔（`KNOWN_PRINT_CONDITIONS`＋X-4 強制嵌 ICC、CLI `--icc`）、字型子集化（`pdf_fonts`）與授權檢查（`font_license.embedding_permission`／`license_warnings`）。
+  - 進階排版：禁則與約物擠壓（`engine.squeeze_punctuation`／`ParagraphStyle.punct_squeeze`）、目錄自動生成（`toc.assemble_book_with_toc`／`toc_items`）、圖文繞排（`engine.line_window`／`wrap.layout_with_wrap`）、注音 ruby（`placement.ruby_axis_and_top`／`Run.ruby`）、縱中橫精修（`engine._flush_latin`／`placement.TCY_SIZE_RATIO`）。
+  - preflight 面板：`preflight.preflight_summary`／`image_rows`／`ink_rows`＋`editor/preflight_panel.PreflightDialog`＋`preflight_actions.PreflightActionsMixin`（Sprint 87 建立、Sprint 94 三分區）。
+- §9 印前輸出硬條件逐條落地複查：盒框與單頁完稿、出血全出與裁切標記、全 CMYK 或 Grayscale 無殘留 RGB、OutputIntent 與印廠鎖定、總墨量 ≤ 320〜340%（Sprint 93）、字型 100% 嵌入子集化、直排硬條件、連續調影像 300〜350ppi（Sprint 91）、預設 X-1a 提供 X-4。**唯「點陣線稿 1200ppi」不驗**（線稿與連續調之別屬內容語意，機器不可判；#51 (a)）。
+- Phase 4 機制級 DoD 達成：印刷級輸出鏈與進階排版皆有可執行實作與機械驗證，preflight 結果於 editor 面板三分區呈現。
+
+### 驗證
+
+- honest review 實查（非橡皮圖章）：Sprint 82〜94 各檔關鍵函式逐一 grep 皆真實定義（非空殼）；模版 `templates/neizai-zhengli.json` 命中 **18 段落／9 字元樣式＋7 主版（A〜G）＋3 色票**，不退步。
+- 基線複驗：`pytest spikes tests` **878 passed / 0 failed**；typecheck EXIT_CODE=0（`py_compile` 含 editor/*.py）；離屏 smoke **C1〜C16 全過**。工作樹乾淨、Sprint 94 已提交。
+- Phase 4 專項測試檔逐檔複跑：crop_marks 12／font_license 8／toc 14／ruby 9／tcy 16／wrap 26／punct_squeeze 35／image_ppi 31／cmyk_image 18／ink_coverage 40／preflight 9／pdf_writer 27，全綠。
+- 剩項全數彙整 **GAPS #54** Phase 4 Known Limitations（甲 Owner hands-on 與實體打樣、乙 UI 延伸與後續片、丙 需外部條件或認證級工具、丁 Phase 5 既定），均不阻擋轉場。
+
+### 誠實範圍（honest-planning R3／R5／R7）
+
+- [Doc]：無程式碼變更；本 Sprint 僅 honest review＋文件收尾（PLAN §6 Phase 4 收尾判定小節＋§10 決議紀錄＋GAPS #54＋本條）。
+- 誠實差異：Phase 4 多項功能的 R5 素材為自擬樣張而非真書（注音 ruby、標點擠壓、目錄自動生成、圖文繞排、裁切標記），各 Sprint 已明示不宣稱真書驗證；真書不採注音亦不採擠壓（§1 實測），標點擠壓對此書系實效有限（真書內文開啟擠壓 5351 字格僅 17 處命中，0.16%）。
+
+### 待 Owner 真實素材驗收（R5，執行工程師不代行）
+
+- **Phase 4 DoD 的「實檔送印刷廠打樣，色彩與直排品質人類驗收通過」未達成**：需實體打樣與人類校色，本 Sprint 不宣稱達成，轉為 Phase 5 第一件事。
+- GAPS #19 真視窗批次（Phase 4 新增項＝preflight 面板三分區手感、紅與橘兩類顏色語意是否可辨）；連同 #10（Spike 1 對比圖）／#23（斷行逐行一致率）同批可做。
+
+### 下個 Sprint 預定範圍
+
+- Phase 5 首項待 Owner 定案。打樣校色依賴 Owner 與印刷廠；執行工程師可自主者為多書專案素材、效能量測、開源釋出文件（含 GAPS #1 自由散布替代文本備妥）。
+
 ## v0.89.0（2026-07-18，Sprint 94）preflight 面板三分區（關 GAPS #51 (d)、#53 (d)）
 
 ### 新增
