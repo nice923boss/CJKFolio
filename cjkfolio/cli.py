@@ -50,11 +50,35 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
 
 
+def _import_target(args, template):
+    """匯入的文件要掛哪一套模版與哪張主版（Sprint 105 多書專案）。
+
+    模版 id 取模版檔名（`--template` 指的就是那份模版，不另猜）；主版取 `--master`
+    覆寫，未給則取模版自行宣告的 default_master。兩者都沒有時快速失敗並列出可選
+    主版，不沉默套用參考書的「A-內文版」（第二本書並無此主版名）。
+    """
+    template_id = Path(args.template).stem
+    master = getattr(args, "master", "") or template.default_master
+    if not master:
+        raise SystemExit(
+            f"模版 {template_id} 未宣告 default_master，請以 --master 指定主版"
+            f"（可選：{'、'.join(sorted(template.masters))}）")
+    if master not in template.masters:
+        raise SystemExit(
+            f"主版「{master}」不存在於模版 {template_id}"
+            f"（可選：{'、'.join(sorted(template.masters))}）")
+    return template_id, master
+
+
 def cmd_import_txt(args) -> int:
+    template = load_template(args.template)
+    template_id, master = _import_target(args, template)
     doc = import_txt_file(
         args.input,
         default_style=args.style,
         title=args.title or Path(args.input).stem,
+        template_id=template_id,
+        master=master,
     )
     save_document(doc, args.output)
     print(f"匯入完成：{len(doc.paragraphs)} 段 → {args.output}")
@@ -63,11 +87,14 @@ def cmd_import_txt(args) -> int:
 
 def cmd_import_md(args) -> int:
     template = load_template(args.template)
+    template_id, master = _import_target(args, template)
     doc = import_markdown_file(
         args.input,
         mapping=template.md_mapping,
         inline_mapping=template.md_inline_mapping,
         title=args.title or Path(args.input).stem,
+        template_id=template_id,
+        master=master,
     )
     save_document(doc, args.output)
     styles_used = sorted({p.style for p in doc.paragraphs})
@@ -78,11 +105,14 @@ def cmd_import_md(args) -> int:
 
 def cmd_import_docx(args) -> int:
     template = load_template(args.template)
+    template_id, master = _import_target(args, template)
     doc = import_docx(
         args.input,
         mapping=template.md_mapping,
         inline_mapping=template.md_inline_mapping,
         title=args.title or Path(args.input).stem,
+        template_id=template_id,
+        master=master,
     )
     save_document(doc, args.output)
     styles_used = sorted({p.style for p in doc.paragraphs})
@@ -310,12 +340,17 @@ def main(argv=None) -> int:
     p_import.add_argument("-o", "--output", required=True)
     p_import.add_argument("--style", default=DEFAULT_BODY_STYLE)
     p_import.add_argument("--title", default="")
+    p_import.add_argument("--template", default=str(DEFAULT_TEMPLATE))
+    p_import.add_argument("--master", default="",
+                          help="掛哪張主版（預設取模版宣告的 default_master）")
     p_import.set_defaults(func=cmd_import_txt)
 
     p_md = sub.add_parser("import-md", help="Markdown 匯入（標題層級直接對映模版樣式）")
     p_md.add_argument("input")
     p_md.add_argument("-o", "--output", required=True)
     p_md.add_argument("--template", default=str(DEFAULT_TEMPLATE))
+    p_md.add_argument("--master", default="",
+                      help="掛哪張主版（預設取模版宣告的 default_master）")
     p_md.add_argument("--title", default="")
     p_md.set_defaults(func=cmd_import_md)
 
@@ -323,6 +358,8 @@ def main(argv=None) -> int:
     p_docx.add_argument("input")
     p_docx.add_argument("-o", "--output", required=True)
     p_docx.add_argument("--template", default=str(DEFAULT_TEMPLATE))
+    p_docx.add_argument("--master", default="",
+                        help="掛哪張主版（預設取模版宣告的 default_master）")
     p_docx.add_argument("--title", default="")
     p_docx.set_defaults(func=cmd_import_docx)
 

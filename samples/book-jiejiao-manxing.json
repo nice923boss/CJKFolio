@@ -1,0 +1,21 @@
+{
+ "schema": "cjkfolio/book@1",
+ "meta": {
+  "title": "街角慢行",
+  "template": "jiejiao-manxing"
+ },
+ "chapters": [
+  {"generate_toc": {
+     "heading": "目次",
+     "heading_style": "目錄-標題",
+     "entry_style": "目錄-條目",
+     "master": "丙-目錄"
+  }},
+  {"path": "jiejiao-manxing-open1.doc.json", "master": "乙-章扉", "toc_title": "第一章　從一個路口開始"},
+  {"path": "jiejiao-manxing-ch1.doc.json"},
+  {"path": "jiejiao-manxing-open2.doc.json", "master": "乙-章扉", "toc_title": "第二章　招牌的高度"},
+  {"path": "jiejiao-manxing-ch2.doc.json"},
+  {"path": "jiejiao-manxing-open3.doc.json", "master": "乙-章扉", "toc_title": "第三章　走成一本書"},
+  {"path": "jiejiao-manxing-ch3.doc.json"}
+ ]
+}

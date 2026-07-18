@@ -12,6 +12,7 @@
 | `wrap-demo.doc.json` | 圖文繞排樣張（自擬內文＋自擬照片）。示範 Sprint 89 的 `PlacedImage.wrap`：圖框成排除區，受影響行槽的內文避開圖的字軸範圍並留 `wrap_margin_mm` 一字格。搭配 `wrap-photo.png`＝程式生成的灰階漸層佔位圖（幾何形狀，非任何實際攝影或參考書圖像）。此圖為幾何示範用途，360×270px 置入後實效 218ppi，故匯出時會列 Sprint 91 的解析度警告（預期行為，非缺陷；示範檔非送印稿）。 |
 | `punct-squeeze.doc.json` | 標點擠壓樣張（自擬內文）。同一句話排兩次：上段走 `內文-明體直排`（未擠壓），下段走 `內文-標點擠壓`（開啟）。示範 Sprint 90 的 `ParagraphStyle.punct_squeeze`＝CLREQ §3.1.6.1 相鄰約物減半形（規則 2〜6）。搭配 `punct-squeeze.template.json`＝內建模版加一款 `based_on: 內文-明體直排` 的子樣式（由 `save_template` 產出，僅 `punct_squeeze` 與 `note` 為自身宣告，其餘承基底）。 |
 | `paiban-xiaoji-ch1.md` | **章節級公開素材**（自撰原創散文《排版小記》第一章，2,210 漢字）。GAPS #1 所需的「自由散布替代文本」：真書《內在整理》為版權物僅限本機，本檔可隨 repo 散布，供公開的端到端驗證。經 `import-md` 匯入為 41 段（章名 h1／小節標 h3／引文 blockquote／內文），排版 **11 頁、禁則 0 違規**，匯出 PDF/X-1a 機械檢查 **12/12 全過**。內容刻意涵蓋多條排版路徑：全大寫縮寫逐字正立（`CMYK`／`RGB`／`PDF`）與含小寫西文整串旋轉（`11.5pt`／`12.08pt`）兩種縱中橫形態、行內強調的發言人標籤、引文段落、左右頁鏡像與書眉頁碼。頁數與段數由 `tests/test_public_sample.py` 釘死，改寫本檔須同步更新本表。 |
+| `jiejiao-manxing-ch1.md`／`-ch2.md`／`-ch3.md`＋`-open1.doc.json`〜`-open3.doc.json`＋`book-jiejiao-manxing.json` | **書冊級公開素材**（自撰原創散文《街角慢行》三章，1,549 漢字）。Sprint 105 多書專案驗證（GAPS #56 丙(11)）：**第二本非參考書**，搭配自擬設計的第二套模版 `templates/jiejiao-manxing.json`（開本 130×190mm，與參考書的 148×210mm 及其版心、字級、行距、主版名、樣式名、色票名**零共用**），用以檢驗本產品的管線不是只對單一書目可用。書冊結構＝自動目錄（丙-目錄）＋三組「章扉（乙-章扉，mirror=false 無頁腳）＋內文（甲-內文，mirror=true 有頁碼書眉）」，整本 **13 頁、禁則 0 違規**，匯出 PDF/X-1a 機械檢查 **12/12 全過**。頁數、章扉落點與目錄頁碼由 `tests/test_second_book.py` 釘死，改寫本組檔案須同步更新本表。 |
 
 重現：
 
@@ -37,6 +38,20 @@ python -m cjkfolio.cli import-md samples/paiban-xiaoji-ch1.md -o out/public/ch1.
 python -m cjkfolio.cli render out/public/ch1.doc.json --out out/public/png
 python -m cjkfolio.cli export-pdf out/public/ch1.doc.json -o out/public/ch1.pdf
 python -m cjkfolio.cli preflight out/public/ch1.pdf
+
+# 第二本書《街角慢行》整本（Sprint 105 多書專案驗證）
+for n in 1 2 3; do
+  python -m cjkfolio.cli import-md samples/jiejiao-manxing-ch$n.md \
+    -o samples/jiejiao-manxing-ch$n.doc.json \
+    --template templates/jiejiao-manxing.json --title "街角慢行"
+done
+python -m cjkfolio.cli assemble samples/book-jiejiao-manxing.json \
+  -o out/jiejiao-manxing.doc.json --template templates/jiejiao-manxing.json --first-page 1
+python -m cjkfolio.cli render out/jiejiao-manxing.doc.json -o out/jiejiao \
+  --template templates/jiejiao-manxing.json --dpi 150 --first-page 1
+python -m cjkfolio.cli export-pdf out/jiejiao-manxing.doc.json -o out/jiejiao-manxing.pdf \
+  --template templates/jiejiao-manxing.json --first-page 1
+python -m cjkfolio.cli preflight out/jiejiao-manxing.pdf
 ```
 
 `paiban-xiaoji-ch1.md` 的預期輸出：render 報「11 頁、禁則 0 違規、擠入 7 行、撐開 0 行」，

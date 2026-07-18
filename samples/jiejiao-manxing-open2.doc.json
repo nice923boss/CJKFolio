@@ -1,0 +1,12 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "街角慢行",
+  "template": "jiejiao-manxing",
+  "master": "乙-章扉"
+ },
+ "paragraphs": [
+  {"text": "第二章", "style": "小節標-黑體"},
+  {"text": "招牌的高度", "style": "章名-宋體特粗"}
+ ]
+}

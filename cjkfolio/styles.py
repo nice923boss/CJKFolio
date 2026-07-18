@@ -309,6 +309,9 @@ class Template:
     masters: dict = field(default_factory=dict)
     md_mapping: dict = field(default_factory=dict)  # md block kind → 段落樣式名
     md_inline_mapping: dict = field(default_factory=dict)  # md 行內 kind（strong/em）→ 字元樣式名
+    # 匯入新稿時掛哪張主版（Sprint 105）。原為寫死於各 import_* 的預設「A-內文版」，
+    # 對第二本書即為錯的主版名，故搬進模版資料層由各模版自行宣告。
+    default_master: str = ""
 
 
 def _require(data: dict, key: str, context: str):
@@ -551,7 +554,11 @@ def template_from_dict(data) -> Template:
         masters={name: _master(name, d) for name, d in data["masters"].items()},
         md_mapping=dict(data.get("md_mapping", {})),
         md_inline_mapping=dict(data.get("md_inline_mapping", {})),
+        default_master=str(data.get("default_master", "")),
     )
+    if template.default_master and template.default_master not in template.masters:
+        raise TemplateError(
+            f"default_master「{template.default_master}」不存在於 masters")
     for mname, master in template.masters.items():
         if master.toc and master.toc.page_no_style not in template.character_styles:
             raise TemplateError(
@@ -672,7 +679,7 @@ def template_to_dict(template: Template) -> dict:
     樣式只寫 declared 欄位＋based_on（不把繼承效值寫死成覆寫）；主版與 spec 全欄位
     鏡射載入層。供 save_template 落檔（§4.3 人類可讀序列化）。
     """
-    return {
+    out = {
         "schema": SCHEMA_ID,
         "name": template.name,
         "page": {"width_mm": template.page_width_mm,
@@ -686,6 +693,9 @@ def template_to_dict(template: Template) -> dict:
         "md_mapping": dict(template.md_mapping),
         "md_inline_mapping": dict(template.md_inline_mapping),
     }
+    if template.default_master:  # 未宣告者不寫出空鍵（round-trip 不變形）
+        out["default_master"] = template.default_master
+    return out
 
 
 def save_template(template: Template, path) -> None:

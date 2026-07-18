@@ -1,0 +1,194 @@
+{
+ "schema": "cjkfolio/template@1",
+ "name": "街角慢行",
+ "version": 1,
+ "source": "自擬設計（Sprint 105 多書專案驗證，GAPS #56 丙(11)）。本模版與參考書《內在整理》零共用：開本、版心、字級、行距、主版集合、樣式名稱、色票名稱皆自行設計，非任何既有書籍的量測。用途是檢驗本產品的管線是否只對單一書目可用。",
+ "page": {
+  "width_mm": 130.0,
+  "height_mm": 190.0
+ },
+ "default_master": "甲-內文",
+ "colors": {
+  "墨黑": {
+   "cmyk": [0, 0, 0, 0.9],
+   "note": "內文墨黑：自擬設計取單 K90（§9 全 CMYK 或 Grayscale；比參考書的 K92 略淺）"
+  },
+  "底色白": {
+   "cmyk": [0, 0, 0, 0],
+   "note": "底色白（無墨）；名稱刻意不與參考書模版的色票重名，本模版與其零共用"
+  },
+  "淡墨": {
+   "cmyk": [0, 0, 0, 0.55],
+   "note": "目錄引導線與書眉的淡墨：自擬設計"
+  }
+ },
+ "md_mapping": {
+  "h1": "章名-宋體特粗",
+  "h2": "小節標-黑體",
+  "h3": "小節標-黑體",
+  "blockquote": "引語-宋體縮排",
+  "paragraph": "內文-宋體直排"
+ },
+ "md_inline_mapping": {
+  "strong": "強調-宋體特粗",
+  "em": "強調-宋體特粗"
+ },
+ "paragraph_styles": {
+  "內文-宋體直排": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 10.5,
+   "indent_chars": 2,
+   "para_gap_slots": 1,
+   "color": "墨黑",
+   "note": "主力內文：每行 34 字、每頁 13 行槽（自擬設計）"
+  },
+  "章名-宋體特粗": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 18.0,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "color": "墨黑",
+   "note": "章扉大標（乙-章扉主版）；亦供內文版的章名使用"
+  },
+  "小節標-黑體": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "size_pt": 11.5,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "color": "墨黑",
+   "note": "章內小節標"
+  },
+  "引語-宋體縮排": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 10.5,
+   "indent_chars": 3,
+   "para_gap_slots": 1,
+   "color": "墨黑",
+   "note": "引語段：以縮排區隔，不換字體（本模版不用楷書，避開無檔字型的 fallback）"
+  },
+  "目錄-標題": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 14.0,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "color": "墨黑",
+   "note": "目錄頁標題"
+  },
+  "目錄-條目": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 10.5,
+   "indent_chars": 1,
+   "para_gap_slots": 0,
+   "color": "墨黑",
+   "note": "目錄條目（頁碼與引導線由 丙-目錄 主版的 toc 配置繪出）"
+  }
+ },
+ "character_styles": {
+  "強調-宋體特粗": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 10.5,
+   "color": "墨黑",
+   "note": "內文局部強調。color 須逐一宣告：未宣告者落回全域預設 K92（§10 Sprint 8 為參考書定案的值），與本書設計的 K90 不一致"
+  },
+  "頁碼-粉圓": {
+   "font_family": "jf open 粉圓",
+   "font_weight": "regular",
+   "size_pt": 8.0,
+   "color": "墨黑",
+   "note": "頁碼數字（拉丁數字直立，縱中橫）"
+  },
+  "書眉-淡墨": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "medium",
+   "size_pt": 7.5,
+   "color": "淡墨",
+   "note": "書眉書名（偶數頁＝右頁）"
+  }
+ },
+ "masters": {
+  "甲-內文": {
+   "margins_mm": {
+    "top": 24.0,
+    "bottom": 33.701,
+    "outer": 16.0,
+    "inner": 21.396
+   },
+   "grid": {
+    "chars_per_line": 34,
+    "lines_per_page": 13,
+    "char_advance_pt": 11.03,
+    "line_pitch_pt": 21.0,
+    "base_size_pt": 10.5
+   },
+   "mirror": true,
+   "footer": {
+    "page_number": {
+     "style": "頁碼-粉圓",
+     "source": "number",
+     "baseline_from_top_pt": 478.0,
+     "outer_offset_pt": 28.0,
+     "pages": "all"
+    },
+    "running_title": {
+     "style": "書眉-淡墨",
+     "source": "title",
+     "baseline_from_top_pt": 477.0,
+     "outer_offset_pt": 45.35,
+     "pages": "even"
+    }
+   },
+   "evidence": "自擬設計，幾何自算不量測：欄長＝34×11.03＝375.02pt，地腳＝190mm−天頭 24mm−欄長 132.299mm＝33.701mm；版心寬＝base 10.5＋12×21.0＝262.5pt，訂口＝130mm−書口 16mm−92.604mm＝21.396mm；書眉 outer_offset 45.35pt 齊版心外緣（＝書口 16mm），頁碼 28.0pt 落於書口邊距內。",
+   "note": "側別承本產品既定：偶數書頁＝右頁（頁碼書口右＋書名書眉）、奇數＝左頁"
+  },
+  "乙-章扉": {
+   "margins_mm": {
+    "top": 46.0,
+    "bottom": 33.701,
+    "outer": 44.0,
+    "inner": 21.396
+   },
+   "grid": {
+    "chars_per_line": 12,
+    "lines_per_page": 3,
+    "char_advance_pt": 18.9,
+    "line_pitch_pt": 32.0,
+    "base_size_pt": 18.0
+   },
+   "mirror": false,
+   "evidence": "自擬設計：章扉大標 18pt、字距 18.9pt（＝18×1.05，同本產品既定換算慣例）、行距 32pt；mirror=false 使章扉恆以 outer 側起排（同 B-部扉先例）；章扉無頁腳。",
+   "note": "章名單行置於版心右上，餘白留給留白"
+  },
+  "丙-目錄": {
+   "margins_mm": {
+    "top": 30.0,
+    "bottom": 33.701,
+    "outer": 16.0,
+    "inner": 21.396
+   },
+   "grid": {
+    "chars_per_line": 30,
+    "lines_per_page": 13,
+    "char_advance_pt": 11.03,
+    "line_pitch_pt": 21.0,
+    "base_size_pt": 10.5
+   },
+   "mirror": true,
+   "toc": {
+    "page_no_style": "頁碼-粉圓",
+    "page_no_bottom_pt": 455.0,
+    "leader_width_pt": 0.25,
+    "leader_gap_pt": 3.0,
+    "leader_cmyk": [0, 0, 0, 0.55]
+   },
+   "evidence": "自擬設計：天頭 30mm 較內文深以留白，欄長 30×11.03＝330.9pt 短於內文版（條目不滿欄）；頁碼底錨 455pt 落於欄長終點 415.03pt 之下的地腳區；引導線淡墨 K55、線寬 0.25pt。",
+   "note": "本主版刻意不設 rule（水平虛線），用以檢驗 rule 為選配而非必填"
+  }
+ }
+}
