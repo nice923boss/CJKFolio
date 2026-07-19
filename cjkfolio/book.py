@@ -35,11 +35,27 @@ class TocSpec:
     """自動目錄章生成規格（Sprint 85）：由系統依列入章起始頁生成目錄段落。
 
     entry_style／master 必填；heading（部名）選配，有 heading 時 heading_style 必填。
+    entry_styles（Sprint 108）＝第二層起的逐層條目樣式 {層級: 樣式名}；第一層恆為
+    entry_style。階層縮排由各層樣式自身的 head_offset_chars 表達（無新幾何機制）。
     """
     entry_style: str
     master: str
     heading: Optional[str] = None
     heading_style: Optional[str] = None
+    entry_styles: Optional[dict] = None
+
+    def style_for_level(self, level: int) -> str:
+        """取該層條目樣式；未宣告即快速失敗（不沉默落回第一層樣式）。"""
+        if level == 1:
+            return self.entry_style
+        declared = self.entry_styles or {}
+        if level not in declared:
+            available = ", ".join(str(k) for k in [1, *sorted(declared)])
+            raise BookError(
+                f"自動目錄第 {level} 層無條目樣式：generate_toc.entry_styles 未宣告該層"
+                f"（已宣告層級：{available}）"
+            )
+        return declared[level]
 
 
 @dataclass(frozen=True)
@@ -48,6 +64,7 @@ class ChapterRef:
     master: Optional[str] = None  # 節首主版顯式覆寫（None＝依章文件）
     toc_title: Optional[str] = None  # 列入自動目錄的顯示標題（Sprint 85；None＝不列入）
     toc_spec: Optional[TocSpec] = None  # 非 None＝自動目錄章（無 path，頁碼由系統計算）
+    toc_level: int = 1  # 該章條目的目錄層級（Sprint 108；章內小節預設為此值 +1）
 
 
 @dataclass(frozen=True)
@@ -81,7 +98,32 @@ def _toc_chapter_from_dict(ch, i: int) -> ChapterRef:
         raise BookError(f"chapters[{i}] generate_toc 有 heading 時 heading_style 必填（非空字串）")
     return ChapterRef(toc_spec=TocSpec(
         entry_style=entry_style, master=master,
-        heading=heading, heading_style=heading_style))
+        heading=heading, heading_style=heading_style,
+        entry_styles=_entry_styles_from_dict(spec.get("entry_styles"), i)))
+
+
+def _entry_styles_from_dict(raw, i: int) -> Optional[dict]:
+    """解析 generate_toc.entry_styles（選配）：{"2": 樣式名, ...} → {2: 樣式名}。
+
+    第一層恆由 entry_style 宣告，故此表的鍵須 ≥2（宣告 "1" 即雙源，快速失敗）。
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise BookError(f"chapters[{i}] generate_toc.entry_styles 需為物件，得到 {raw!r}")
+    out: dict = {}
+    for key, value in raw.items():
+        level = int(key) if isinstance(key, str) and key.isdigit() else None
+        if level is None or level < 2:
+            raise BookError(
+                f"chapters[{i}] generate_toc.entry_styles 的鍵需為 ≥2 的層級整數字串"
+                f"（第一層由 entry_style 宣告），得到 {key!r}"
+            )
+        if not (isinstance(value, str) and value):
+            raise BookError(
+                f"chapters[{i}] generate_toc.entry_styles 的值需為非空字串，得到 {value!r}")
+        out[level] = value
+    return out
 
 
 def book_from_dict(data) -> Book:
@@ -116,7 +158,15 @@ def book_from_dict(data) -> Book:
         toc_title = ch.get("toc_title")
         if toc_title is not None and not (isinstance(toc_title, str) and toc_title):
             raise BookError(f"chapters[{i}] toc_title 需為非空字串或省略，得到 {toc_title!r}")
-        chapters.append(ChapterRef(path=ch["path"], master=master, toc_title=toc_title))
+        toc_level = ch.get("toc_level")
+        if toc_level is not None and (isinstance(toc_level, bool)
+                                      or not isinstance(toc_level, int) or toc_level < 1):
+            raise BookError(f"chapters[{i}] toc_level 需為 ≥1 的整數，得到 {toc_level!r}")
+        if toc_level is not None and toc_title is None:
+            raise BookError(
+                f"chapters[{i}] toc_level 需搭 toc_title（無標題即不列入目錄）")
+        chapters.append(ChapterRef(path=ch["path"], master=master, toc_title=toc_title,
+                                   toc_level=toc_level if toc_level is not None else 1))
     if sum(1 for c in chapters if c.toc_spec) > 1:
         raise BookError("每書冊至多一個自動目錄章（generate_toc）")
     raw_images = data.get("images", [])

@@ -87,6 +87,16 @@
    "para_gap_slots": 0,
    "color": "墨黑",
    "note": "目錄條目（頁碼與引導線由 丙-目錄 主版的 toc 配置繪出）"
+  },
+  "目錄-小節條目": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "regular",
+   "size_pt": 9.0,
+   "indent_chars": 1,
+   "para_gap_slots": 0,
+   "head_offset_chars": 2,
+   "color": "淡墨",
+   "note": "多層目錄第二層＝章內小節條目（Sprint 108）：自擬設計，較章條目小一號（9.0 對 10.5）、天頭再縮退 2 字格、色票取淡墨，三項一起構成階層感；縮退走既有 head_offset_chars 段級機制，無新幾何"
   }
  },
  "character_styles": {

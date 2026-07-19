@@ -4,8 +4,12 @@
 把「列入章的起始頁碼」交給引擎自動計算：書冊清單以 generate_toc 章宣告目錄骨架，
 內容章以 chapters[].toc_title 宣告列入標題，組裝時自動填入正確書頁號。
 
-兩趟穩定分頁（無 fixpoint）：目錄條目數＝列入章數（先驗定值），故目錄本身頁數
-與計算出的頁碼「數字」無關；page_no 為非流排載體（engine：掛段末行、不影響斷行），
+多層階層（Sprint 108）：章條目層級取 chapters[].toc_level、章內小節以章文件段落的
+toc_title／toc_level 宣告，各層條目掛各層樣式（generate_toc.entry_styles），縮排
+階層由樣式自身的 head_offset_chars 表達，本模組不新增幾何機制。
+
+兩趟穩定分頁（無 fixpoint）：目錄條目數＝宣告條目數（列入章＋宣告小節，先驗定值），
+故目錄本身頁數與計算出的頁碼「數字」無關；page_no 為非流排載體（engine：掛段末行、不影響斷行），
 填值不改分頁。因此：
   Pass 1：以 page_no=None 的條目占位組裝＋流排 → 定分頁、取各列入章起始頁。
   Pass 2：把書頁號填入條目 page_no（不觸分頁）。
@@ -24,18 +28,23 @@ from .wrap import layout_with_wrap
 
 @dataclass(frozen=True)
 class TocItem:
-    """一條自動目錄項：顯示標題＋列入章起始書頁號。"""
+    """一條自動目錄項：顯示標題＋所在書頁號＋目錄層級（第一層＝章，Sprint 108）。"""
     title: str
     page: int
+    level: int = 1
 
 
-def _listed(book: Book) -> list:
-    """帶 toc_title 的 path 章（manifest 序）：[(manifest_index, title), ...]。"""
-    return [(i, ch.toc_title) for i, ch in enumerate(book.chapters) if ch.toc_title]
+@dataclass(frozen=True)
+class _Entry:
+    """待計算頁碼的目錄條目：層級、標題、目標段（章序 + 章內段序）。"""
+    level: int
+    title: str
+    chapter: int
+    para_in_chapter: int
 
 
 def _first_page_of(result, para_idx: int) -> int:
-    """段 para_idx 首次出現的版面頁號（章首＝節首＝該節首頁）。"""
+    """段 para_idx 首次出現的版面頁號（章首＝節首＝該節首頁；小節＝該小節所在頁）。"""
     for page in result.pages:
         for pl in page.placed:
             if pl.para_idx == para_idx:
@@ -43,24 +52,47 @@ def _first_page_of(result, para_idx: int) -> int:
     raise BookError(f"目錄自動生成內部錯誤：段 {para_idx} 未出現於任何頁")
 
 
+def _collect_entries(book: Book, chapters: dict) -> list:
+    """依 manifest 序收集目錄條目：章條目在前，其章內小節依段序接續（Sprint 108）。
+
+    層級一律顯式宣告：章取 chapters[].toc_level（預設 1）、章內小節取段落
+    toc_level，未宣告者承所屬章層級 +1。引擎不從樣式名或字級反推階層。
+    """
+    entries: list = []
+    for i, ch in enumerate(book.chapters):
+        if ch.toc_spec:
+            continue
+        if ch.toc_title:
+            entries.append(_Entry(ch.toc_level, ch.toc_title, i, 0))
+        for j, para in enumerate(chapters[i]):
+            if para.toc_title:
+                level = para.toc_level if para.toc_level is not None else ch.toc_level + 1
+                entries.append(_Entry(level, para.toc_title, i, j))
+    return entries
+
+
 def _assemble_pass1(book: Book, base: Path):
     """組裝含占位目錄條目（page_no=None）的段落列，回傳定分頁所需的中介資料。
 
-    回傳 (paragraphs, head_index, entry_positions, listed, first_master)：
+    回傳 (paragraphs, entry_targets, entry_positions, entries, first_master)：
     - paragraphs：組裝後段落列（目錄條目 page_no=None）。
-    - head_index：{manifest_index → 該章首段在 paragraphs 的索引}（僅列入章）。
-    - entry_positions：各目錄條目段在 paragraphs 的索引（列入序，與 listed 對齊）。
-    - listed：_listed(book)。
+    - entry_targets：各條目的目標段在 paragraphs 的索引（與 entries 對齊）。
+    - entry_positions：各目錄條目段在 paragraphs 的索引（與 entries 對齊）。
+    - entries：_collect_entries 的條目序。
     - first_master：首節主版。
+
+    各 path 章先行載入（章內小節宣告在章文件裡，須讀過才知條目數），再組裝。
     """
     if not any(ch.toc_spec for ch in book.chapters):
         raise BookError(
             "assemble_book_with_toc／toc_items 需書冊含 generate_toc 章；"
             "純 path 書冊請用 assemble_book"
         )
-    listed = _listed(book)
+    chapters = {i: _resolve_chapter(ch, base, book.template, i)
+                for i, ch in enumerate(book.chapters) if not ch.toc_spec}
+    entries = _collect_entries(book, chapters)
     paragraphs: list = []
-    head_index: dict = {}
+    chapter_offset: dict = {}
     entry_positions: list = []
     first_master: Optional[str] = None
     for i, ch in enumerate(book.chapters):
@@ -69,32 +101,34 @@ def _assemble_pass1(book: Book, base: Path):
             if spec.heading:
                 paragraphs.append(Paragraph(
                     text=spec.heading, style=spec.heading_style, master=spec.master))
-            elif not listed:
+            elif not entries:
                 raise BookError(
                     "自動目錄章無 heading 且無列入章（toc_title），無法產生節首段"
                 )
-            for k, (_mi, title) in enumerate(listed):
+            for k, entry in enumerate(entries):
                 # 無 heading 時首條目承節首標記，其餘（含有 heading 者全部）承前段
                 is_section_head = (not spec.heading) and k == 0
                 entry_positions.append(len(paragraphs))
                 paragraphs.append(Paragraph(
-                    text=title, style=spec.entry_style,
+                    text=entry.title, style=spec.style_for_level(entry.level),
                     master=spec.master if is_section_head else None,
                     page_no=None))
             if first_master is None:
                 first_master = spec.master
         else:
-            chap = _resolve_chapter(ch, base, book.template, i)
-            head_index[i] = len(paragraphs)
+            chap = chapters[i]
+            chapter_offset[i] = len(paragraphs)
             paragraphs.extend(chap)
             if first_master is None:
                 first_master = chap[0].master
-    return paragraphs, head_index, entry_positions, listed, first_master
+    entry_targets = [chapter_offset[e.chapter] + e.para_in_chapter for e in entries]
+    return paragraphs, entry_targets, entry_positions, entries, first_master
 
 
 def _build(book: Book, template, base: Path, first_page: int):
     """核心：兩趟分頁 → 回傳 (最終 Document, TocItem 序列)。"""
-    paragraphs, head_index, entry_positions, listed, first_master = _assemble_pass1(book, base)
+    paragraphs, entry_targets, entry_positions, entries, first_master = \
+        _assemble_pass1(book, base)
     pass1 = Document(
         title=book.title, template=book.template, master=first_master,
         paragraphs=tuple(paragraphs), images=book.images)
@@ -103,9 +137,9 @@ def _build(book: Book, template, base: Path, first_page: int):
     result = layout_with_wrap(pass1, template, first_page=first_page)
     items: list = []
     paras = list(paragraphs)
-    for pos, (mi, title) in zip(entry_positions, listed):
-        page = _first_page_of(result, head_index[mi]) + first_page - 1
-        items.append(TocItem(title=title, page=page))
+    for pos, target, entry in zip(entry_positions, entry_targets, entries):
+        page = _first_page_of(result, target) + first_page - 1
+        items.append(TocItem(title=entry.title, page=page, level=entry.level))
         paras[pos] = replace(paras[pos], page_no=str(page))
     final = Document(
         title=book.title, template=book.template, master=first_master,

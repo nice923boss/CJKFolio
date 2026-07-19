@@ -143,10 +143,16 @@ def test_full_book_flows_without_violation(template):
     items = toc_items(book, template, base_dir=SAMPLES, first_page=1)
     result = layout_document(doc, template)
     assert not result.violations, f"整本排版有違規：{result.violations[:3]}"
-    assert len(items) == 3, "三章都應列入目錄"
-    # 目錄頁碼須嚴格遞增（章序即頁序），且不超過整本頁數
+    # 兩層目錄（Sprint 108）：三章各列一條，章內小節各列兩條
+    chapters = [item for item in items if item.level == 1]
+    sections = [item for item in items if item.level == 2]
+    assert len(chapters) == 3, "三章都應列入目錄"
+    assert len(sections) == 6, "三章各兩個小節都應列入目錄"
+    assert len(items) == len(chapters) + len(sections), "不應出現第三層條目"
+    # 目錄頁碼須遞增（書序即頁序），且不超過整本頁數
     numbers = [item.page for item in items]
-    assert numbers == sorted(numbers) and len(set(numbers)) == 3
+    assert numbers == sorted(numbers)
+    assert [c.page for c in chapters] == sorted(set(c.page for c in chapters))
     assert max(numbers) <= len(result.pages), \
         f"目錄頁碼 {max(numbers)} 超出整本 {len(result.pages)} 頁"
 

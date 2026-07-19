@@ -9,6 +9,7 @@
      "heading": "目次",
      "heading_style": "目錄-標題",
      "entry_style": "目錄-條目",
+     "entry_styles": {"2": "目錄-小節條目"},
      "master": "丙-目錄"
   }},
   {"path": "jiejiao-manxing-open1.doc.json", "master": "乙-章扉", "toc_title": "第一章　從一個路口開始"},

@@ -37,12 +37,17 @@ class Paragraph:
     page_no：目錄條目頁碼（選配，僅數字字串；@2 相容擴充，無欄位照載）。
     master：節首標記（選配，@2 相容擴充）：自本段起新頁並改用該主版
     （節式主版指派，Sprint 51）；同名主版亦強制分頁。None＝承前節。
+    toc_title：章內小節列入自動目錄的顯示標題（選配，@2 相容擴充，Sprint 108）。
+    標題語意屬使用者（§4.4 分工鐵律）故一律顯式宣告，引擎不從樣式名或字級反推。
+    toc_level：該條目的目錄層級（選配，≥1；None＝承所屬章層級 +1）；須搭 toc_title。
     """
     text: str = ""
     style: str = ""
     runs: tuple = ()
     page_no: Optional[str] = None
     master: Optional[str] = None
+    toc_title: Optional[str] = None
+    toc_level: Optional[int] = None
 
     def __post_init__(self):
         if self.runs:
@@ -219,6 +224,31 @@ def _frames_from_list(raw) -> tuple:
     return tuple(frames)
 
 
+def _paragraph_toc_from_dict(p: dict, i: int, schema: str):
+    """解析段落的目錄宣告（Sprint 108）：回傳 (toc_title, toc_level)。
+
+    toc_level 不得單獨出現：沒有 toc_title 就不會列入目錄，單給層級是無效宣告，
+    快速失敗而非默默忽略。
+    """
+    toc_title = p.get("toc_title")
+    toc_level = p.get("toc_level")
+    if toc_title is None and toc_level is None:
+        return None, None
+    if schema == SCHEMA_V1:
+        raise DocumentError(f"paragraphs[{i}] 使用 toc_title 需 schema document@2")
+    if toc_title is None:
+        raise DocumentError(
+            f"paragraphs[{i}] toc_level 需搭 toc_title（無標題即不列入目錄）")
+    if not (isinstance(toc_title, str) and toc_title):
+        raise DocumentError(
+            f"paragraphs[{i}] toc_title 需為非空字串，得到 {toc_title!r}")
+    if toc_level is not None and (isinstance(toc_level, bool)
+                                  or not isinstance(toc_level, int) or toc_level < 1):
+        raise DocumentError(
+            f"paragraphs[{i}] toc_level 需為 ≥1 的整數，得到 {toc_level!r}")
+    return toc_title, toc_level
+
+
 def document_from_dict(data) -> "Document":
     if not isinstance(data, dict):
         raise DocumentError("文件必須是 JSON 物件")
@@ -244,13 +274,16 @@ def document_from_dict(data) -> "Document":
                 raise DocumentError(f"paragraphs[{i}] 使用 master 需 schema document@2")
             if not (isinstance(master, str) and master):
                 raise DocumentError(f"paragraphs[{i}] master 需為非空字串，得到 {master!r}")
+        toc_title, toc_level = _paragraph_toc_from_dict(p, i, schema)
         if "runs" in p:
             if schema == SCHEMA_V1:
                 raise DocumentError(f"paragraphs[{i}] 使用 runs 需 schema document@2")
             paragraphs.append(Paragraph(style=p["style"], runs=_runs_from_list(p["runs"], i),
-                                        page_no=page_no, master=master))
+                                        page_no=page_no, master=master,
+                                        toc_title=toc_title, toc_level=toc_level))
         elif isinstance(p.get("text"), str):
-            paragraphs.append(Paragraph(p["text"], p["style"], page_no=page_no, master=master))
+            paragraphs.append(Paragraph(p["text"], p["style"], page_no=page_no, master=master,
+                                        toc_title=toc_title, toc_level=toc_level))
         else:
             raise DocumentError(f"paragraphs[{i}] 需含 text 字串或 runs 陣列")
     raw_images = data.get("images", [])
@@ -298,6 +331,10 @@ def _paragraph_to_dict(p: Paragraph) -> dict:
         out["page_no"] = p.page_no
     if p.master is not None:
         out["master"] = p.master
+    if p.toc_title is not None:
+        out["toc_title"] = p.toc_title
+    if p.toc_level is not None:
+        out["toc_level"] = p.toc_level
     return out
 
 
