@@ -108,6 +108,9 @@ def _fmt(v) -> str:
 
 
 def main(argv=None) -> int:
+    # Windows 繁中主控台預設 cp950，中文表頭會顯示為亂碼（Sprint 110 Gate 3 同類掃描
+    # 補；同 cli.py 與其他 tools/ 的處置）。
+    sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="全書級效能量測（Sprint 106）")
     ap.add_argument("--scales", type=int, nargs="+", default=list(DEFAULT_SCALES),
                     help="重複倍數（預設 1 4 8 16）")
