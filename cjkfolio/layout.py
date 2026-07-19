@@ -8,7 +8,7 @@
 from dataclasses import dataclass, field
 from math import ceil, floor
 
-from .engine import ParagraphSpec, check_kinsoku, flow_pages
+from .engine import ParagraphSpec, check_kinsoku, check_overflow, flow_pages
 from .primitives import PT_PER_MM
 from .styles import Grid, ParagraphStyle, Template
 
@@ -285,7 +285,10 @@ def layout_document(doc, template: Template, first_para_continues: bool = False,
             pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name,
                                     vertical=vertical))
     pages = tuple(pages)
-    violations = check_kinsoku([pl.line for page in pages for pl in page.placed])
+    all_lines = [pl.line for page in pages for pl in page.placed]
+    violations = check_kinsoku(all_lines)
+    # 溢出偵測（Sprint 111）：超寬 cell 撐爆行時據實回報，不再沉默溢出版心
+    violations += check_overflow(all_lines)
     toc_marks, toc_violations = _toc_marks(pages, template)
     violations += toc_violations
     rule_breaks = _rule_breaks(pages, template)

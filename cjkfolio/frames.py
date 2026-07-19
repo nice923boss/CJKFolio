@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from math import floor
 from typing import Optional
 
-from .engine import break_cells, normalize_with_offsets, tokenize
+from .engine import break_cells, check_overflow, normalize_with_offsets, tokenize
 from .layout import HORIZONTAL_MODE, style_advance_pt
 
 _EPS = 1e-6
@@ -97,6 +97,9 @@ def layout_text_frame(frame, template, grid) -> FramePlacement:
             f"{max_cols} 欄，末 {dropped} 槽未繪"
         )
         lines = lines[:max_cols]
+    # 單行內容溢出（Sprint 111，Gate 3 同類掃描）：既有檢查只驗「欄數超出框寬」，
+    # 不驗「單一 cell 寬於欄容量」，故框內的超寬 cell 此前同樣沉默溢出。
+    violations += [f"文字框（頁 {frame.page}）{v}" for v in check_overflow(lines)]
     return FramePlacement(style=frame.style, lines=_place_lines(
         lines, frame.rect, advance, pitch, st.size_pt), violations=violations)
 

@@ -387,6 +387,38 @@ def check_kinsoku(lines) -> list:
     return violations
 
 
+def check_overflow(lines) -> list:
+    """行內容寬於行容量者逐行回報（Sprint 111）。
+
+    觸發來源是 `_break_one_line` 末段的病理防護：貪婪迴圈收不到任何 cell 時
+    （＝單一 cell 寬於整行容量）強制收一枚，該枚遂溢出版心。此前**沒有任何機制
+    回報它**：`check_kinsoku` 只驗行首行尾字元、不驗寬度。一手實測（Sprint 111）：
+    80 字元拉丁串（width=40）排進 cap=30 的欄，溢出 10 槽＝120.8pt（約 42.6mm）。
+
+    本函式只回報、不改斷行行為（斷行策略的改動需 R1 證據，回報不需要；同 Sprint 109
+    對 TAC 400% 的立場：據實回報、不擋流程）。cap <= 0＝容量未知，不據以判定
+    （同 `line_justified_advance` 對未知容量的處置）。
+
+    **判準是「單一 cell 寬於行容量」，不是「行用量超過容量」**：後者會把行首禁則的
+    擠入（GAPS #9 定案的設計行為，句逗整串擠入行尾、溢出 ≤ MAX_SQUEEZE_SLOTS）誤判
+    為違規。實測初版以 used > cap 為判準，在 `samples/paiban-xiaoji-ch1.md` 這份正常
+    素材上就冒出 11 筆假違規（皆為 used=31／cap=30 而最寬 cell 僅 1 槽的擠入行）。
+    單一 cell 寬於容量則無論如何切行都塞不下，齊行也無從補救，那才是病理情形。
+    """
+    violations = []
+    for i, line in enumerate(lines):
+        if not line.cells or line.cap <= 0:
+            continue
+        widest = max(c.width for c in line.cells)
+        if widest > line.cap:
+            violations.append(
+                f"行 {i + 1} 內容溢出行容量：最寬 cell {widest:g} 槽 > 容量 "
+                f"{line.cap:g} 槽（超出 {widest - line.cap:g} 槽），"
+                f"本行共用 {sum(c.width for c in line.cells):g} 槽"
+            )
+    return violations
+
+
 def flow_pages(
     specs,
     chars_per_line: int,
