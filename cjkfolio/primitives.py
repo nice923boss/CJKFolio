@@ -50,6 +50,20 @@ class StrokeRect:
 
 
 @dataclass(frozen=True)
+class FillRect:
+    """填色矩形（top-down pt）：x0<x1、y0<y1（y0＝上緣）。cmyk 為填色 (c,m,y,k)。
+
+    印前標記的色條與灰梯尺載體（Sprint 109）。刻意不帶 line_width_pt：填色語意
+    無線寬，需要框線者用 StrokeRect。
+    """
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    cmyk: tuple
+
+
+@dataclass(frozen=True)
 class StrokeLine:
     """描邊線段（top-down pt）。dash_on_pt>0 時為虛線（畫 on 空 off），=0 為實線。"""
     x0: float
@@ -136,6 +150,137 @@ def crop_mark_lines(trim_w_pt: float, trim_h_pt: float, *, offset_pt: float,
         ln(w + o, h, w + o + ell, h),        # 右下 水平
         ln(w, h + o, w, h + o + ell),        # 右下 垂直
     )
+
+
+def _check_band(band_pt: float, patch_pt: float, gap_pt: float) -> None:
+    """標記帶內的共用守門：不合即快速失敗，不靜默夾住或縮排（Sprint 109）。"""
+    if gap_pt <= 0:
+        raise ValueError(f"標記帶內間隙須大於 0，得到 {gap_pt:.3f}pt")
+    if patch_pt > band_pt - 2 * gap_pt + 1e-9:
+        raise ValueError(
+            f"色塊邊長 {patch_pt:.3f}pt 超過標記帶可容（帶寬 {band_pt:.3f} 減兩側間隙 "
+            f"{2 * gap_pt:.3f}）；請縮小色塊或加寬標記帶"
+        )
+
+
+def _check_cmyk(values, ctx: str) -> tuple:
+    values = tuple(float(v) for v in values)
+    if len(values) != 4:
+        raise ValueError(f"{ctx} 須為四分量 CMYK，得到 {len(values)} 個")
+    for v in values:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"{ctx} 的分量須落在 0 至 1，得到 {v}")
+    return values
+
+
+def _band_patches(trim_w_pt: float, trim_h_pt: float, *, bleed_pt: float,
+                  band_pt: float, patch_pt: float, gap_pt: float,
+                  colors, top_band: bool, arm_pt: float) -> tuple:
+    """標記帶內自左起排的等距色塊列（top-down pt，trim 左上為原點）。
+
+    色條與灰梯尺唯一的差異是所在帶（上或下）與色序來源，故共用本函式。
+    色塊列右緣須留在中央套準十字的保留跨距之外，否則快速失敗（不靜默省略色塊）。
+    """
+    _check_band(band_pt, patch_pt, gap_pt)
+    colors = tuple(_check_cmyk(c, "色塊") for c in colors)
+    if not colors:
+        raise ValueError("色塊清單不得為空")
+    pitch = patch_pt + gap_pt
+    right_edge = gap_pt + (len(colors) - 1) * pitch + patch_pt
+    reserved_left = trim_w_pt / 2 - arm_pt - gap_pt
+    if right_edge + gap_pt > reserved_left + 1e-9:
+        raise ValueError(
+            f"色塊列右緣 {right_edge:.3f}pt 會撞進中央套準十字的保留跨距"
+            f"（左緣 {reserved_left:.3f}pt）；請減少色塊數、縮小色塊或加大開本"
+        )
+    inset = (band_pt - patch_pt) / 2  # 色塊在帶內垂直置中
+    if top_band:
+        y0 = -(bleed_pt + inset + patch_pt)
+    else:
+        y0 = trim_h_pt + bleed_pt + inset
+    y1 = y0 + patch_pt
+    out = []
+    for i, cmyk in enumerate(colors):
+        x0 = gap_pt + i * pitch
+        out.append(FillRect(x0=x0, y0=y0, x1=x0 + patch_pt, y1=y1, cmyk=cmyk))
+    return tuple(out)
+
+
+def color_bar_patches(trim_w_pt: float, trim_h_pt: float, *, bleed_pt: float,
+                      band_pt: float, patch_pt: float, gap_pt: float,
+                      swatches, arm_pt: float) -> tuple:
+    """色條（下標記帶，自左起排；Sprint 109）：每個 swatch 一塊實地色。
+
+    本色條為自擬配置，**不宣稱相容於任何標準控制條**（Ugra／Fogra／Brunner）；
+    塊數、色序、尺寸皆為 D 級推導（本專案無印廠一手需求，GAPS #42）。
+    """
+    return _band_patches(trim_w_pt, trim_h_pt, bleed_pt=bleed_pt, band_pt=band_pt,
+                         patch_pt=patch_pt, gap_pt=gap_pt, colors=swatches,
+                         top_band=False, arm_pt=arm_pt)
+
+
+def gray_ramp_patches(trim_w_pt: float, trim_h_pt: float, *, bleed_pt: float,
+                      band_pt: float, patch_pt: float, gap_pt: float,
+                      steps, arm_pt: float) -> tuple:
+    """灰梯尺（上標記帶，自左起排；Sprint 109）：每階一塊單 K 網點。
+
+    steps 須嚴格遞增且各落於 [0,1]（不遞增視為資料錯誤，不自行排序）。單 K 取向
+    承 §9「灰階照片走單 K」，階數與百分比為 D 級推導。
+    """
+    values = tuple(float(s) for s in steps)
+    if not values:
+        raise ValueError("灰梯尺階數清單不得為空")
+    for v in values:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"灰梯尺階值須落在 0 至 1，得到 {v}")
+    if any(b <= a for a, b in zip(values, values[1:])):
+        raise ValueError(f"灰梯尺階值須嚴格遞增，得到 {values}")
+    return _band_patches(trim_w_pt, trim_h_pt, bleed_pt=bleed_pt, band_pt=band_pt,
+                         patch_pt=patch_pt, gap_pt=gap_pt,
+                         colors=tuple((0.0, 0.0, 0.0, v) for v in values),
+                         top_band=True, arm_pt=arm_pt)
+
+
+def registration_cross_marks(trim_w_pt: float, trim_h_pt: float, *, bleed_pt: float,
+                             band_pt: float, arm_pt: float, box_pt: float,
+                             cmyk: tuple, line_width_pt: float) -> tuple:
+    """套準十字（四邊中點各一組；Sprint 109）：十字臂＋同心方框。
+
+    中心落在標記帶正中（距 trim 邊 bleed_pt + band_pt/2），臂半長 arm_pt、方框半邊
+    box_pt。回傳 8 條 StrokeLine（每組水平與垂直各一）＋4 個 StrokeRect。
+
+    **非傳統圓形套準環**：寫出層無曲線算符（`c`／`v`／`y`），本 v1 以同心方框代替
+    圓環，不假裝是圓（GAPS #42）。色由呼叫端給定：套準十字的功能是同時曬在四塊
+    印版上供比對套印，故預設為四版套準色（單 K 只在黑版留痕，其餘三版無參照）。
+    """
+    _check_cmyk(cmyk, "套準十字色")
+    if arm_pt + 0.0 <= 0 or box_pt <= 0:
+        raise ValueError("套準十字的臂長與方框邊長須大於 0")
+    if arm_pt * 2 > band_pt:
+        raise ValueError(
+            f"套準十字臂全長 {2 * arm_pt:.3f}pt 超過標記帶寬 {band_pt:.3f}pt"
+        )
+    if box_pt >= arm_pt:
+        raise ValueError(
+            f"同心方框半邊 {box_pt:.3f}pt 須小於臂半長 {arm_pt:.3f}pt（方框須在臂內）"
+        )
+    d = bleed_pt + band_pt / 2
+    centers = (
+        (trim_w_pt / 2, -d),              # 上
+        (trim_w_pt / 2, trim_h_pt + d),   # 下
+        (-d, trim_h_pt / 2),              # 左
+        (trim_w_pt + d, trim_h_pt / 2),   # 右
+    )
+    out: list = []
+    for cx, cy in centers:
+        out.append(StrokeLine(x0=cx - arm_pt, y0=cy, x1=cx + arm_pt, y1=cy,
+                              cmyk=cmyk, line_width_pt=line_width_pt))
+        out.append(StrokeLine(x0=cx, y0=cy - arm_pt, x1=cx, y1=cy + arm_pt,
+                              cmyk=cmyk, line_width_pt=line_width_pt))
+        out.append(StrokeRect(x0=cx - box_pt, y0=cy - box_pt,
+                              x1=cx + box_pt, y1=cy + box_pt,
+                              cmyk=cmyk, line_width_pt=line_width_pt))
+    return tuple(out)
 
 
 def cip_frame_rect(master, left_x_pt: float, n_lines: int, frame) -> StrokeRect:

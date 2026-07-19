@@ -49,9 +49,18 @@ from .placement import (
     ttb_char_placements,
 )
 from .font_license import license_warnings
+from .press_marks import (
+    MARK_CMYK,
+    MARK_LENGTH_MM,
+    MARK_WIDTH_PT,
+    REG_CMYK,
+    REG_SINGLE_K_CMYK,
+    emit_marks,
+    page_boxes_pt,
+    resolve_mark_margin_mm,
+)
 from .primitives import (
     cip_frame_rect,
-    crop_mark_lines,
     figure_slot_edges,
     figure_slot_rect,
     fit_image_rect,
@@ -72,12 +81,9 @@ from .wrap import layout_with_wrap
 BLEED_MM = 3.0
 TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92；styles 單一來源）
 
-# 裁切標記（Sprint 83，opt-in；§9「裁切標記置於出血外 offset 約 3mm」）：內端落在
-# BleedBox 邊（距 trim＝出血），向外延伸 MARK_LENGTH_MM；MediaBox 於 BleedBox 外再擴
-# MARK_LENGTH_MM 以容標記。標記單 K registration（§9 全 CMYK、避高 TAC）、hairline 線寬。
-MARK_LENGTH_MM = 3.0
-MARK_CMYK = (0.0, 0.0, 0.0, 1.0)
-MARK_WIDTH_PT = 0.25
+# 標記（裁切角標 Sprint 83、印前標記 Sprint 109）的參數、盒框推導與繪製同住
+# press_marks 模組；本檔 re-export 以維持既有 import 路徑。
+
 
 @dataclass(frozen=True)
 class PdfxProfile:
@@ -113,23 +119,6 @@ KNOWN_PRINT_CONDITIONS = frozenset({
     "IFRA26",
     "JC200103", "JC200104", "JCN2002", "JCW2003",
 })
-
-
-def page_boxes_pt(template, bleed_mm: float = BLEED_MM,
-                  mark_margin_mm: float = 0.0):
-    """(MediaBox, TrimBox, BleedBox)，皆 pt。
-
-    無裁切標記（mark_margin_mm=0）時 BleedBox＝MediaBox（§9）；開啟標記時 MediaBox
-    較 BleedBox 於四邊各外擴 mark_margin_mm（標記居於兩者之間），TrimBox 恆置中。
-    """
-    w, h = mm_to_pt(template.page_width_mm), mm_to_pt(template.page_height_mm)
-    b = mm_to_pt(bleed_mm)
-    mk = mm_to_pt(mark_margin_mm)
-    o = b + mk  # MediaBox 左下 → TrimBox 左下偏移
-    media = (0.0, 0.0, w + 2 * o, h + 2 * o)
-    trim = (o, o, o + w, o + h)
-    bleed = (mk, mk, mk + w + 2 * b, mk + h + 2 * b)
-    return media, trim, bleed
 
 
 def _fmt(v: float) -> str:
@@ -187,6 +176,10 @@ class _Content:
         # 本頁實際發出的 DeviceCMYK 著色值（TAC 檢核產出側，Sprint 93）：預設填色
         # 恆隨 prologue 發出故先入集
         self.cmyk_used: set = {tuple(DEFAULT_TEXT_CMYK)}
+        # 印前標記與裁切標記的著色值另立帳本（Sprint 109）：標記落在 TrimBox 外、
+        # 裁切後不入成品，分帳讓墨量報告能標出來源。**這不是豁免**：檢查器一行
+        # 未動，超標仍照報 ok=False（見 ink.py 與 GAPS #42）。
+        self.mark_cmyk_used: set = set()
 
     def set_fill(self, cmyk) -> None:
         """切換文字填色（Sprint 76 色票）：與現行相同不發算符（預設輸出形態不變）；
@@ -197,11 +190,33 @@ class _Content:
             self._fill = cmyk
             self.cmyk_used.add(cmyk)
 
+    def _ledger(self, cmyk, is_mark: bool) -> None:
+        """記一筆著色值到內容帳本或標記帳本（Sprint 109 分帳，見 __init__ 註解）。"""
+        (self.mark_cmyk_used if is_mark else self.cmyk_used).add(tuple(cmyk))
+
+    def fill_rect(self, cmyk, x_ll: float, y_ll: float, w: float, h: float,
+                  *, is_mark: bool = False) -> None:
+        """DeviceCMYK 填色矩形（獨立 q…Q 狀態塊；Sprint 109 印前標記色塊）。
+
+        `k`（填色）＋`re`＋`f` 皆不觸 preflight 的 rg／RG 判定，且 `f` 不觸發
+        no-transparency 與 no-lzw（R2 spike 以 PyMuPDF 實測確認，X-1a 仍 12/12）。
+        """
+        c, m, y, k = cmyk
+        self._ledger(cmyk, is_mark)
+        self.prologue += [
+            "q",
+            f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} k",
+            f"{x_ll:.3f} {y_ll:.3f} {_fmt(w)} {_fmt(h)} re",
+            "f",
+            "Q",
+        ]
+
     def stroke_rect(self, cmyk, line_width_pt: float,
-                    x_ll: float, y_ll: float, w: float, h: float) -> None:
+                    x_ll: float, y_ll: float, w: float, h: float,
+                    *, is_mark: bool = False) -> None:
         """DeviceCMYK 描邊矩形（獨立 q…Q 狀態塊，狀態隔離；`K` 不觸 preflight rg/RG）。"""
         c, m, y, k = cmyk
-        self.cmyk_used.add(tuple(cmyk))
+        self._ledger(cmyk, is_mark)
         self.prologue += [
             "q",
             f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
@@ -213,11 +228,12 @@ class _Content:
 
     def stroke_line(self, cmyk, line_width_pt: float,
                     x0: float, y0: float, x1: float, y1: float,
-                    dash_on_pt: float = 0.0, dash_off_pt: float = 0.0) -> None:
+                    dash_on_pt: float = 0.0, dash_off_pt: float = 0.0,
+                    *, is_mark: bool = False) -> None:
         """DeviceCMYK 描邊線段（獨立 q…Q 狀態塊）。dash_on_pt>0 時掛 `d` dash 陣列，
         dash 狀態隨 Q 還原不外洩（spike8 實證）；`d`/`m`/`l` 不觸 preflight rg/RG。"""
         c, m, y, k = cmyk
-        self.cmyk_used.add(tuple(cmyk))
+        self._ledger(cmyk, is_mark)
         ops = [
             "q",
             f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
@@ -263,7 +279,7 @@ class _PdfPageWriter:
     """把 LayoutPage 轉為內容流；幾何與 render.PageRenderer 同源（placement 層）。"""
 
     def __init__(self, template, master_name: str, font_dir=None,
-                 mark_margin_pt: float = 0.0):
+                 mark_margin_pt: float = 0.0, reg_cmyk=REG_CMYK):
         self.template = template
         self.master = template.masters[master_name]
         self.registry = FontRegistry(font_dir or DEFAULT_FONT_DIR)
@@ -279,7 +295,10 @@ class _PdfPageWriter:
         self.fonts_used: set = set()
         self.notdef_warnings: list = []
         self.bleed_pt = mm_to_pt(BLEED_MM)
-        self.mark_margin_pt = mark_margin_pt  # MediaBox 於 BleedBox 外的裁切標記餘裕
+        self.mark_margin_pt = mark_margin_pt  # MediaBox 於 BleedBox 外的標記帶餘裕
+        self.reg_cmyk = reg_cmyk  # 套準十字色（樣式值，非語意開關）
+        # 印前標記著色值（Sprint 109 分帳；不是豁免，見 _Content.__init__）
+        self.mark_cmyk_used: set = set()
         # 內容座標原點偏移（MediaBox 左下 → TrimBox 左下）：無標記時＝出血，
         # 開啟標記時＝出血＋標記餘裕（外擴 MediaBox 不得位移內文相對 trim）
         self.origin_pt = self.bleed_pt + mark_margin_pt
@@ -515,30 +534,23 @@ class _PdfPageWriter:
                 self._emit(content, key, tcy_placements(
                     shaper, digit, axis, cell_top, m.digit_size_pt, m.digit_advance_pt))
 
-    def _crop_marks(self, content: _Content) -> None:
-        """裁切標記（Sprint 83，opt-in）：8 條角標於 trim 外、BleedBox 與 MediaBox 之間；
-        單 K registration 描邊，與既有向量原件共用 stroke_line 路徑（獨立 q…Q，不觸
-        preflight rg/RG）。內端距 trim＝出血（落 BleedBox 邊），外端達 MediaBox 邊。"""
-        trim_w = mm_to_pt(self.template.page_width_mm)
-        trim_h = mm_to_pt(self.template.page_height_mm)
-        for line in crop_mark_lines(trim_w, trim_h, offset_pt=self.bleed_pt,
-                                    length_pt=self.mark_margin_pt, cmyk=MARK_CMYK,
-                                    line_width_pt=MARK_WIDTH_PT):
-            content.stroke_line(
-                line.cmyk, line.line_width_pt,
-                self.origin_pt + line.x0, self.page_h_pt + self.origin_pt - line.y0,
-                self.origin_pt + line.x1, self.page_h_pt + self.origin_pt - line.y1)
-
     def build_page(self, page, footer_texts=None, book_number=None,
                    vertical: bool = True, toc_marks=(), rule_breaks=(),
-                   images=(), frames=(), crop_marks: bool = False) -> bytes:
+                   images=(), frames=(), crop_marks: bool = False,
+                   press_marks: bool = False) -> bytes:
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = self.template.masters[page.master]
         if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
             book_number = page.number
         content = _Content()
-        if crop_marks:  # 裁切標記（trim 外，與內容不重疊；底層裝飾先 emit）
-            self._crop_marks(content)
+        if crop_marks or press_marks:  # 標記環（trim 外，與內容不重疊；先 emit）
+            emit_marks(
+                content,
+                trim_w_pt=mm_to_pt(self.template.page_width_mm),
+                trim_h_pt=mm_to_pt(self.template.page_height_mm),
+                bleed_pt=self.bleed_pt, origin_pt=self.origin_pt,
+                page_h_pt=self.page_h_pt, mm_to_pt=mm_to_pt,
+                crop=crop_marks, press=press_marks, reg_cmyk=self.reg_cmyk)
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先 emit）
         if not vertical and self.master.frame and page.placed:
             self._frame(content, page, book_number)
@@ -563,6 +575,7 @@ class _PdfPageWriter:
         if footer_texts:
             self._footer(content, book_number, footer_texts)
         self.cmyk_used |= content.cmyk_used  # 全書著色值彙整（TAC 檢核產出側）
+        self.mark_cmyk_used |= content.mark_cmyk_used  # 標記帳本（來源標示用）
         return content.finish()
 
 
@@ -583,6 +596,8 @@ class PdfResult:
     image_colorspaces: dict = field(default_factory=dict)  # {"/DeviceGray": n, ...}
     pdfx_label: str = "PDF/X-1a:2001"  # 一致性形態標籤（X-1a 預設；X-4 選項）
     crop_marks: bool = False  # 是否含裁切標記（opt-in；MediaBox 外擴、BleedBox=trim+出血）
+    press_marks: bool = False  # 是否含印前標記（opt-in；套準十字＋色條＋灰梯尺）
+    registration_single_k: bool = False  # 套準十字改單 K100（墨量全綠，但不曬在 CMY 版）
     license_warnings: tuple = ()  # 嵌入字型授權警告（fsType 不可嵌入／子集政策衝突）
     image_resolutions: tuple = ()  # 逐次置入的 ImageResolution（來源像素＋繪製尺寸）
     ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
@@ -595,7 +610,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                output_condition_identifier: str = "JC200103",
                output_condition: str = "Japan Color 2001 Coated",
                icc_profile=None, image_base_dir=None,
-               pdfx: str = "x-1a", crop_marks: bool = False) -> PdfResult:
+               pdfx: str = "x-1a", crop_marks: bool = False,
+               press_marks: bool = False,
+               registration_single_k: bool = False) -> PdfResult:
     """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
     pages=None 全頁；否則為版面頁號清單（1 起算）。
@@ -630,10 +647,16 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             f"印刷條件識別 {output_condition_identifier!r} 不在已知 ICC registry 名單，"
             f"{profile.label} 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
         )
-    mark_margin_mm = MARK_LENGTH_MM if crop_marks else 0.0
+    if registration_single_k and not press_marks:
+        raise ValueError(
+            "registration_single_k 需搭 press_marks（套準十字只在印前標記中產生）"
+        )
+    mark_margin_mm = resolve_mark_margin_mm(crop_marks, press_marks)
     layout = layout_with_wrap(doc, template, first_page=first_page)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir,
-                            mark_margin_pt=mm_to_pt(mark_margin_mm))
+                            mark_margin_pt=mm_to_pt(mark_margin_mm),
+                            reg_cmyk=REG_SINGLE_K_CMYK if registration_single_k
+                            else REG_CMYK)
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
@@ -660,7 +683,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             rule_breaks=layout.rule_breaks.get(page.number, ()),
             images=images_by_page.get(page.number, ()),
             frames=frames_by_page.get(page.number, ()),
-            crop_marks=crop_marks))
+            crop_marks=crop_marks, press_marks=press_marks))
 
     pdf = PdfBuilder(compress=compress)
     embedded = []
@@ -732,10 +755,15 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(pdf.build(catalog_num, info_num, version=profile.header))
     # 總墨量（TAC，§9 ≤ 320〜340%）：著色值與影像各記最高墨量，依 TAC 降序
+    # 標記色標明來源（Sprint 109）：同一色值若內容也用到，仍歸「著色」（保守，
+    # 不誤標）。這只是判讀依據，不改任何門檻，report.ok 不因此變動。
     ink_uses = tuple(sorted(
         [InkUse(kind="著色", label=" ".join(f"{v:g}" for v in cmyk),
                 tac=tac_percent(cmyk))
          for cmyk in writer.cmyk_used]
+        + [InkUse(kind="印前標記", label=" ".join(f"{v:g}" for v in cmyk),
+                  tac=tac_percent(cmyk))
+           for cmyk in writer.mark_cmyk_used if cmyk not in writer.cmyk_used]
         + [InkUse(kind="影像", label=name, tac=tac)
            for name, tac in writer._image_inks.items()],
         key=lambda u: -u.tac))
@@ -754,6 +782,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
             emb.colorspace for emb in writer._images.values()),
         pdfx_label=profile.label,
         crop_marks=crop_marks,
+        press_marks=press_marks,
+        registration_single_k=registration_single_k,
         license_warnings=tuple(license_warnings(writer.fonts_used)),
         image_resolutions=tuple(writer._image_resolutions),
         ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),

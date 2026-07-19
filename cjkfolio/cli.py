@@ -239,6 +239,10 @@ def cmd_export_pdf(args) -> int:
     template = load_template(args.template)
     if _check_style_refs(doc, template):
         return 2
+    if args.registration_single_k and not args.press_marks:
+        print("錯誤：--registration-single-k 需搭 --press-marks"
+              "（套準十字只在印前標記中產生）", file=sys.stderr)
+        return 2
     result = export_pdf(
         doc, template, args.output,
         pages=[args.page] if args.page else None,
@@ -247,10 +251,18 @@ def cmd_export_pdf(args) -> int:
         output_condition=args.output_condition,
         icc_profile=args.icc, image_base_dir=Path(args.document).parent,
         pdfx=args.pdfx, crop_marks=args.crop_marks,
+        press_marks=args.press_marks,
+        registration_single_k=args.registration_single_k,
     )
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
     if result.crop_marks:
         print("裁切標記：8 條單 K 角標（MediaBox 外擴、BleedBox=trim+出血）")
+    if result.press_marks:
+        reg = "單 K100" if result.registration_single_k else "四版套準色"
+        print(f"印前標記：四邊中點套準十字（{reg}）＋色條 8 塊＋灰梯尺 9 階"
+              "（落在 TrimBox 外的標記環內）")
+        print("印前標記為自擬配置，非任何標準控制條（Ugra／Fogra／Brunner）；"
+              "送印前請向印廠索取規格")
     print(f"{result.pdfx_label} 識別：OutputIntent {result.output_condition_identifier}"
           + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     if result.images_placed:
@@ -420,6 +432,13 @@ def main(argv=None) -> int:
                        help="PDF/X 一致性形態（預設 x-1a:2001；x-4:2010 須以 --icc 提供 ICC）")
     p_pdf.add_argument("--crop-marks", action="store_true",
                        help="加裁切標記（MediaBox 外擴、BleedBox=trim+出血、8 條單 K 角標）")
+    p_pdf.add_argument("--press-marks", action="store_true",
+                       help="加印前標記（四邊中點套準十字、色條 8 塊、灰梯尺 9 階；"
+                            "MediaBox 外擴 8mm。套準十字為四版套準色 TAC 400%%，"
+                            "油墨檢查將據實回報一處超標，該標記位於 TrimBox 外）")
+    p_pdf.add_argument("--registration-single-k", action="store_true",
+                       help="套準十字改單 K100（油墨檢查全綠，但該標記不會出現在 "
+                            "C／M／Y 印版上）；需搭 --press-marks")
     p_pdf.set_defaults(func=cmd_export_pdf)
 
     p_asm = sub.add_parser("assemble",
