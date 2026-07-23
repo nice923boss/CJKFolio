@@ -69,6 +69,24 @@ def test_tool_contains_no_manuscript_path():
     assert "C:\\Users" not in src and "C:/Users" not in src
 
 
+def test_no_committed_script_contains_local_manuscript_path():
+    """同類掃描（Sprint 113）：`tools/` 與 `spikes/` 下所有 .py 一律素材外置。
+
+    上一條只釘 measure_long_book.py 一支，但同一條紅線對任何進版控的腳本都成立：
+    Sprint 113 的 spike 探針同樣要吃長書，若把本機路徑寫死在原始碼裡，書稿位置就
+    等於進了 git。本測試把守備範圍擴到全部進版控的腳本（素材一律由呼叫端顯式指定）。
+    """
+    offenders = []
+    for d in ("tools", "spikes"):
+        for py in sorted((ROOT / d).rglob("*.py")):
+            src = py.read_text(encoding="utf-8")
+            hits = [pat for pat in ("成名之路", "C:\\Users", "C:/Users")
+                    if pat in src]
+            if hits:
+                offenders.append(f"{py.relative_to(ROOT)}：{hits}")
+    assert not offenders, "腳本內含本機書稿路徑：\n" + "\n".join(offenders)
+
+
 # --- 記憶體取數的語意 ---
 
 def test_peak_working_set_is_monotonic_or_none():
