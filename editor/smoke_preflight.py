@@ -6,6 +6,7 @@
   C16 preflight 面板三分區（Sprint 87 建立；Sprint 94 擴三分區）
   C17 preflight 背景執行緒與快取（Sprint 100）
   C18 X-4 preflight 與 ICC 選取（Sprint 101）
+  C23 字型授權分區（Sprint 112）
 
 由 smoke_check.main() 呼叫，需求的離屏環境（QT_QPA_PLATFORM＝offscreen、
 QApplication 已建）由呼叫端備妥。
@@ -20,7 +21,7 @@ from cjkfolio.editing import DocCursor
 
 
 def check_preflight(EditorWindow, DOC, ROOT) -> None:
-    """跑 C16〜C18 並逐項 print（斷言失敗即 AssertionError 中止整份 smoke）。"""
+    """跑 C16〜C18 與 C23 並逐項 print（斷言失敗即 AssertionError 中止整份 smoke）。"""
     # C16 preflight 面板（Sprint 87 建立；Sprint 94 擴為 X-1a／影像解析度／油墨總量三分區）
     from cjkfolio.preflight import (
         Finding,
@@ -51,7 +52,7 @@ def check_preflight(EditorWindow, DOC, ROOT) -> None:
     assert dlg16.table.rowCount() == 12, "面板表列數非 12"
     assert "全數通過（12/12）" in dlg16.summary_label.text(), "摘要非全數通過"
     assert dlg16.not_covered_label.text().startswith("未涵蓋"), "未涵蓋聲明未顯示"
-    assert dlg16.tabs.count() == 3, "面板分頁非三區"
+    assert dlg16.tabs.count() == 4, "面板分頁非四區（X-1a／影像／墨量／字型授權）"
     assert dlg16.tabs.tabText(0).startswith("PDF/X-1a"), "首頁非 X-1a"
     # 無置入圖的樣張：影像區零列且摘要據實說「無置入影像」；墨量區列出內文著色且達標
     assert dlg16.image_table.rowCount() == 0, "無圖樣張影像區不應有列"
@@ -217,4 +218,30 @@ def check_preflight(EditorWindow, DOC, ROOT) -> None:
         "C18 X-4 preflight 與 ICC 選取：取消選 ICC 則不執行（不默默降回 X-1a）→ 選取器"
         "回傳 ICC 後背景跑出 X-4 11 規則全過（無 no-transparency）→ 面板標題與分頁標 X-4"
         "＋ICC 留給下次沿用 → 改跑 X-1a 不命中 X-4 快取（重跑得 12 規則）"
+    )
+
+    # C23 字型授權分區（Sprint 112，關 GAPS #43 (b)）
+    from editor.preflight_panel import license_summary
+
+    assert dlg16.tabs.tabText(3) == "字型授權", "第四分頁非字型授權"
+    assert dlg16.license_table.rowCount() == len(dlg16.license_rows) > 0, \
+        "字型授權區應逐款列出實際嵌入字型"
+    assert all(r[0] == "可散布" for r in dlg16.license_rows), \
+        f"內建字型應皆可散布：{dlg16.license_rows}"
+    assert "皆可嵌入且宣告可散布" in dlg16.license_summary_label.text(), "授權摘要異常"
+    assert "字型授權" not in win16.statusBar().currentMessage(), \
+        "內建字型全過時 statusBar 不應附授權警示"
+    # 合成未過列：面板據實標示，且 X-1a 結論不因授權而變（非 X 條款）
+    warn_rows = (("無宣告", "某商用字型.ttf", "字型未宣告授權（name ID 13／14 皆無）"),
+                 ("可散布", "SourceHanSerifTC-Regular.otf", "SIL Open Font License"))
+    wdlg = PreflightDialog(report16, dlg16.image_report, dlg16.ink_report,
+                           license_rows=warn_rows)
+    assert wdlg.license_table.item(0, 0).text() == "無宣告", "未宣告列狀態異常"
+    assert "1／2 款須注意" in wdlg.license_summary_label.text(), "混合摘要異常"
+    assert "全數通過" in wdlg.summary_label.text(), "授權未過不得改動 X-1a 結論"
+    assert license_summary(()) == "無嵌入字型可判讀", "空列摘要未據實說明"
+    print(
+        "C23 字型授權分區：面板四分頁末頁逐款列出實際嵌入字型（內建 %d 款皆『可散布』，"
+        "statusBar 不附警示）；合成『無宣告』列標示須注意 1／2 款，X-1a 結論不受影響"
+        % len(dlg16.license_rows)
     )

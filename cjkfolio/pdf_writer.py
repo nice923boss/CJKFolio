@@ -48,7 +48,7 @@ from .placement import (
     tcy_placements,
     ttb_char_placements,
 )
-from .font_license import license_warnings
+from .font_license import enforce_license_policy
 from .press_marks import (
     MARK_CMYK,
     MARK_LENGTH_MM,
@@ -598,7 +598,7 @@ class PdfResult:
     crop_marks: bool = False  # 是否含裁切標記（opt-in；MediaBox 外擴、BleedBox=trim+出血）
     press_marks: bool = False  # 是否含印前標記（opt-in；套準十字＋色條＋灰梯尺）
     registration_single_k: bool = False  # 套準十字改單 K100（墨量全綠，但不曬在 CMY 版）
-    license_warnings: tuple = ()  # 嵌入字型授權警告（fsType 不可嵌入／子集政策衝突）
+    license_warnings: tuple = ()  # 字型授權警告（fsType 機器層＋name 表名義授權層）
     image_resolutions: tuple = ()  # 逐次置入的 ImageResolution（來源像素＋繪製尺寸）
     ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
     ink_uses: tuple = ()           # 著色與影像的最高墨量 InkUse（依 TAC 降序）
@@ -612,7 +612,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                icc_profile=None, image_base_dir=None,
                pdfx: str = "x-1a", crop_marks: bool = False,
                press_marks: bool = False,
-               registration_single_k: bool = False) -> PdfResult:
+               registration_single_k: bool = False,
+               license_policy: str = "warn") -> PdfResult:
     """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
     pages=None 全頁；否則為版面頁號清單（1 起算）。
@@ -625,6 +626,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     crop_marks=True 加裁切標記（§9）：MediaBox 於 BleedBox 外擴 MARK_LENGTH_MM、
     BleedBox 縮回 trim＋出血、8 條單 K 角標；預設 False 時輸出與無標記相同（BleedBox
     ＝MediaBox，向後相容）。
+    license_policy="warn"（預設）字型授權問題只列 license_warnings 不擋；"block"
+    則於寫檔前中止並拋 ValueError，不留半成品檔案。
     """
     if pdfx not in PDFX_PROFILES:
         raise ValueError(
@@ -751,6 +754,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         f"{gts} >>"
     )
 
+    # 授權檢查置於寫檔前：block 政策要擋得住就不能先產出檔案再抱怨
+    lic_warnings = enforce_license_policy(license_policy, writer.fonts_used)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(pdf.build(catalog_num, info_num, version=profile.header))
@@ -784,7 +789,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         crop_marks=crop_marks,
         press_marks=press_marks,
         registration_single_k=registration_single_k,
-        license_warnings=tuple(license_warnings(writer.fonts_used)),
+        license_warnings=lic_warnings,
         image_resolutions=tuple(writer._image_resolutions),
         ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),
         ink_uses=ink_uses,

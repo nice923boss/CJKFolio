@@ -27,7 +27,7 @@ from cjkfolio.preflight import (
     preflight_summary,
 )
 from editor.preflight_core import preflight_cache_key, run_preflight_checks
-from editor.preflight_panel import PreflightDialog
+from editor.preflight_panel import PreflightDialog, license_summary
 
 
 class PreflightThread(QThread):
@@ -156,6 +156,8 @@ class PreflightActionsMixin:
             notes.append(f"影像解析度：{image_resolution_summary(results.image_report)}")
         if not results.ink_report.ok:
             notes.append(f"油墨總量：{ink_coverage_summary(results.ink_report)}")
+        if any(r[0] != "可散布" for r in results.licenses):
+            notes.append(f"字型授權：{license_summary(results.licenses)}")
         marks = list(notes)
         if cached:
             marks.append("沿用上次結果（文件未變）")
@@ -166,7 +168,8 @@ class PreflightActionsMixin:
         self.statusBar().showMessage(
             f"{label} preflight：{preflight_summary(results.report)}{tail}")
         PreflightDialog(results.report, results.image_report,
-                        results.ink_report, self, profile_label=label).exec()
+                        results.ink_report, self, profile_label=label,
+                        license_rows=results.licenses).exec()
 
     def _preflight_stale(self) -> bool:
         """檢查期間文件是否已被改動（改動則報告只代表送檢當下）。

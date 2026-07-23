@@ -16,8 +16,8 @@
   C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
   C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派（單一 undo 步）、警告不沉默
   C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
-  C16〜C18 preflight 面板三分區／背景執行緒與快取／X-4 與 ICC 選取
-     （Sprint 87〜101，實作抽於 editor/smoke_preflight.py：本檔逾 800 行上限）
+  C16〜C18 preflight 面板三分區／背景執行緒與快取／X-4 與 ICC 選取、C23 字型授權分區
+     （Sprint 87〜112，實作抽於 editor/smoke_preflight.py：本檔逾 800 行上限）
   C19 畫布置圖 UI（Sprint 102，實作抽於 editor/smoke_images.py）：拖放置入、
      拖曳移動、拖角等比縮放、Delete 移除，各一步 undo；缺圖不炸
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
@@ -607,7 +607,8 @@ def main() -> int:
         "（壞檔套用守門警示）→ 套用整份模版（樣式回來）→ 一步 undo 回原"
     )
 
-    # C16〜C18 preflight 面板／背景執行緒／X-4（抽於 editor/smoke_preflight.py）
+    # C16〜C18 preflight 面板／背景執行緒／X-4、C23 字型授權分區
+    # （抽於 editor/smoke_preflight.py）
     check_preflight(EditorWindow, DOC, ROOT)
 
     # C19 畫布置圖 UI、C20 文繞圖參數 UI（抽於 editor/smoke_images.py，同上行數紀律）
@@ -624,7 +625,7 @@ def main() -> int:
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
         "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
-        "＋preflight 面板＋背景執行緒與快取＋X-4 與 ICC 選取＋畫布置圖 UI"
+        "＋preflight 面板＋背景執行緒與快取＋X-4 與 ICC 選取＋字型授權分區＋畫布置圖 UI"
         "＋文繞圖參數 UI（畫布所見即繞排所得）＋AI 指派背景執行緒（段序失效守門）"
         "＋稿件匯入（txt／md／docx 落到現行模版樣式，壞稿不進畫布）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"

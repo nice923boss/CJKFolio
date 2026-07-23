@@ -2,6 +2,59 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.106.0（2026-07-23，Sprint 112）字型名義授權分類與匯出攔阻選項
+
+### 動工前先確認這是真洞：商用字型在舊檢查下全部零警告
+
+Sprint 84 的 fsType 檢查只回答「字型檔允不允許嵌入」。拿它去掃本機真實商用字型，結果是：
+
+| 字型 | fsType | 舊檢查 | 新的名義層 |
+| --- | --- | --- | --- |
+| 標楷體 kaiu.ttf | 0x0008 Editable | 零警告 | 須確認（DynaLab 宣告） |
+| 新細明體 mingliu.ttc | 0x0008 Editable | 零警告 | 須確認 |
+| 微軟正黑體 msjh.ttc | 0x0008 Editable | 零警告 | 須確認 |
+| Arial arial.ttf | 0x0008 Editable | 零警告 | 須確認 |
+| **Gill Sans MT GIL\_\_\_\_\_.TTF** | 0x0008 Editable | 零警告 | **無宣告**（Monotype Typography，ID 13 與 ID 14 皆不存在） |
+
+最後一列正是 GAPS #8 記載本專案曾用於樣張替位的那支字型。**fsType 允許嵌入，不等於授權允許散布**，#43 (a) 是實存的漏洞而非假想。
+
+### 方法：讀字型自報的授權，不做字型名稱黑名單
+
+§8 原記的處置是「華康／Monotype 商用字型的字型名稱比對提示」，但名稱比對改個檔名就繞過（而繞過的後果是使用者以為過了檢查），且黑名單追不上字型市場。改讀 OpenType `name` 表 **ID 13（License Description）** 與 **ID 14（License Info URL）**，比對五個自由授權特徵（SIL OFL、Apache 2.0、MIT、Ubuntu Font Licence、公眾領域／CC0）分三類：
+
+- `free` 可散布、`unknown` 須自行確認（有宣告但非已知自由授權）、`undeclared` 無宣告。
+- **分類完全不看檔名**，由「複製同一支字型改名後分類不變」的測試釘死。
+
+### 新增
+
+- [實作] `cjkfolio/font_license.py` 61→190 行：`RedistributionFinding`、`redistribution_declaration`、`license_rows`、`enforce_license_policy`、`LicenseBlocked`。兩層警告**各自成列**（「字型授權：」為嵌入位元、「名義授權：」為散布宣告），Sprint 84 的 8 個既有測試一字未改照過。
+- [實作] `export_pdf(license_policy="warn"|"block")`：**檢查置於 `write_bytes` 之前**，要擋得住就不能先產出檔案再抱怨，由「擋下後目錄裡沒有該檔」的測試釘死。
+- [實作] CLI `--license-policy {warn,block}`：攔阻時 exit 2 並印出原因與逐款字型。
+- [實作] editor preflight 面板第四分頁「字型授權」：逐款狀態＋摘要，**只呈報不設開關**（同 Sprint 109 對 TAC 400% 的立場，決定權留給人）。
+- [實作] `tools/measure_font_license.py`：字型一律由呼叫端 `--fonts` 顯式列出，**工具不內含任何字型路徑、不掃描系統字型目錄**（承 `measure_long_book.py` 的素材外置紀律，由測試掃原始碼釘死）。
+- [實作] `tests/test_font_naming_license.py`：23 測試。fixture 以內建 OFL 字型改寫 name ID 13／14 造出各種形態，**測試不攜帶任何商用字型**。
+
+### R5 真實素材驗收（商用字型不入 repo，走本機路徑）
+
+上表五款商用字型實跑，內建 6 款全數「可散布」（皆為 SIL OFL，來源 Adobe／justfont／Wang, Li-Yu & Liu, Wei-Chen）。
+
+### Gate 4 獨立複驗
+
+- `block` ＋ 內建字型 → 產出存在、0 警告。
+- `block` ＋ 剝掉 ID 13／14 的思源宋體 → `LicenseBlocked` 拋出，`blocked.pdf` **不存在**（目錄列舉 `['fonts', 'ok.pdf']` 為證）。
+- PyMuPDF 直讀產出 PDF（不 import 本專案任何模組）→ 1 頁、嵌入 `LPQIUZ+SourceHanSerifTC-Regular`、首頁文字「整理與安放」。
+
+### 待 Owner 真實素材驗收
+
+- 帶 font exception 的 GPL 字型（如 GNU FreeFont）目前落入「須確認」＝偽陽性，需取得該類字型的實際 name 表措辭樣本才能判斷是否值得加入特徵表（GAPS #68 (a)）。
+- preflight 面板第四分頁的顏色語意與可辨性，屬 Owner 真視窗批次（GAPS #19）。
+
+### 測試
+
+1060 → 1083（+23），0 失敗；typecheck（含 editor）0；smoke C1〜C23 SMOKE PASS。
+
+---
+
 ## v0.105.0（2026-07-20，Sprint 111）URL 直排斷行的否定結論，與行溢出偵測
 
 ### 結論先講：Owner 指示的「修 URL 斷行」，實測結果是不該修

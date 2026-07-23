@@ -1,12 +1,14 @@
-"""preflight 結果面板（Sprint 87 建立；Sprint 94 擴為三分區）。
+"""preflight 結果面板（Sprint 87 建立；Sprint 94 擴為三分區；Sprint 112 加字型授權）。
 
-唯讀顯示三份既有機械檢查的結果，判定邏輯全在 cjkfolio.preflight（已 pytest 驗），
-本面板只呈現，逐筆列由 preflight 的 image_rows／ink_rows 產生（與 CLI 同一組列）：
+唯讀顯示既有機械檢查的結果，判定邏輯全在 cjkfolio.preflight 與 cjkfolio.font_license
+（皆已 pytest 驗），本面板只呈現，逐筆列由那兩處產生（與 CLI 同一組列）：
 
 - PDF/X-1a（check_pdfx）：ISO 15930-1 標準合規，不過＝不合規。
 - 影像解析度（check_image_resolution）與油墨總量（check_ink_coverage）：§9 印廠
   條件、非 X 條款（Sprint 91／93 規則集分離定案），故摘要以警示色而非不合規紅字，
   且不影響 X-1a 結論。
+- 字型授權（font_license.license_rows）：fsType 嵌入位元與 name 表授權宣告，同屬
+  非 X 條款；面板只呈報，要擋匯出走 export_pdf 的 license_policy="block"。
 
 認證級 preflight（Acrobat／印廠）非本機械檢查涵蓋（GAPS #18），未涵蓋聲明如實列出。
 """
@@ -35,6 +37,17 @@ from cjkfolio.preflight import (
 WARN_COLOR = "#b06000"   # 印廠條件風險（非 X 不合規），與 X-1a 不合規紅字區別
 FAIL_COLOR = "#b00000"
 PASS_COLOR = "#008000"
+
+
+def license_summary(rows) -> str:
+    """字型授權分區摘要（rows 為 font_license.license_rows 的輸出）。"""
+    if not rows:
+        return "無嵌入字型可判讀"
+    bad = [r for r in rows if r[0] != "可散布"]
+    if not bad:
+        return f"{len(rows)} 款嵌入字型皆可嵌入且宣告可散布授權"
+    kinds = "、".join(sorted({r[0] for r in bad}))
+    return f"{len(bad)}／{len(rows)} 款須注意（{kinds}），散布前請自行確認授權"
 
 
 def _rule_rows(report) -> tuple:
@@ -81,13 +94,14 @@ class PreflightDialog(QDialog):
     """
 
     def __init__(self, report, image_report, ink_report, parent=None,
-                 profile_label: str = "PDF/X-1a:2001") -> None:
+                 profile_label: str = "PDF/X-1a:2001", license_rows=()) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"{profile_label} preflight 檢查結果")
         self.profile_label = profile_label
         self.report = report
         self.image_report = image_report
         self.ink_report = ink_report
+        self.license_rows = tuple(license_rows)
 
         self.summary_label = QLabel(f"結論：{preflight_summary(report)}")
         self.summary_label.setStyleSheet(
@@ -100,16 +114,23 @@ class PreflightDialog(QDialog):
             f"油墨總量（§9，非 PDF/X 條款）：{ink_coverage_summary(ink_report)}")
         self.ink_summary_label.setStyleSheet(
             "color:%s;" % (PASS_COLOR if ink_report.ok else WARN_COLOR))
+        license_ok = all(r[0] == "可散布" for r in self.license_rows)
+        self.license_summary_label = QLabel(
+            f"字型授權（非 PDF/X 條款）：{license_summary(self.license_rows)}")
+        self.license_summary_label.setStyleSheet(
+            "color:%s;" % (PASS_COLOR if license_ok else WARN_COLOR))
 
         self.table = _make_table(_rule_rows(report), "通過", FAIL_COLOR)
         self.image_table = _make_table(image_rows(image_report), "達標", WARN_COLOR)
         self.ink_table = _make_table(ink_rows(ink_report), "達標", WARN_COLOR)
+        self.license_table = _make_table(self.license_rows, "可散布", WARN_COLOR)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(_tab(self.table),
                          f"{profile_label}（{len(report.findings)} 規則）")
         self.tabs.addTab(_tab(self.image_table), "影像解析度")
         self.tabs.addTab(_tab(self.ink_table), "油墨總量")
+        self.tabs.addTab(_tab(self.license_table), "字型授權")
 
         self.not_covered_label = QLabel(
             "未涵蓋（誠實聲明）：" + "；".join(report.not_covered))
@@ -123,6 +144,7 @@ class PreflightDialog(QDialog):
         layout.addWidget(self.summary_label)
         layout.addWidget(self.image_summary_label)
         layout.addWidget(self.ink_summary_label)
+        layout.addWidget(self.license_summary_label)
         layout.addWidget(self.tabs)
         layout.addWidget(self.not_covered_label)
         layout.addWidget(buttons)

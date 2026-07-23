@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from cjkfolio.document import Document, document_to_dict
+from cjkfolio.font_license import license_rows
 from cjkfolio.pdf_writer import export_pdf
 from cjkfolio.preflight import (
     ImageResolutionReport,
@@ -34,11 +35,14 @@ class PreflightResults(NamedTuple):
     """三份機械檢查報告（PDF/X 合規；影像解析度與油墨總量為 §9 印廠條件）。
 
     profile＝送檢的 PDF/X 形態鍵（"x-1a" 或 "x-4"），供呈現層標示是哪一套規則集。
+    licenses＝該次匯出實際嵌入字型的授權表列（Sprint 112；fsType 機器層＋name 表
+    名義授權層），非 PDF/X 條款，故與影像、墨量同屬「不影響 X 結論」的分區。
     """
     report: PreflightReport
     image_report: ImageResolutionReport
     ink_report: InkCoverageReport
     profile: str = "x-1a"
+    licenses: tuple = ()
 
 
 def run_preflight_checks(doc: Document, template: Template, image_base_dir, *,
@@ -51,14 +55,15 @@ def run_preflight_checks(doc: Document, template: Template, image_base_dir, *,
     """
     with tempfile.TemporaryDirectory() as td:
         pdf_path = Path(td) / "preflight.pdf"
-        export_pdf(doc, template, pdf_path, image_base_dir=image_base_dir,
-                   pdfx=pdfx, icc_profile=icc_profile)
+        result = export_pdf(doc, template, pdf_path, image_base_dir=image_base_dir,
+                            pdfx=pdfx, icc_profile=icc_profile)
         path = str(pdf_path)
         return PreflightResults(
             check_pdfx(path, profile=pdfx),
             check_image_resolution(path),
             check_ink_coverage(path),
             pdfx,
+            tuple(license_rows(result.fonts_used)),
         )
 
 

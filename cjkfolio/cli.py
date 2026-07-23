@@ -26,6 +26,7 @@ from .document import (
     unknown_style_refs,
 )
 from .docx_import import import_docx
+from .font_license import LICENSE_POLICIES, LicenseBlocked
 from .images import MIN_IMAGE_PPI
 from .ink import MAX_TAC
 from .md_import import import_markdown_file
@@ -243,17 +244,22 @@ def cmd_export_pdf(args) -> int:
         print("錯誤：--registration-single-k 需搭 --press-marks"
               "（套準十字只在印前標記中產生）", file=sys.stderr)
         return 2
-    result = export_pdf(
-        doc, template, args.output,
-        pages=[args.page] if args.page else None,
-        footer=not args.no_footer, first_page=args.first_page,
-        output_condition_identifier=args.output_condition_identifier,
-        output_condition=args.output_condition,
-        icc_profile=args.icc, image_base_dir=Path(args.document).parent,
-        pdfx=args.pdfx, crop_marks=args.crop_marks,
-        press_marks=args.press_marks,
-        registration_single_k=args.registration_single_k,
-    )
+    try:
+        result = export_pdf(
+            doc, template, args.output,
+            pages=[args.page] if args.page else None,
+            footer=not args.no_footer, first_page=args.first_page,
+            output_condition_identifier=args.output_condition_identifier,
+            output_condition=args.output_condition,
+            icc_profile=args.icc, image_base_dir=Path(args.document).parent,
+            pdfx=args.pdfx, crop_marks=args.crop_marks,
+            press_marks=args.press_marks,
+            registration_single_k=args.registration_single_k,
+            license_policy=args.license_policy,
+        )
+    except LicenseBlocked as exc:
+        print(f"錯誤：{exc}", file=sys.stderr)
+        return 2
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
     if result.crop_marks:
         print("裁切標記：8 條單 K 角標（MediaBox 外擴、BleedBox=trim+出血）")
@@ -288,8 +294,11 @@ def cmd_export_pdf(args) -> int:
     if result.license_warnings:
         for warning in result.license_warnings:
             print(warning)
+        if args.license_policy == "warn":
+            print("以上為提示，未擋匯出；要擋請加 --license-policy block")
     else:
-        print("字型授權：嵌入字型皆可合法嵌入子集（fsType 檢查）")
+        print("字型授權：嵌入字型皆可合法嵌入子集，且皆宣告可散布授權"
+              "（fsType 位元＋name 表 ID 13／14 檢查）")
     for emb in result.embedded_fonts:
         print(f"嵌入字型：{emb['base']}（{emb['glyphs']} 字形，子集 {emb['bytes']:,} bytes）")
     return 0
@@ -439,6 +448,9 @@ def main(argv=None) -> int:
     p_pdf.add_argument("--registration-single-k", action="store_true",
                        help="套準十字改單 K100（油墨檢查全綠，但該標記不會出現在 "
                             "C／M／Y 印版上）；需搭 --press-marks")
+    p_pdf.add_argument("--license-policy", choices=list(LICENSE_POLICIES), default="warn",
+                       help="字型授權未過時的處置：warn 只提示（預設）；"
+                            "block 不產出檔案")
     p_pdf.set_defaults(func=cmd_export_pdf)
 
     p_asm = sub.add_parser("assemble",
