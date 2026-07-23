@@ -273,6 +273,7 @@ def layout_document(doc, template: Template, first_para_continues: bool = False,
                     advance_pt=style_advance_pt(st, grid),
                     punct_squeeze=st.punct_squeeze,
                     line_end_squeeze=st.line_end_squeeze,
+                    line_head_squeeze=st.line_head_squeeze,
                 )
             )
         # 每節獨立流排（節首＝強制起新頁）；頁號跨節連續。節間段後空槽自然歸零

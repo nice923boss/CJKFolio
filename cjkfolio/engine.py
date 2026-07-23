@@ -34,6 +34,10 @@ SQUEEZE_STOPS = frozenset("、，。")
 SQUEEZE_OPENERS = frozenset(LINE_END_FORBIDDEN)
 SQUEEZE_CLOSERS = frozenset("」』）〕》〉｝〗")
 SQUEEZE_WIDTH = 0.5  # 讓出半形後的字身框（條文：可減少半個字寬）
+# 行首開括號的字形位移（Sprint 117，§3.1.6.2 規則 1）：單位為 em（字級倍數），
+# 負值＝往行首（直排的上方）。取 em 而非字槽是量出來的：位移綁字距（0.5252 em）
+# 或綁齊行後字距（cap 愈小愈大）會在《〈上切墨，見 spikes/spike20-line-head-squeeze。
+SQUEEZE_HEAD_OFFSET = -0.5
 
 # 走縱中橫的數字串：1〜2 位數字，可帶列標記尾點（真書 p10「1.」「2.」「3.」）
 _TCY_NUMERIC = re.compile(r"\d{1,2}\.?")
@@ -66,6 +70,8 @@ class Cell:
     # 座標系＝tokenize 輸入 text；經 offsets 映射後＝文件段 text（normalize 前）座標。
     ruby: Optional[str] = None  # 注音／ruby 標注（Sprint 86）：直排繪於字右側置中；
     # 僅單字 base run 的 cjk cell 帶值（不影響 width／斷行禁則）。
+    glyph_offset: float = 0.0  # 字形位移（em；Sprint 117）：字軸方向，負值＝往行首。
+    # 純載體，不影響 width／斷行／禁則；三處渲染一律乘字級（非乘齊行字距）。
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,7 @@ class ParagraphSpec:
     advance_pt: float = 0.0  # 該樣式字距（pt）：繞排排除區的 pt 區間換算字格用（0＝不繞排）
     punct_squeeze: bool = False  # 標點擠壓（Sprint 90）：相鄰約物讓出半形（opt-in）
     line_end_squeeze: bool = False  # 行尾閉括號縮末側（Sprint 116，CLREQ §3.1.6.2 規則 2；opt-in）
+    line_head_squeeze: bool = False  # 行首開括號縮始側（Sprint 117，CLREQ §3.1.6.2 規則 1；opt-in）
 
 
 @dataclass(frozen=True)
@@ -316,6 +323,31 @@ def squeeze_line_end(line: Line) -> Line:
     return replace(line, cells=(*line.cells[:-1], replace(last, width=SQUEEZE_WIDTH)))
 
 
+def squeeze_line_head(line: Line) -> Line:
+    """行首開括號縮始側（純函式，CLREQ §3.1.6.2 規則 1）：首枚字身框 1 → 0.5 em，
+    並把字形往行首移 0.5 em。
+
+    條文：「當行首出現開始括注符號，可以縮減該符號始側二分之一個漢字大小的空白。」
+    與同小節規則 2 的差別在**始側之前沒有推進量可縮**：只縮 width 會讓後續字格上移
+    而括號自己不動，等於把空白留在行首。故本條除縮 width 外另設 `glyph_offset`
+    （em，`SQUEEZE_HEAD_OFFSET`），由兩後端與畫布乘字級還原。
+
+    位移單位取字級不取字槽：Spike 20 量得 0.5 em 位移在兩款內建字型 16 枚開括號上
+    切墨 0 筆（最小餘裕 0.020 em），而 0.5 字槽（0.5252 em）與齊行放大後的 0.5 字距
+    會在《〈上切墨，且欄愈窄切愈深。
+
+    **斷行已定案後才套用**（模型 A，同 Sprint 116）：省下的半格不回饋容量，行邊界與
+    關閉時完全相同。已由 §3.1.6.1 壓過的行首括號（width 非 1）不重複套用。
+    """
+    if not line.cells:
+        return line
+    first = line.cells[0]
+    if not (_squeezable(first) and first.text in SQUEEZE_OPENERS):
+        return line
+    squeezed = replace(first, width=SQUEEZE_WIDTH, glyph_offset=SQUEEZE_HEAD_OFFSET)
+    return replace(line, cells=(squeezed, *line.cells[1:]))
+
+
 def break_paragraph(text: str, chars_per_line: int, indent: int = 2,
                     vertical: bool = True) -> list:
     return break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
@@ -504,6 +536,8 @@ def flow_pages(
                         para_end=idx >= len(cells))
             if spec.line_end_squeeze and vertical:  # 斷行定案後才套用（模型 A）
                 line = squeeze_line_end(line)
+            if spec.line_head_squeeze and vertical:  # 同上（Sprint 117，規則 1）
+                line = squeeze_line_head(line)
             cur.append(PlacedLine(slot, line, spec.style,
                                   page_no=spec.page_no if line.para_end else None,
                                   para_idx=spec.para_idx,

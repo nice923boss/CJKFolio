@@ -76,6 +76,7 @@ class ParagraphStyle:
     lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調（Sprint 29）
     punct_squeeze: bool = False  # 標點擠壓（Sprint 90）：相鄰約物讓出半形（CLREQ §3.1.6.1）
     line_end_squeeze: bool = False  # 行尾閉括號縮末側（Sprint 116；CLREQ §3.1.6.2 規則 2）
+    line_head_squeeze: bool = False  # 行首開括號縮始側（Sprint 117；CLREQ §3.1.6.2 規則 1）
     color: Optional[str] = None  # 文字色票名（Sprint 76）；None＝預設暖黑 K92
     source_font: Optional[str] = None
     note: Optional[str] = None
@@ -109,6 +110,7 @@ PARAGRAPH_STYLE_FIELDS: Mapping[str, Callable] = {
     "lead_offset_pt": float,
     "punct_squeeze": _bool,
     "line_end_squeeze": _bool,
+    "line_head_squeeze": _bool,
     "color": _opt_str,
     "source_font": _opt_str,
     "note": _opt_str,
@@ -336,6 +338,7 @@ def _paragraph_style(name: str, d: dict) -> ParagraphStyle:
         lead_offset_pt=float(d.get("lead_offset_pt", 0.0)),
         punct_squeeze=_bool(d.get("punct_squeeze", False)),
         line_end_squeeze=_bool(d.get("line_end_squeeze", False)),
+        line_head_squeeze=_bool(d.get("line_head_squeeze", False)),
         color=_opt_str(d.get("color")),
         source_font=d.get("source_font"),
         note=d.get("note"),

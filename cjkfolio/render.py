@@ -326,6 +326,7 @@ class PageRenderer:
                 else:
                     cstyle = None
                     use_shaper, use_size = shaper, style.size_pt
+                cell_top += cell.glyph_offset * use_size  # 字形位移（em×字級，Sprint 117）
                 ink = _ink_gray(resolve_text_cmyk(template, cstyle, style))
                 if cell.kind == "cjk":
                     missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale, ink)

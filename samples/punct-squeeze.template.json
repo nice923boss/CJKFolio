@@ -212,6 +212,11 @@
    "based_on": "內文-明體直排",
    "line_end_squeeze": true,
    "note": "CLREQ §3.1.6.2 規則 2 行尾閉括號縮末側示範（Sprint 116）；其餘參數承內文-明體直排"
+  },
+  "內文-行首擠壓": {
+   "based_on": "內文-明體直排",
+   "line_head_squeeze": true,
+   "note": "CLREQ §3.1.6.2 規則 1 行首開括號縮始側示範（Sprint 117）；其餘參數承內文-明體直排"
   }
  },
  "character_styles": {

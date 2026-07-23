@@ -101,9 +101,12 @@ def iter_cell_rects(
             if cell.char_style:
                 size = template.character_styles[cell.char_style].size_pt
             x = (axis - size / 2) * scale
-            y = cell_top * scale
+            # 字形位移（em×字級，Sprint 117）：矩形上緣跟著位移、高度補回，
+            # 使墨跡落在自己的字格內，且與次枚字格仍相連（不產生點不到的死區）。
+            offset = cell.glyph_offset * size
+            y = (cell_top + offset) * scale
             w = size * scale
-            h = adv * cell.width * scale
+            h = (adv * cell.width - offset) * scale
             yield pi, ci, x, y, w, h, cell.kind
             content_i += cell.width
 

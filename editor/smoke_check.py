@@ -621,6 +621,45 @@ def main() -> int:
     # C22 稿件匯入（抽於 editor/smoke_import.py，同上）
     check_import(EditorWindow, DOC, ROOT)
 
+    # C24 行首擠壓的互動層字格（Sprint 117）：位移格矩形上緣跟著字形走、字格仍相連
+    doc24 = load_document(str(ROOT / "samples" / "line-head-squeeze.doc.json"))
+    tpl24 = load_template(str(ROOT / "samples" / "punct-squeeze.template.json"))
+    layout24 = layout_document(doc24, tpl24)
+    page24 = next(
+        (p for p in layout24.pages
+         if any(pl.line.cells and pl.line.cells[0].glyph_offset for pl in p.placed)),
+        None,
+    )
+    assert page24 is not None, "行首擠壓樣張排不出命中行（畫布無從驗證）"
+    scene24 = QGraphicsScene()
+    build_page_scene(scene24, tpl24, doc24, layout24, page24, dpi=DPI)
+    rects24 = list(
+        iter_cell_rects(tpl24, tpl24.masters[doc24.master], page24, page24.number, scale)
+    )
+    by_line24: dict = {}
+    for pi, ci, x, y, w, h, _kind in rects24:
+        by_line24.setdefault(pi, []).append((ci, y, h))
+        found = scene24.itemAt(QPointF(x + w / 2, y + h / 2), QTransform())
+        assert found is not None and found.data(0) == (pi, ci), f"反查失準（{pi}, {ci}）"
+    shifted24 = 0
+    for pi, cells in by_line24.items():
+        cells.sort()
+        for (_ci, y, h), (_cj, y2, _h2) in zip(cells, cells[1:]):
+            assert abs(y + h - y2) < 0.01, f"第 {pi} 行字格不相連（點選死區）"
+        head = page24.placed[pi].line.cells[0]
+        if not head.glyph_offset or len(cells) < 3:
+            continue
+        size = tpl24.paragraph_styles[page24.placed[pi].style].size_pt
+        # 首格佔半槽＋讓出半個字級：與同行整格間距（cells[1]→cells[2]）互為印證
+        expect = (cells[2][1] - cells[1][1]) * head.width - head.glyph_offset * size * scale
+        assert abs((cells[1][1] - cells[0][1]) - expect) < 0.01, f"第 {pi} 行首格幾何不符"
+        shifted24 += 1
+    assert shifted24 >= 3, f"命中行僅 {shifted24} 行（樣張應 ≥ 3）"
+    print(
+        f"C24 行首擠壓互動層：命中 {shifted24} 行，首格上緣讓出半個字級、"
+        f"字格相連無死區，hit-test {len(rects24)}/{len(rects24)} 全對"
+    )
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
@@ -628,6 +667,7 @@ def main() -> int:
         "＋preflight 面板＋背景執行緒與快取＋X-4 與 ICC 選取＋字型授權分區＋畫布置圖 UI"
         "＋文繞圖參數 UI（畫布所見即繞排所得）＋AI 指派背景執行緒（段序失效守門）"
         "＋稿件匯入（txt／md／docx 落到現行模版樣式，壞稿不進畫布）"
+        "＋行首擠壓互動層字格（首格上緣跟著字形位移、字格相連無死區）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0
