@@ -59,12 +59,12 @@ python tools/audit_licenses.py --include-dev  # 併計開發側
 | Pillow | 8 | 12 個上游元件（逐字取自分段標題）：`brotli-1.2.0`、`freetype-2.14.3`、`harfbuzz-13.2.1`、`lcms2-2.18`、`libavif-1.4.1`、`libjpeg-turbo-3.1.4.1`、`libpng-1.6.56`、`libwebp-1.6.0`、`openjpeg-2.5.4`、`tiff-4.7.1`、`xz-5.8.3`、`zlib-ng-2.3.3` | 各自條款**全文已隨附** | `pillow-12.2.0.dist-info/licenses/LICENSE` 共 76,408 字元、1,618 行，以 `===== 元件-版本 =====` 分段逐段附上全文 |
 | fontTools | 6 | 無第三方 C 函式庫（六個 `.pyd` 的路徑即 fontTools 自身模組：`cu2qu`、`feaLib/lexer`、`misc/bezierTools`、`pens/momentsPen`、`qu2cu`、`varLib/iup`，皆為 Cython 加速版） | MIT（同套件本體） | 檔案清單逐枚列出；`licenses/LICENSE.external` 內容為測試用字型的 OFL，與二進位無關 |
 | freetype-py | 1 | FreeType 2.13.2（`libfreetype.dll`） | FTL 或 GPLv2 二選一，**本專案取 FTL 臂** | 見下節 |
-| uharfbuzz | 2 | HarfBuzz（靜態連結進 `_harfbuzz.pyd`） | Old MIT（HarfBuzz 上游）；**wheel 內未隨附** | `licenses/LICENSE` 全 11,357 字元為純 Apache-2.0 全文，全檔搜不到 harfbuzz 字樣 |
-| shiboken6 | 12 | Qt binding 執行期，**外加 Microsoft VC++ 可轉散布元件**（`concrt140.dll`、`msvcp140*.dll`、`vcruntime140*.dll`） | Qt 側同 PySide6；VC++ 執行期屬 Microsoft 自有條款，**不在 LGPL／GPL 涵蓋範圍內** | `dist-info/licenses/` 僅一份 `LicenseRef-Qt-Commercial.txt`（462 字元，指向 qt.io 條款頁） |
+| uharfbuzz | 2 | HarfBuzz 14.2.1（靜態連結進 `_harfbuzz.pyd`） | Old MIT（HarfBuzz 上游）；wheel 內未隨附，**全文已補收於本檔下節** | `licenses/LICENSE` 全 11,357 字元為純 Apache-2.0 全文，全檔搜不到 harfbuzz 字樣；上游全文見下節 |
+| shiboken6 | 12 | Qt binding 執行期，**外加 Microsoft VC++ 可轉散布元件**（10 枚，逐枚版本見下節） | Qt 側同 PySide6；VC++ 執行期屬 Microsoft 自有條款，**不在 LGPL／GPL 涵蓋範圍內**，四條轉散布限制見下節 | `dist-info/licenses/` 僅一份 `LicenseRef-Qt-Commercial.txt`（462 字元，指向 qt.io 條款頁） |
 | PySide6-Essentials | 210 | Qt 6 核心模組 | 同 PySide6（本專案取 GPL-3.0-only 臂） | 同上 |
 | PySide6-Addons | 177 | Qt 6 附加模組 | 同 PySide6 | 同上 |
 
-**尚未解決的兩項**（已入 GAPS #74）：uharfbuzz 未隨附 HarfBuzz 上游條款；shiboken6 夾帶的 VC++ 可轉散布元件之轉散布條件未查證。兩者在純原始碼散布階段皆不觸發（二進位由使用者自 PyPI 取得，非由本專案散布），**製作安裝檔前必須先解決**。
+**原列為未解決的兩項**（GAPS #74 (e)(f)）**已於 2026-07-24 Sprint 120 查證完畢**，結論見下方兩節。兩者在純原始碼散布階段皆不觸發（二進位由使用者自 PyPI 取得，非由本專案散布），該前提本身也已機器化守住：本 repo 版本控管下的檔案不含任何 `.dll`／`.pyd`／`.so`／`.exe`，`cjkfolio-0.113.0-py3-none-any.whl` 全 42 個項目亦零原生二進位。
 
 ## FreeType：夾帶版本與授權臂（2026-07-24 查證，關 GAPS #55 (d)）
 
@@ -85,6 +85,103 @@ FTL 的義務有二，皆屬文件層而非程式碼層：
 
 **若日後製作含二進位的安裝檔**，除上述致謝外，還須把 FTL 全文一併收入散布物（同 OFL 字型的處置，見下方「字型資產」）。
 
+## HarfBuzz：夾帶版本與上游條款（2026-07-24 查證，關 GAPS #74 (e)）
+
+Sprint 118 記的「uharfbuzz 未隨附 HarfBuzz 上游條款」已補齊，方法同 FreeType 那節：先釘版本，再取上游條款。
+
+- **版本＝HarfBuzz 14.2.1**（A 級一手證據，兩路互證）：執行期 `uharfbuzz.version_string` 回 `14.2.1`；`_harfbuzz.pyd`（3,000,320 位元組）內同一字串出現 1 處，鄰近位元組為 `HB_FONT_FUNCS`、`start table kern` 等 HarfBuzz 自身符號。注意 uharfbuzz 的發行版本是 0.55.0，與夾帶的 HarfBuzz 版本是兩個不同的版本序，指涉時須分清。
+- **確為靜態連結**：`_harfbuzz.pyd` 內出現的 DLL 名稱共 17 枚（`api-ms-win-crt-*` 八枚、`dwrite.dll`、`gdi32.dll`、`kernel32.dll`、`python3.dll`、`rpcrt4.dll`、`user32.dll`、`usp10.dll`、`vcruntime140.dll`、`vcruntime140_1.dll`），沒有任何 harfbuzz DLL。HarfBuzz 是編進 `.pyd` 而非並排夾帶，所以散布該 `.pyd` 即等於散布 HarfBuzz。
+- **上游條款為 Old MIT**（A 級本機一手全文）：`pillow-12.2.0.dist-info/licenses/LICENSE` 的 `===== harfbuzz-13.2.1 =====` 段落即 HarfBuzz 條款全文（Pillow 自己也夾帶 HarfBuzz）。
+- **與 AGPL-3.0 相容**：Old MIT 是寬鬆式條款，無 copyleft、無額外限制，只要求保留著作權聲明與免責段落，可單向併入 GPLv3 系作品。
+
+**義務**：條款明文要求，上述著作權聲明與其後兩段免責聲明必須出現在本軟體的**所有副本**中。這不是「文件中提及即可」，副本本身就要帶。本專案以收錄下列全文履行；製作含 `_harfbuzz.pyd` 的安裝檔時，本檔須一併收入散布物。
+
+```
+HarfBuzz is licensed under the so-called "Old MIT" license.  Details follow.
+For parts of HarfBuzz that are licensed under different licenses see individual
+files names COPYING in subdirectories where applicable.
+
+Copyright © 2010-2022  Google, Inc.
+Copyright © 2015-2020  Ebrahim Byagowi
+Copyright © 2019,2020  Facebook, Inc.
+Copyright © 2012,2015  Mozilla Foundation
+Copyright © 2011  Codethink Limited
+Copyright © 2008,2010  Nokia Corporation and/or its subsidiary(-ies)
+Copyright © 2009  Keith Stribley
+Copyright © 2011  Martin Hosken and SIL International
+Copyright © 2007  Chris Wilson
+Copyright © 2005,2006,2020,2021,2022,2023  Behdad Esfahbod
+Copyright © 2004,2007,2008,2009,2010,2013,2021,2022,2023  Red Hat, Inc.
+Copyright © 1998-2005  David Turner and Werner Lemberg
+Copyright © 2016  Igalia S.L.
+Copyright © 2022  Matthias Clasen
+Copyright © 2018,2021  Khaled Hosny
+Copyright © 2018,2019,2020  Adobe, Inc
+Copyright © 2013-2015  Alexei Podtelezhnikov
+
+For full copyright notices consult the individual files in the package.
+
+
+Permission is hereby granted, without written agreement and without
+license or royalty fees, to use, copy, modify, and distribute this
+software and its documentation for any purpose, provided that the
+above copyright notice and the following two paragraphs appear in
+all copies of this software.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE TO ANY PARTY FOR
+DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN
+IF THE COPYRIGHT HOLDER HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.
+
+THE COPYRIGHT HOLDER SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING,
+BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
+ON AN "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO
+PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+```
+
+**這份全文的邊界，必須講明**：它取自 Pillow 隨附的 `harfbuzz-13.2.1` 段落，本機 uharfbuzz 夾帶的是 **14.2.1**。兩個版本的條款文字是否逐字相同**未經比對**（14.2.1 的 `COPYING` 本機無副本）。Old MIT 的條款正文多年未變、變動的通常是著作權年份與名單，但這是推論不是查證。製作安裝檔前應取 14.2.1 自身的 `COPYING` 覆蓋此處全文，此殘項記於 GAPS #74 (e)。
+
+## Microsoft VC++ 執行期：轉散布條件與 AGPL 的關係（2026-07-24 查證，關 GAPS #74 (f)）
+
+shiboken6 夾帶 10 枚 Microsoft VC++ 可轉散布元件，逐枚版本（Windows 版本資源）：
+
+| 檔案 | 大小 | 檔案版本 |
+| --- | --- | --- |
+| `concrt140.dll` | 315,704 | 14.44.35211.0 |
+| `msvcp140.dll` | 549,176 | 14.44.35211.0 |
+| `msvcp140_1.dll` | 27,448 | 14.44.35211.0 |
+| `msvcp140_2.dll` | 271,672 | 14.44.35211.0 |
+| `msvcp140_codecvt_ids.dll` | 23,352 | 14.44.35211.0 |
+| `vcamp140.dll` | 449,848 | 14.24.28127.4 |
+| `vccorlib140.dll` | 343,864 | 14.44.35211.0 |
+| `vcomp140.dll` | 155,448 | 14.24.28127.4 |
+| `vcruntime140.dll` | 116,024 | 14.44.35211.0 |
+| `vcruntime140_1.dll` | 41,272 | 14.44.35211.0 |
+
+十枚同名元件在本機 `C:\Windows\System32` 皆已存在（版本 14.44.35211.0），其中 `vcruntime140.dll` 與 `vcruntime140_1.dll` 另隨 CPython 3.12 安裝目錄一併散布（版本 14.42.34438.0）。這說明它們是 Windows 平台上由編譯器工具鏈正常隨附的元件，不是 Qt 或本專案的專屬相依。
+
+**這一項拆成三個各自可答的問題，避免整項卡在取不到 Microsoft 條款正文上。**
+
+**問題一：本專案現在有沒有在散布這些 DLL？沒有。** `cjkfolio-0.113.0-py3-none-any.whl` 全 42 個項目零原生二進位，repo 版本控管下的檔案亦無任何 `.dll`／`.pyd`／`.so`／`.exe`。二進位是使用者自 PyPI 取得的，本專案不是散布者，故 (f) 目前不觸發。
+
+**問題二：轉散布條件是什麼？** 一手依據取自本機 CPython 3.12 的 `LICENSE.txt`（`C:\Users\Clare\AppData\Local\Programs\Python\Python312\LICENSE.txt`，全 36,235 字元）的「Additional Conditions for this Windows binary build」段落。CPython 自身即是「連結並散布 Microsoft Distributable Code 的第三方專案」，其聲明涵蓋的是同一組元件與同一套條件，故可作為本專案的直接參照。該段列出四條限制：
+
+1. 不得更動 Microsoft Distributable Code 中的任何著作權、商標或專利聲明。
+2. 不得以 Microsoft 商標為程式命名，或以任何暗示程式來自 Microsoft 或經其背書的方式使用。
+3. 不得散布 Microsoft Distributable Code 至非 Microsoft 作業系統、執行期技術或應用平台上執行。
+4. 不得將 Microsoft Distributable Code 放進惡意、欺騙或非法的程式中。
+
+同段另明載：這些限制**只及於 Microsoft Distributable Code 本身**，不及於 Python 或任何跑在 Python 直譯器上的程式。
+
+**問題三：與 AGPL-3.0 是什麼關係？屬系統程式庫，不生衝突。** 一手依據是 repo 根 `LICENSE`（AGPL-3.0 全文 34,523 位元組）第 1 節：「System Libraries」定義為「(a) 包含在某 Major Component 的正常打包形式中但不屬於該 Major Component，且 (b) 僅用於使本作品能與該 Major Component 併用」者；同節將「用來產生本作品的編譯器」明列為 Major Component 之一。MSVC 執行期正是隨編譯器工具鏈正常打包、且僅用於讓產物在該工具鏈與 Windows 上運行的元件，符合上述定義，因此不計入 Corresponding Source，AGPL 的 copyleft 不因它而擴及、也不與上列四條限制相碰（那四條限制的對象不是本作品）。
+
+**邊界（比照 #55 (f)，這是讀到的條款事實，不是法律意見）**：
+
+- Microsoft 自身的條款正文（Visual Studio 授權合約的 Distributable Code 節）**未取得一手副本**，本節依據的是 CPython 對同一組元件的轉散布聲明。正式製作安裝檔前應取 Microsoft 原文複核。
+- 上列四條限制中的第三條（不得散布至非 Microsoft 平台執行），對只做 Windows 安裝檔的情形自動滿足；若日後做跨平台散布物，須改為不夾帶這些 DLL，改由使用者自行安裝 Microsoft 官方的 VC++ 可轉散布套件。
+
 ## 為什麼是 AGPL：PyMuPDF 決定了這件事
 
 CJKFolio 採 AGPL 不是偏好，是相依鎖死的結果，這點必須對下游講明白。
@@ -104,7 +201,9 @@ CJKFolio 採 AGPL 不是偏好，是相依鎖死的結果，這點必須對下�
 
 - **§5（修改標註）**：本 repo 的 git 歷史即為修改紀錄，每次變更含日期與內容。
 - **§13（網路互動）**：CJKFolio 目前是桌面 GUI 與 CLI 工具，不與使用者透過網路互動（`cjkfolio/` 與 `editor/` 全域無 socket、http.server、flask、fastapi、uvicorn；唯一對外連線是 `cjkfolio/ai_style.py` 以 client 身分呼叫使用者自填的 AI endpoint），故 §13 不觸發。**但若任何人日後以網路服務形式提供 CJKFolio，必須向服務使用者提供含修改的完整對應原始碼。** 這一條先寫在這裡，不等到有人架站才發現。
-- **保留第三方著作權聲明**：Pillow（HPND 風格）、fontTools（Copyright (c) 2017 Just van Rossum）、freetype-py（Copyright (c) 2011-2014 Nicolas P. Rougier，含 BSD 第三條不得背書條款）。uharfbuzz 若上游有 NOTICE 須一併保留，日後若修改其原始碼須標註變更。
+- **保留第三方著作權聲明**：Pillow（HPND 風格）、fontTools（Copyright (c) 2017 Just van Rossum）、freetype-py（Copyright (c) 2011-2014 Nicolas P. Rougier，含 BSD 第三條不得背書條款）。uharfbuzz 本體為 Apache-2.0，日後若修改其原始碼須標註變更。
+- **HarfBuzz（Old MIT）的副本內聲明**：條款要求著作權聲明與兩段免責出現在所有副本中，全文已收於上方「HarfBuzz：夾帶版本與上游條款」。此義務隨靜態連結進 `_harfbuzz.pyd` 的 HarfBuzz 而來，散布含該 `.pyd` 的安裝檔時本檔須一併收入。
+- **Microsoft VC++ 執行期的四條轉散布限制**：見上方專節。目前不觸發（本專案不散布任何原生二進位），列此是為了讓製作安裝檔的人一眼看到它存在，而不是到時候才發現。
 - **FreeType（FTL 臂）的文件致謝與名稱使用限制**：見上方「FreeType：夾帶版本與授權臂」，致謝文字已寫入本檔。此義務隨夾帶的 `libfreetype.dll` 而來，不是本專案自行加碼。
 
 ## 字型資產

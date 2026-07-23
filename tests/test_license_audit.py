@@ -1,12 +1,15 @@
-"""相依授權稽核的判定正確性與文件漂移鎖（tools/audit_licenses.py，Sprint 118）。
+"""相依授權稽核的判定正確性與文件漂移鎖（tools/audit_licenses.py，Sprint 118／120）。
 
-守的是 GAPS #55 (d)(e) 補完後不再退回去：
+守的是 GAPS #55 (d)(e) 與 #74 (e)(f) 補完後不再退回去：
 
   1. **判定要保守**：比不到已知 SPDX 識別碼、或人工複核過的字串一旦改變，一律落回
      「須確認」。這條若鬆掉，稽核就成了永遠亮綠燈的裝飾品。
-  2. **文件與本機環境一致**：`THIRD-PARTY-LICENSES.md` 寫的 FreeType 版本必須等於執行期
-     實際載入的版本；夾帶原生二進位的產品相依必須逐枚在該文件出現。升版換了夾帶內容而
-     沒更新文件，這裡就紅。
+  2. **文件與本機環境一致**：`THIRD-PARTY-LICENSES.md` 寫的 FreeType 與 HarfBuzz 版本必須
+     等於執行期實際載入的版本；夾帶原生二進位的產品相依必須逐枚在該文件出現。升版換了
+     夾帶內容而沒更新文件，這裡就紅。
+  3. **散布前提不被悄悄推翻**（Sprint 120）：#74 (e)(f) 的結論建立在「本專案不散布任何原生
+     二進位」與「HarfBuzz 是靜態連結」兩個前提上。哪天 repo 收了 `.dll`、或 uharfbuzz 改成
+     動態連結，結論就得重寫，所以兩個前提各有一條測試守著。
 """
 import subprocess
 import sys
@@ -249,6 +252,82 @@ def test_every_binary_bundling_product_dependency_is_documented(product_deps):
     missing = [d.name for d in product_deps
                if d.binaries and al.normalize(d.name) not in doc_key]
     assert not missing, f"夾帶原生二進位但文件未提及：{missing}"
+
+
+# --- 夾帶原生二進位的上游條款（Sprint 120，GAPS #74 (e)(f)） ---
+
+def test_document_records_the_installed_harfbuzz_version():
+    """uharfbuzz 升版可能換掉夾帶的 HarfBuzz，條款結論須跟著重查。"""
+    import uharfbuzz as hb
+
+    version = hb.version_string
+    version = version() if callable(version) else version
+    assert f"HarfBuzz {version}" in DOC, (
+        f"本機 _harfbuzz.pyd 夾帶 HarfBuzz {version}，"
+        "THIRD-PARTY-LICENSES.md 未記載此版本")
+
+
+def test_document_carries_the_harfbuzz_notice_verbatim():
+    """Old MIT 要求聲明出現在所有副本中，故全文必須真的在檔案裡，不是提一句。"""
+    for token in (
+        "Old MIT",
+        "Copyright © 2005,2006,2020,2021,2022,2023  Behdad Esfahbod",
+        "above copyright notice and the following two paragraphs appear in",
+        "all copies of this software.",
+    ):
+        assert token in DOC, f"HarfBuzz 條款全文缺片段：{token!r}"
+
+
+def test_harfbuzz_is_still_statically_linked():
+    """靜態連結是「散布 .pyd 即散布 HarfBuzz」這個結論的前提，改動態就得重寫。"""
+    import re
+
+    import uharfbuzz as hb
+
+    pyd = Path(hb.__file__).resolve().parent / "_harfbuzz.pyd"
+    blob = pyd.read_bytes()
+    dlls = {m.group(0).decode("ascii").lower()
+            for m in re.finditer(rb"[A-Za-z0-9_\-\.]{1,40}\.dll", blob)}
+    external = sorted(d for d in dlls if "harfbuzz" in d)
+    assert not external, f"HarfBuzz 改為動態連結（{external}），條款結論須重查"
+
+
+def test_document_records_the_microsoft_redistribution_conditions():
+    """四條限制少一條，安裝檔就可能踩到，故逐條釘死。"""
+    for token in (
+        "不得更動 Microsoft Distributable Code 中的任何著作權、商標或專利聲明",
+        "不得以 Microsoft 商標為程式命名",
+        "不得散布 Microsoft Distributable Code 至非 Microsoft 作業系統",
+        "不得將 Microsoft Distributable Code 放進惡意、欺騙或非法的程式",
+        "System Libraries",
+    ):
+        assert token in DOC, f"文件未記載轉散布條件：{token!r}"
+
+
+def test_document_lists_every_msvc_runtime_shiboken_bundles():
+    """shiboken6 換一批 DLL 而文件沒跟上，這裡就紅。"""
+    import importlib.metadata as md
+    import re
+
+    root = Path(md.distribution("shiboken6").locate_file("shiboken6"))
+    pattern = re.compile(r"^(concrt|msvcp|vcruntime|vccorlib|mfc|vcamp|vcomp)\d",
+                         re.IGNORECASE)
+    bundled = sorted({p.name for p in root.rglob("*.dll") if pattern.match(p.name)})
+    assert bundled, "shiboken6 不再夾帶 VC++ 執行期，文件結論須重查"
+    missing = [name for name in bundled if f"`{name}`" not in DOC]
+    assert not missing, f"shiboken6 夾帶但文件未逐枚列出：{missing}"
+
+
+def test_repo_ships_no_native_binaries():
+    """「本專案不是散布者」是 #74 (f) 不觸發的前提，用版本控管清單守住。"""
+    proc = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
+                          text=True, encoding="utf-8")
+    if proc.returncode != 0:
+        pytest.skip("非 git 工作區，無法取得版本控管清單")
+    suffixes = (".dll", ".pyd", ".so", ".exe")
+    tracked = [ln for ln in proc.stdout.splitlines()
+               if ln.lower().endswith(suffixes)]
+    assert not tracked, f"repo 收了原生二進位，#74 (f) 的散布前提已變：{tracked}"
 
 
 def test_pillow_bundles_its_own_freetype_copy_as_documented():

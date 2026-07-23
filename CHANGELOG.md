@@ -2,6 +2,55 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.114.0（2026-07-24，Sprint 120）夾帶二進位的上游條款：把「取不到正文」拆成三個答得出來的問題
+
+### 為什麼做這件事
+
+GAPS #74 (e)(f) 被自己標成「製作安裝檔前的硬性阻擋項」：uharfbuzz 沒隨附 HarfBuzz 上游條款，shiboken6 夾帶 10 枚 Microsoft VC++ 可轉散布元件而條件未查。它們卡在 #75 (a)(d)（相依解析、sdist 與上架）前面，先做散布工作等於在未解的授權條件上疊東西。
+
+### pre-mortem 押的與實際發生的
+
+動工前判斷 (f) 有六成機率取不到 Microsoft 條款正文，對策不是「查不到就先假設寬鬆」，而是把 (f) 拆成三個各自可答的子問。實跑結果：**正文確實沒取到，但三個子問全部答出來了**。
+
+1. **本專案現在有沒有在散布這些 DLL？** 沒有。`cjkfolio-0.113.0-py3-none-any.whl` 全 42 個項目零原生二進位，版本控管清單亦零，故 (f) 目前不觸發。
+2. **條款是什麼？** 四條限制，一手取自本機 CPython 3.12 的 `LICENSE.txt`「Additional Conditions for this Windows binary build」段落。CPython 自己就是連結並散布同一組 Microsoft Distributable Code 的專案，同段並明載那些限制只及於 Microsoft Distributable Code 本身。
+3. **與 AGPL 是什麼關係？** 依 repo 根 `LICENSE`（AGPL-3.0 全文）第 1 節，MSVC 執行期符合「系統程式庫」定義（隨編譯器這個 Major Component 正常打包、僅為使作品能於該平台運行），不計入 Corresponding Source。
+
+### HarfBuzz：先釘版本，才問得出條款（同 Sprint 118 的方法）
+
+- 版本兩路互證為 **HarfBuzz 14.2.1**：執行期 `uharfbuzz.version_string` 回 14.2.1，`_harfbuzz.pyd` 內同一字串出現 1 處且鄰近位元組是 `HB_FONT_FUNCS`、`start table kern` 等 HarfBuzz 自身符號，可排除撞號。uharfbuzz 自己的發行版本是 0.55.0，兩個版本序不可混談。
+- 靜態連結經 PE 內 17 枚 DLL 名稱複驗，無任何 harfbuzz DLL。這代表散布該 `.pyd` 即等於散布 HarfBuzz。
+- 上游條款為 **Old MIT**，寬鬆式、無 copyleft、與 AGPL-3.0 相容。一手全文取自 `pillow-12.2.0.dist-info/licenses/LICENSE` 的 `===== harfbuzz-13.2.1 =====` 段（Pillow 自己也夾帶 HarfBuzz）。
+- 條款要求聲明與兩段免責出現在**所有副本**中，不是文件提一句就算。故本版把全文收進 `THIRD-PARTY-LICENSES.md`，安裝檔帶上該檔即履行。
+
+### 測試不只記結論，還守著結論賴以成立的前提
+
+六條測試分四類：兩條守版本與清單漂移（升版換了夾帶內容就紅）、一條守條款全文完整（刪掉任一片段就紅）、一條守四條限制逐條在案、兩條守前提本身（HarfBuzz 若改動態連結、repo 若收了原生二進位，結論都得重寫）。
+
+四條文件相關測試做過 RED 驗證：把 `THIRD-PARTY-LICENSES.md` 換回 Sprint 119 版本（8,806 字元）跑，四條全紅；換回本版全綠。
+
+### 新增
+
+- [Spike] `spikes/spike22-bundled-binary-terms/`：pre-mortem、`probe_harfbuzz.py`（版本兩路互證、PE 連結形態、全機條款副本掃描）、`probe_msvc_runtime.py`（10 枚元件逐枚版本、與 Python 及 System32 對照、條款掃描、wheel 二進位檢查）、`report.md`（PoC 通過，五項成功標準全達成）。
+- [實作] `THIRD-PARTY-LICENSES.md`：新增 HarfBuzz、Microsoft VC++ 兩專節（含 Old MIT 全文與 10 枚元件版本表）；夾帶二進位表兩列更新；義務清單加兩條。
+- [實作] `tests/test_license_audit.py` 新增 6 測試（29 → 35）。
+
+### 已知邊界（GAPS #76）
+
+- HarfBuzz 條款全文取自 13.2.1 而非本機夾帶的 14.2.1，兩版文字是否逐字相同未經比對。Old MIT 正文多年未變、變動的通常是著作權年份與名單，但這是推論不是查證。
+- Microsoft 條款正文未取得一手副本，本結論依據的是 CPython 對同一組元件的轉散布聲明，不是 Visual Studio 授權合約原文。
+- 這是讀到的條款事實，不是法律意見（同 GAPS #55 (f)）。系統程式庫的判定屬條款文義套用。
+- 只在一台 Windows 11 ＋ Python 3.12.10 上量過，換平台夾帶的元件組合會不同。
+
+### 待 Owner 真實素材驗收
+
+- 製作安裝檔時取 HarfBuzz 14.2.1 自身的 `COPYING` 與 Microsoft 原文覆蓋本版收錄的轉述，與 `GAPS #55 (f)` 的法律專業複核同批。
+- 四條轉散布限制中的第三條（不得散布至非 Microsoft 平台執行）對只做 Windows 安裝檔自動滿足；日後若做跨平台散布物，須改為不夾帶這些 DLL。
+
+### 測試
+
+1225 → 1231（+6：夾帶二進位上游條款的漂移鎖與前提鎖），0 失敗 0 退步；py_compile EXIT=0；smoke C1〜C24 0 退步；四條漂移鎖經 RED 驗證（舊文件全紅、新文件全綠）。
+
 ## v0.113.0（2026-07-24，Sprint 119）pip 安裝形態實測：在 repo 裡測安裝版，等於什麼都沒測
 
 ### 為什麼做這件事
