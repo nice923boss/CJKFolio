@@ -123,7 +123,7 @@ git config core.hooksPath hooks
 
 - **程式碼：AGPL-3.0-or-later**（全文見 `LICENSE`）。這不是偏好，是相依鎖死的結果：PyMuPDF 為 AGPL-3.0 且被以同行程 import 使用，MIT、Apache-2.0、BSD、MPL-2.0、LGPL 全部不可選。
 - 散布結合物的**實效授權為 AGPL-3.0**（PyMuPDF 未寫 or-later，PySide6 與 shiboken6 明寫 only）。
-- 六項產品相依的逐字授權、義務、已知邊界（含未展開的傳遞相依稽核）見 `THIRD-PARTY-LICENSES.md`。
+- 六項產品相依的逐字授權、義務、已知邊界見 `THIRD-PARTY-LICENSES.md`；傳遞相依已展開稽核（產品側 9 枚、併計開發側 18 枚全部相容），可用 `python tools/audit_licenses.py` 複驗。
 - **字型**：內建字型皆 SIL OFL 1.1，來源與下載指令見 `assets/fonts/FONTS.md`。華康、Monotype 等商用字型不內建也不隨附，品質標竿書所用的商用字型以開源字型對映替代。
 - 上述陳述的是讀到的授權事實，**不構成法律意見**，正式公開釋出前待具開源授權經驗者複核（GAPS #55）。
 

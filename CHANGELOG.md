@@ -2,6 +2,76 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.112.0（2026-07-24，Sprint 118）相依授權稽核：先釘版本，才問得出條款
+
+### 為什麼做這件事
+
+`GAPS #55` 從 Sprint 98 起掛著兩項技術查證：(d)「freetype-py 夾帶的 `libfreetype.dll` 上游授權（FTL 或 GPLv2）無法自 wheel 查證」、(e)「傳遞相依未展開稽核」。丁類其餘兩項（法律專業複核、git 歷史是否重寫）都要 Owner 決定，這兩項不用，卻一起躺了 20 天。本版把它們與「待 Owner」分開處理。
+
+### (d)：Sprint 98 的說法是對的，方法是錯的
+
+先複驗舊說法：`libfreetype.dll` 全檔 1,500,160 位元組掃可列印字串，命中 license 或 copyright 關鍵字者僅 4 筆，皆為 API 名稱與字符名，**二進位裡確實沒有條款文字**。錯的不是這個觀察，是「條款應該在二進位裡找」這個前提。改成先釘版本再取上游條款：
+
+| 證據 | 來源 | 結果 |
+| --- | --- | --- |
+| Windows 版本資源 | `libfreetype.dll` 的 `VS_FIXEDFILEINFO` 與字串表 | `FileVersion 2.13.2`、`ProductName FreeType`、`CompanyName The FreeType Project` |
+| 執行期自報 | `freetype.version()` | `(2, 13, 2)` |
+| 上游條款 | FreeType 官方授權頁 | FTL（`docs/FTL.TXT`）或 GPLv2 二選一，FTL 相容 GPLv3、不相容 GPLv2 |
+| FTL 全文本機一手副本 | `pillow-12.2.0.dist-info/licenses/LICENSE` 的 `===== freetype-2.14.3 =====` 段 | 全文可逐字讀（Pillow 自己也夾帶 FreeType） |
+
+**本專案取 FTL 臂**（GPLv2 臂與 AGPL-3.0 不相容，同 PySide6 明確不選 GPL-2.0-only 的理由）。FTL 的兩項義務（文件致謝、不得以對方名稱背書）與致謝原文已寫入 `THIRD-PARTY-LICENSES.md`。
+
+### (e)：交付可複跑的工具，不是一次性的人工清單
+
+```bash
+python tools/audit_licenses.py
+```
+
+| 稽核範圍 | 展開後枚數 | 相容 | 須確認 | exit |
+| --- | --- | --- | --- | --- |
+| 產品側（`dependencies` 6 枚宣告） | 9 | 9 | 0 | 0 |
+| 併計開發側（`--include-dev`） | 18 | 18 | 0 | 0 |
+
+工具的價值在它會擋下自己不懂的東西：授權字串比對已知 SPDX 識別碼與一份人工複核表，比不到就標「須確認」並 **exit 1**，不預設通過。複核表以（PEP 503 正規化名稱, 逐字授權字串）為鍵，**升版換了授權字串就對不上鍵而落回「須確認」**。這是字串比對，不是法律意見，界線寫在文件第一節。
+
+### 順帶查完八枚夾帶二進位，浮出兩項先前不知道的缺口
+
+`freetype-py` 的教訓一般化後，工具逐枚回報夾帶的 `.dll` 與 `.pyd`，人工查完八枚（PyMuPDF/MuPDF、Pillow 的 12 個上游元件全文已隨附、fontTools 的 6 個 `.pyd` 全是自身 Cython 模組、freetype-py/FreeType、uharfbuzz、shiboken6、PySide6-Essentials 210、PySide6-Addons 177）後發現：
+
+- **uharfbuzz 未隨附 HarfBuzz 上游條款**：`licenses/LICENSE` 全 11,357 字元為純 Apache-2.0 全文，全檔搜不到 harfbuzz 字樣，而 HarfBuzz 靜態連結進 `_harfbuzz.pyd`。
+- **shiboken6 夾帶 10 枚 Microsoft VC++ 可轉散布元件**（`concrt140.dll`、`msvcp140*.dll`、`vcruntime140*.dll` 等），屬 Microsoft 自有條款，不在 LGPL／GPL 涵蓋範圍內。
+
+兩者在純原始碼散布階段不觸發（二進位由使用者自 PyPI 取得），但**製作安裝檔前是硬性阻擋項**，入 GAPS #74。
+
+### 新增
+
+- [實作] `tools/audit_licenses.py`：由 `pyproject.toml` 出發，`importlib.metadata` 遞迴展開，`Requires-Dist` 的 marker 依當前環境求值且不取任何 extra；授權欄位三級取用（PEP 639 `License-Expression` → `License` → `Classifier`）；輸出逐枚判定表與夾帶原生二進位清單。
+- [實作] `tests/test_license_audit.py` 29 測試：判定正確性 21、文件漂移鎖 4、CLI 與本機環境實跑 4。
+- [實作] `THIRD-PARTY-LICENSES.md` 增三節（傳遞相依稽核、夾帶的原生二進位、FreeType 版本與授權臂），並改寫證據等級節的兩項「未涵蓋」。
+- [實作] `pyproject.toml`：freetype-py 註解改記已查證結果；dev extras 新增 `packaging>=26.0`（工具用其 marker 求值，未宣告即是未登記相依）。
+- [實作] `README.md` 授權節：改為可複驗寫法（附複跑指令與枚數）。
+
+### 文件漂移鎖：四條把文件釘在本機環境上
+
+README 與授權文件最容易腐爛的不是文字，是它與實際環境的關係。故四條測試釘死：文件記的 FreeType 版本須等於執行期 `freetype.version()`、夾帶原生二進位的產品相依須逐枚在文件出現、Pillow 夾帶的 freetype 版本須記載、`pyproject.toml` 的 freetype-py 註解不得再寫「未查證」。升版換了夾帶內容而沒更新文件，這四條就紅。
+
+### 已知邊界（GAPS #74）
+
+- 判定是字串比對不是法律意見（`GAPS #55 (f)` 的法律複核界線不因本版改變）。
+- 快照的是當前本機環境，非 PyPI 的相依解析圖，換平台或換版可能得到不同集合。
+- 不取任何 extra，故 `pillow`／`fonttools` 掛在 extra 上的相依不在稽核範圍。
+- 夾帶二進位只回報數量與 dist-info 授權檔清單，上游條款仍是人工工作。
+- uharfbuzz 的 HarfBuzz 條款、shiboken6 的 VC++ 轉散布條件，兩項未解，打包前硬性阻擋。
+
+### 待 Owner 真實素材驗收
+
+- 授權結論的法律複核仍待具開源授權經驗者（`GAPS #55 (f)`），本版只把「有沒有漏掉一枚」自動化，不觸碰「這樣解讀對不對」。
+- FTL 全文須在製作含二進位的安裝檔時一併收入散布物，與 OFL 字型全文（`GAPS #12`）同一批。
+
+### 測試
+
+1188 → 1217（+29：相依授權稽核），0 失敗 0 退步；py_compile EXIT=0；smoke C1〜C24 0 退步；`python tools/audit_licenses.py` 與 `--include-dev` 兩路 EXIT=0。
+
 ## v0.111.0（2026-07-23，Sprint 117）行首開括號縮始側：位移半個字級，不是半個字距
 
 ### 為什麼做這件事
