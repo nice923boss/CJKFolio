@@ -11,6 +11,7 @@
 | `toc.doc.json` | 直排目錄樣張（虛構條目）。示範 Sprint 15 的目錄天頭水平虛線（toc-rule，灰 K57、dash [3 2]，貫穿頁寬含出血）與 Sprint 16 的條目頁碼＋引導線（page_no 直排逐位底錨對齊＋行軸垂直引導線 0.1pt K92），兩後端同源。 |
 | `wrap-demo.doc.json` | 圖文繞排樣張（自擬內文＋自擬照片）。示範 Sprint 89 的 `PlacedImage.wrap`：圖框成排除區，受影響行槽的內文避開圖的字軸範圍並留 `wrap_margin_mm` 一字格。搭配 `wrap-photo.png`＝程式生成的灰階漸層佔位圖（幾何形狀，非任何實際攝影或參考書圖像）。此圖為幾何示範用途，360×270px 置入後實效 218ppi，故匯出時會列 Sprint 91 的解析度警告（預期行為，非缺陷；示範檔非送印稿）。 |
 | `punct-squeeze.doc.json` | 標點擠壓樣張（自擬內文）。同一句話排兩次：上段走 `內文-明體直排`（未擠壓），下段走 `內文-標點擠壓`（開啟）。示範 Sprint 90 的 `ParagraphStyle.punct_squeeze`＝CLREQ §3.1.6.1 相鄰約物減半形（規則 2〜6）。搭配 `punct-squeeze.template.json`＝內建模版加一款 `based_on: 內文-明體直排` 的子樣式（由 `save_template` 產出，僅 `punct_squeeze` 與 `note` 為自身宣告，其餘承基底）。 |
+| `line-end-squeeze.doc.json` | 行尾擠壓樣張（自擬內文）。同一段話排兩次：上段走 `內文-明體直排`（未套用），下段走 `內文-行尾擠壓`（開啟）。示範 Sprint 116 的 `ParagraphStyle.line_end_squeeze`＝CLREQ §3.1.6.2 規則 2（行尾閉括號縮末側半形）。共用 `punct-squeeze.template.json`（本 Sprint 於該模版加一款 `based_on: 內文-明體直排` 的子樣式）。四行中三行命中（末枚 `」`、`」`、`）`），第四行為段末行故命中但無視覺效果（段末行不齊行，末枚之後無內容），此為模型 A 的已知邊界。**兩段行邊界完全相同**（省下的半格不回饋斷行容量）。 |
 | `paiban-xiaoji-ch1.md` | **章節級公開素材**（自撰原創散文《排版小記》第一章，2,210 漢字）。GAPS #1 所需的「自由散布替代文本」：真書《內在整理》為版權物僅限本機，本檔可隨 repo 散布，供公開的端到端驗證。經 `import-md` 匯入為 41 段（章名 h1／小節標 h3／引文 blockquote／內文），排版 **11 頁、禁則 0 違規**，匯出 PDF/X-1a 機械檢查 **12/12 全過**。內容刻意涵蓋多條排版路徑：全大寫縮寫逐字正立（`CMYK`／`RGB`／`PDF`）與含小寫西文整串旋轉（`11.5pt`／`12.08pt`）兩種縱中橫形態、行內強調的發言人標籤、引文段落、左右頁鏡像與書眉頁碼。頁數與段數由 `tests/test_public_sample.py` 釘死，改寫本檔須同步更新本表。 |
 | `jiejiao-manxing-ch1.md`／`-ch2.md`／`-ch3.md`＋`-open1.doc.json`〜`-open3.doc.json`＋`book-jiejiao-manxing.json` | **書冊級公開素材**（自撰原創散文《街角慢行》三章，1,549 漢字）。Sprint 105 多書專案驗證（GAPS #56 丙(11)）：**第二本非參考書**，搭配自擬設計的第二套模版 `templates/jiejiao-manxing.json`（開本 130×190mm，與參考書的 148×210mm 及其版心、字級、行距、主版名、樣式名、色票名**零共用**），用以檢驗本產品的管線不是只對單一書目可用。書冊結構＝自動目錄（丙-目錄）＋三組「章扉（乙-章扉，mirror=false 無頁腳）＋內文（甲-內文，mirror=true 有頁碼書眉）」，整本 **13 頁、禁則 0 違規**，匯出 PDF/X-1a 機械檢查 **12/12 全過**。頁數、章扉落點與目錄頁碼由 `tests/test_second_book.py` 釘死，改寫本組檔案須同步更新本表。 |
 
@@ -32,6 +33,10 @@ python -m cjkfolio.cli preflight out/wrap/wrap-demo.pdf
 python -m cjkfolio.cli render samples/punct-squeeze.doc.json -o out/squeeze --template samples/punct-squeeze.template.json --dpi 300
 python -m cjkfolio.cli export-pdf samples/punct-squeeze.doc.json -o out/squeeze/punct-squeeze.pdf --template samples/punct-squeeze.template.json
 python -m cjkfolio.cli preflight out/squeeze/punct-squeeze.pdf
+
+python -m cjkfolio.cli render samples/line-end-squeeze.doc.json -o out/lineend --template samples/punct-squeeze.template.json --dpi 300
+python -m cjkfolio.cli export-pdf samples/line-end-squeeze.doc.json -o out/lineend/line-end-squeeze.pdf --template samples/punct-squeeze.template.json
+python -m cjkfolio.cli preflight out/lineend/line-end-squeeze.pdf
 
 mkdir -p out/public
 python -m cjkfolio.cli import-md samples/paiban-xiaoji-ch1.md -o out/public/ch1.doc.json --title "排版小記"
@@ -59,3 +64,8 @@ export 報 5 款嵌入字型與「嵌入字型皆可合法嵌入子集」，pref
 「無置入影像」、「皆在上限內（最高 92% ≤ 320%）」。
 render 與 export 會列兩則字型警告（明體 W7 以思源宋體 Heavy 替、仿宋以思源宋體替），
 屬 GAPS #12 已登記的內建字型缺口，非本素材的缺陷。
+
+`line-end-squeeze.doc.json` 的預期輸出：render 報「1 頁、禁則 0 違規、擠入 2 行、撐開 2 行」，
+preflight 報「全數通過（12/12）」。以 PyMuPDF 獨立解析可測得兩段的行邊界與各行首字位置完全相同，
+差別只在已套用段命中行的實效字距（對照 11.690／12.080／12.080 對已套用 11.881／12.271／12.271pt），
+末枚因而下移 5.75〜5.94pt（0.476〜0.492 em）抵住行尾；第四行為段末行，兩段字距同為 12.08pt 無位移。

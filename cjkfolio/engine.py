@@ -92,6 +92,7 @@ class ParagraphSpec:
     lead_offset_pt: float = 0.0  # 段級 inline 軸 sub-slot 偏移（pt）：首字起點微調，不改斷行容量（Sprint 29）
     advance_pt: float = 0.0  # 該樣式字距（pt）：繞排排除區的 pt 區間換算字格用（0＝不繞排）
     punct_squeeze: bool = False  # 標點擠壓（Sprint 90）：相鄰約物讓出半形（opt-in）
+    line_end_squeeze: bool = False  # 行尾閉括號縮末側（Sprint 116，CLREQ §3.1.6.2 規則 2；opt-in）
 
 
 @dataclass(frozen=True)
@@ -295,6 +296,26 @@ def squeeze_punctuation(cells: list) -> list:
     return out
 
 
+def squeeze_line_end(line: Line) -> Line:
+    """行尾閉括號縮末側（純函式，CLREQ §3.1.6.2 規則 2）：末枚字身框 1 → 0.5 em。
+
+    條文：「當行尾出現結束括注符號時，可以縮減其末側二分之一個漢字大小的空白。」
+    同 §3.1.6.1 取 advance-only 模型（只縮推進量、不位移字形），故兩後端與畫布零
+    改動。**斷行已定案後才套用**（模型 A）：省下的半格不回饋容量，行邊界與關閉時
+    完全相同，保住 Sprint 90 起守住的斷行確定性（模型 B 迭代求不動點見 GAPS #69）。
+
+    幾何實效：末枚之後無內容，故單看該行不動字形；非段末行經齊行 `cap / used`
+    重算後字距均勻放大，末枚的墨跡因而抵住行尾。段末行不齊行，本規則對其無視覺
+    效果（誠實記錄，見 GAPS #72）。同小節規則 1（行首開括號）需字形偏移欄位，另案。
+    """
+    if not line.cells:
+        return line
+    last = line.cells[-1]
+    if not (_squeezable(last) and last.text in SQUEEZE_CLOSERS):
+        return line  # 已由 §3.1.6.1 壓過者 width 非 1，`_squeezable` 即擋住重複扣
+    return replace(line, cells=(*line.cells[:-1], replace(last, width=SQUEEZE_WIDTH)))
+
+
 def break_paragraph(text: str, chars_per_line: int, indent: int = 2,
                     vertical: bool = True) -> list:
     return break_cells(tokenize(normalize(text), vertical=vertical), chars_per_line, indent)
@@ -481,6 +502,8 @@ def flow_pages(
             line_cells, idx = _break_one_line(cells, idx, line_cap)
             line = Line(tuple(line_cells), line_start, cap=line_cap,
                         para_end=idx >= len(cells))
+            if spec.line_end_squeeze and vertical:  # 斷行定案後才套用（模型 A）
+                line = squeeze_line_end(line)
             cur.append(PlacedLine(slot, line, spec.style,
                                   page_no=spec.page_no if line.para_end else None,
                                   para_idx=spec.para_idx,
