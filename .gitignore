@@ -12,6 +12,9 @@ out/
 __pycache__/
 *.pyc
 .pytest_cache/
+# wheel 建置中間物（Sprint 119）：產物本身進 spikes/*/out/，這兩個是 setuptools 暫存
+build/
+*.egg-info/
 # Node
 node_modules/
 # 字型二進位不入 repo（assets/fonts/FONTS.md 有重現下載指令；LICENSE 與說明照常入 repo）

@@ -87,7 +87,8 @@ class FontRegistry:
                 )
         if path is None:
             raise FontError(
-                f"找不到可用字型：{family}/{weight}（assets/fonts 依 FONTS.md 指令重現下載）"
+                f"找不到可用字型：{family}/{weight}"
+                f"（字型目錄 {self.font_dir}，依 assets/fonts/FONTS.md 指令重現下載）"
             )
         if actual_family == family and actual_weight != weight:
             self._warn(f"家族「{family}」無字重 {weight} 檔，以 {actual_weight} 替代")

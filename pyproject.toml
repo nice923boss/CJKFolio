@@ -5,12 +5,15 @@
 # 就沒有可複查的對象。PyMuPDF 在 1.24.x 之前是 GPL v3 而非 AGPL v3，
 # 升版可能改變整個專案的授權結論，所以每個相依都在下方註記了授權。
 #
-# 注意：本專案目前以原始碼形式使用（python -m cjkfolio.cli ...），
-# 尚未驗證過 pip install 安裝後的行為，故不宣稱可安裝散布。
+# 注意：本專案的支援形態是自 repo 根執行（python -m cjkfolio.cli ...）。
+# Sprint 119（Spike 21）首度量過安裝形態：wheel 建得出、裝進 venv 後在 repo 外跑得完
+# CLI（字型須以 --font-dir 明給）。但相依解析未驗（探針以 --no-deps 裝）、sdist 未建、
+# PyPI 未上架，故仍不宣稱可散布。實測數據見 spikes/spike21-packaging/report.md。
 
 [project]
 name = "cjkfolio"
-version = "0.93.0"
+# 版本策略（Sprint 119 定案）：恆等於 CHANGELOG 最新一則的版本號，測試釘死。
+version = "0.113.0"
 description = "CJK 直排書冊排版編輯器：出版級直排引擎與自寫 PDF/X 輸出"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "黃政文" }]
@@ -33,6 +36,24 @@ dev = [
     "python-docx>=1.2.0",  # MIT，僅測試中的獨立驗證路徑使用
     "packaging>=26.0",     # Apache-2.0 OR BSD-2-Clause，tools/audit_licenses.py 用其 marker 求值
 ]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+# 扁平佈局（cjkfolio/ 與 editor/、tools/、tests/、spikes/ 平行），setuptools 的
+# 自動發現看到多個頂層目錄會拒絕猜測，所以套件清單一律顯式列出。
+# editor/ 不入清單：它不是套件（無 __init__.py，app.py 自行 sys.path.insert）。
+# templates/ 留在 repo 根（模版是專案交付物，不是躲在套件裡的實作細節），
+# 靠 package-dir 映射進 wheel 的 cjkfolio/templates/。
+[tool.setuptools]
+packages = ["cjkfolio", "cjkfolio.templates"]
+
+[tool.setuptools.package-dir]
+"cjkfolio.templates" = "templates"
+
+[tool.setuptools.package-data]
+"cjkfolio.templates" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "spikes"]

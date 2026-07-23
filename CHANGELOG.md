@@ -2,6 +2,60 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.113.0（2026-07-24，Sprint 119）pip 安裝形態實測：在 repo 裡測安裝版，等於什麼都沒測
+
+### 為什麼做這件事
+
+README 的誠實範圍表寫著「pip 安裝散布：未做，從未驗證安裝後行為」，`pyproject.toml` 檔頭也寫著同一句。這句話從 Sprint 98 掛到現在。「從未驗證」底下實際藏了什麼，沒有人量過，而 `GAPS #71`（版本號與 CHANGELOG 脫節 20 版）的補完時點正掛在這個從未開工的打包 Sprint 上。本版把「從未驗證」量成資料。
+
+### 量到的第一件事：現況連 wheel 都建不出來
+
+`python -m build --wheel` 直接失敗：`Multiple top-level packages discovered in a flat-layout: ['out', 'hooks', 'local', 'assets', 'devlog', 'editor', 'spikes', 'samples', 'cjkfolio', 'templates']`。這是保護不是故障：`local/`（金鑰紅線 #6）與 `out/`（參考書紅線 #1）若被自動發現猜進 wheel，才是真正的事故。補上 `[build-system]` 與顯式套件宣告（10 行）後建得出，內容逐檔列出：38 個 `.py` ＋ 2 份模版 ＋ dist-info，`local/`、`out/`、`assets/reference/` 一個都沒進去。
+
+### 量到的第二件事：裝起來會安靜地跑不動，而且很容易誤判成正常
+
+裝進 venv 後在 repo 外執行 `import-md`，開箱即死：`TemplateError: 讀取模版失敗 ...\venv\Lib\site-packages\templates\neizai-zhengli.json：[Errno 2] No such file or directory`。模版明明在 wheel 裡（`cjkfolio/templates/`），程式卻因為 `Path(__file__).parents[1]` 往上一層找。
+
+真正值得留檔的是對照組：**同一個 venv、同一支 python，只把工作目錄換成 repo 根，同一道指令 exit=0**。`python -m` 會把 cwd 放進 `sys.path[0]`，那一跑載到的是 repo 裡那份原始碼，不是裝好的那份。在 repo 目錄下測試安裝版，測起來會全過，什麼都沒驗到。此後任何安裝驗證一律在 repo 外的目錄執行。
+
+### 修的三處，都最小
+
+- 模版查找：新增 `resolve_template_dir()`，判斷條件只有「套件內 `templates/` 在不在」，不猜執行環境。repo 形態該目錄不存在，必然落回 `<repo>/templates`，與改動前同一路徑。
+- 字型目錄：`render`／`export-pdf` 加 `--font-dir`。核心 API 本就收 `font_dir`，缺的只有 CLI 這一段。字型是使用者資產（二進位不入 repo，`GAPS #12`），永遠不可能隨 wheel 走，所以安裝形態非給不可。
+- 錯誤訊息：`FontError` 補上實際找過的字型目錄。安裝形態下沒有這一行就無從診斷。
+
+修後在 repo 外實跑：`import-md` exit=0；`render` 未給字型目錄仍失敗（設計要的失敗，訊息指得出目錄）；給 `--font-dir` 後 exit=0，出圖 1 頁、禁則 0 違規。
+
+### 版本策略定案（關 GAPS #71）
+
+`pyproject.toml` 的 version 恆等於 CHANGELOG 最新一則的版本號。理由：授權盤點是對「某一組版本」成立的（`pyproject.toml` 檔頭即這麼寫），對外宣告的版本號與變更紀錄對不上，複查就沒有錨點。0.93.0 對齊到本版 0.113.0，並補測試釘死，再脫節即紅。
+
+### 新增
+
+- [Spike] `spikes/spike21-packaging/`：pre-mortem、`probe_wheel_build.py`（建 wheel 並逐檔列內容）、`probe_install_run.py`（裝進 venv 並在 repo 外執行，含假通過對照組）、`report.md`（PoC 通過，四項成功標準全達成）。兩支探針都收 argv 指定路徑，不寫死本機位置（`GAPS #63`）。
+- [實作] `pyproject.toml`：`[build-system]` ＋ 顯式 `packages`／`package-dir`／`package-data`（扁平佈局下自動發現必失敗）；version 0.93.0 → 0.113.0。
+- [實作] `cjkfolio/template_library.py` `resolve_template_dir()`；`cjkfolio/cli.py` 預設模版改走該函式、`render`／`export-pdf` 新增 `--font-dir`；`cjkfolio/fonts.py` 錯誤訊息補實際目錄。
+- [實作] `tests/test_packaging.py` 8 測試：模版目錄解析兩形態、CLI 預設模版真的存在、建置宣告與扁平佈局套件清單、每份模版都被 package-data 涵蓋、`--font-dir` 真的傳得到核心、版本一致鎖。
+- [實作] `README.md`：pip 安裝列由「未做」改「[Spike]」並寫明驗過什麼、沒驗什麼；smoke 範圍 C23 更正為 C24（文件漂移）。
+- [實作] `.gitignore`：`build/` 與 `*.egg-info/`（wheel 建置中間物）。
+
+### 已知邊界（GAPS #75）
+
+- 相依解析未驗：探針以 `--system-site-packages` ＋ `--no-deps` 隔離掉，「pip install cjkfolio 會不會把 PyMuPDF／PySide6 裝好」完全未經驗證。
+- 只在 Windows 11 ＋ Python 3.12.10 一台機器上跑過。
+- `editor/` 不在 wheel 內（不是套件），pip 安裝形態只有 CLI，沒有圖形編輯器。
+- sdist 未建、PyPI 未上架。本版證明的是「建得出 wheel 且裝了能跑」，不是「已可散布」。
+- AI 設定檔預設路徑在安裝形態失效，需 `--config` 明給（私有金鑰檔不該進 site-packages，紅線 #6）。
+
+### 待 Owner 真實素材驗收
+
+- 真要對外散布時，DoD 須含：乾淨 venv 不帶 `--no-deps` 裝得起來、sdist 建得出且裝得起來，與 `GAPS #74 (e)(f)`（uharfbuzz 的 HarfBuzz 條款、shiboken6 的 VC++ 轉散布條件）同一批。
+- 安裝形態的手感（CLI 說明是否讀得懂、`--font-dir` 的體驗）待 Owner 親跑。
+
+### 測試
+
+1217 → 1225（+8：pip 安裝形態佈局鎖），0 失敗 0 退步；py_compile EXIT=0；smoke C1〜C24 0 退步；安裝形態實測出圖 `page-001.png` 已用 Read 親驗（直排右起、四段齊備、兩級標題字級有別、頁碼在左下）。
+
 ## v0.112.0（2026-07-24，Sprint 118）相依授權稽核：先釘版本，才問得出條款
 
 ### 為什麼做這件事

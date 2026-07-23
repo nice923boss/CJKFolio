@@ -461,6 +461,8 @@ CJKFolio/
 
 ---
 
+- **進度（2026-07-24 Sprint 119）**：pip 安裝形態實測與版本策略定案 [Spike]／[實作]（Spike 21；關 GAPS #71，開 #75）。README 的誠實範圍表自 Sprint 115 起寫著「pip 安裝散布：未做，從未驗證安裝後行為」，而 #71 的補完時點正掛在這個從未開工的打包 Sprint 上，本 Sprint 把「從未驗證」量成資料。**先量再改，一行產品碼都不先動**（pre-mortem 對策第 1 條）。探針一：現況 `python -m build --wheel` 直接失敗，`Multiple top-level packages discovered in a flat-layout: ['out', 'hooks', 'local', 'assets', 'devlog', 'editor', 'spikes', 'samples', 'cjkfolio', 'templates']`，**這是保護不是故障**（`local/` 金鑰紅線 #6 與 `out/` 參考書紅線 #1 若被自動發現猜進 wheel 才是事故）；補 `[build-system]` 與顯式套件宣告後建得出，逐檔列內容＝38 個 `.py` ＋ 2 份模版 ＋ dist-info，`local/`、`out/`、`assets/reference/` 一個都沒進去。探針二：裝進 venv 後**在 repo 外**跑 `import-md` 開箱即死（`TemplateError`，模版明明在 wheel 裡的 `cjkfolio/templates/`，程式卻因 `Path(__file__).parents[1]` 往上一層找）。**本 Spike 最該留檔的是對照組**：同一個 venv、同一支 python，只把 cwd 換成 repo 根，同一道指令 exit=0，因為 `python -m` 把 cwd 放進 `sys.path[0]`，載到的是 repo 裡那份原始碼；**在 repo 目錄下測試安裝版，測起來會全過，什麼都沒驗到**，此後安裝驗證一律在 repo 外執行。修三處且皆最小：`resolve_template_dir()`（判斷條件只有「套件內 templates/ 在不在」，repo 形態必然落回 `<repo>/templates`，與改前同一路徑，1225 測試 0 退步即為此背書）、`render`／`export-pdf` 加 `--font-dir`（核心 API 本就收 `font_dir`，缺的只有 CLI 這一段；字型是使用者資產二進位不入 repo 見 #12，永遠不隨 wheel 走）、`FontError` 補上實際找過的目錄。修後 repo 外實跑：`import-md` exit=0、未給字型目錄的 `render` 仍失敗（**設計要的失敗**，訊息指得出目錄）、給 `--font-dir` 後 exit=0 出圖 1 頁禁則 0 違規，`page-001.png` 已 Read 親驗（直排右起、四段齊備、兩級標題字級有別、頁碼在左下）。**版本策略定案**（關 #71）：`pyproject.toml` 的 version 恆等於 CHANGELOG 最新一則版本號，0.93.0 對齊至 0.113.0 並補測試釘死。新增測試 8 項（`tests/test_packaging.py`）：模版目錄解析兩形態＋CLI 預設模版真的存在＋建置宣告與扁平佈局套件清單＋每份模版都被 package-data 涵蓋＋`--font-dir` 真的傳得到核心＋版本一致鎖。全庫 1217 → **1225 綠**、py_compile EXIT=0、smoke C1〜C24 0 退步。**未完**（入 #75）：相依解析未驗（探針 `--no-deps`）、sdist 未建、PyPI 未上架、`editor/` 不進 wheel（pip 形態只有 CLI）、只在一台機器一個 Python 版本上跑過。
+
 ## 7. Pre-mortem（機率 >30% 的最高風險與對策）
 
 | 風險 | 機率 | 早期訊號 | 對策／放棄條件 |
@@ -690,6 +692,12 @@ CJKFolio/
 | 2026-07-24（Sprint 118，執行工程師代決，非紅線） | **稽核工具採「白名單加人工複核表，比不到就 exit 1」，不採「黑名單擋已知不相容」。** 黑名單寫起來短、跑起來永遠綠，但它的沉默等於「沒見過的授權＝沒問題」，正是這類工具最容易變成裝飾品的原因。白名單的代價是每加一枚新相依可能要人工判一次，這個代價是刻意付的。另加漂移鎖：複核表以（正規化名稱, 逐字授權字串）為鍵，升版換了字串就對不上鍵而落回「須確認」，避免今天的人工結論被明天的升版默默繼承 |
 | 2026-07-24（Sprint 118，執行工程師代決，非紅線） | **`packaging` 宣告為開發相依，不自寫 marker 解析；#71 的補完批次改綁 #74。** marker 求值要處理 `extra`、`python_version`、`sys_platform` 與布林組合，自寫等於重做一份會出錯的 PEP 508 解析器，而 `packaging` 是 pip 自己在用的實作；它不入產品相依故不影響散布結論，但工具 import 它就是新相依，須同步寫進 `pyproject.toml` 與授權表，不能只在腦子裡記。另 #71（`pyproject.toml` 版本號與 CHANGELOG 脫節）原記「與 #55 (d) 同一批」，(d) 既已關閉，改綁到同樣阻擋打包的 #74，避免補完時點指向一個已消失的錨點 |
 
+
+| 2026-07-24（Sprint 119，執行工程師代決，非紅線） | **本 Sprint 取打包題，不取剩下的乙(7)、丁類與 #12。**乙(7)（group／jukugo 與橫排 ruby）缺帶注音的真實稿件，沒有真實素材就過不了 R5，硬做只會多一個 [Shell]；丁類剩的兩項要外部法律專業與不可逆的 git 歷史操作，都不是執行工程師能代決；#12 要下載數百 MB 字型。打包題則全部自主可推：它關掉掛了 20 天的 #71（其阻塞理由「沒有版本策略就不能自定版本語意」正是本次授權範圍內的事），回應 README 明寫的「未做」列，且純 Python wheel 不夾帶任何第三方二進位，**不觸發 #74 (e)(f) 的打包阻擋項** |
+| 2026-07-24（Sprint 119，執行工程師代決，非紅線） | **模版留在 repo 根 `templates/`，靠 package-dir 映射進 wheel，不搬檔進套件。**搬進 `cjkfolio/templates/` 會動到 README、samples、tests、CLI 預設值、編輯器模版庫共數十處引用，且模版是專案交付物（兩套書系模版），不是躲在套件裡的實作細節。映射寫在 `pyproject.toml` 一行，程式端只需一個「套件內 templates/ 在不在」的判斷，repo 形態行為完全不變 |
+| 2026-07-24（Sprint 119，執行工程師代決，非紅線） | **字型不進 wheel、也不改成沉默 fallback，改為 `--font-dir` 明給並在缺漏時大聲壞。**字型二進位不入 repo（#12／FONTS.md 的重現下載指令），無論如何都不可能隨 wheel 散布；安裝形態若沉默 fallback 到不存在的路徑，使用者會得到一份缺字的成品而不自知。錯誤訊息補上實際找過的目錄，是為了讓安裝形態的失敗**可診斷**，不是為了好看 |
+| 2026-07-24（Sprint 119，執行工程師代決，非紅線） | **版本策略定為「`pyproject.toml` version ＝ CHANGELOG 最新版」，並用測試釘死。**候選還有語意化版本（依變更性質決定進位）與日期版本，但兩者都需要先定義「什麼算破壞性變更」或「一天多個 Sprint 怎麼辦」，而本專案每個 Sprint 收尾必寫 CHANGELOG，那個號碼本就是唯一被維護的版本事實。取它當單一來源，代價是每 Sprint 多改一行，效益是版本號永遠不說謊；測試釘死才有意義，否則就是再寫一次同樣會漂的約定 |
+| 2026-07-24（Sprint 119，執行工程師代決，非紅線） | **安裝驗證一律在 repo 外的目錄執行，寫進紀律。**探針二的對照組實測：同一個 venv 同一支 python，cwd 在 repo 根時 `python -m cjkfolio.cli` 載到的是 repo 裡那份原始碼（`sys.path[0]` 是 cwd），指令 exit=0 但什麼都沒驗到。這種假通過比直接爆炸危險，因為它會被當成「安裝形態沒問題」的證據 |
 
 ## 11. 證據附錄（關鍵引用）
 

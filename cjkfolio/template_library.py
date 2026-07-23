@@ -16,6 +16,21 @@ from .style_editing import add_paragraph_style
 from .styles import SCHEMA_ID, Template, TemplateError
 
 
+def resolve_template_dir(package_dir=None) -> Path:
+    """內建模版目錄：wheel 安裝形態取套件內，repo 形態取 repo 根（Spike 21）。
+
+    repo 裡模版放在根目錄的 `templates/`（模版是專案交付物，不是躲在套件裡的
+    實作細節），wheel 則靠 pyproject 的 package-dir 把同一批檔案映射成
+    `cjkfolio/templates/`。兩種形態的差別只有這一個目錄在不在，所以判斷條件
+    就寫這一個目錄在不在，不去猜執行環境。
+
+    package_dir 供測試注入；預設為本模組所在的套件目錄。
+    """
+    pkg = Path(package_dir) if package_dir else Path(__file__).resolve().parent
+    packaged = pkg / "templates"
+    return packaged if packaged.is_dir() else pkg.parent / "templates"
+
+
 @dataclass(frozen=True)
 class TemplateEntry:
     """庫清單項：讀得出名稱的模版，或帶 error 的壞檔（不沉默）。"""

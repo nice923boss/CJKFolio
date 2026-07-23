@@ -44,11 +44,15 @@ from .preflight import (
 from .reference_extract import extract_draft
 from .render import render_document
 from .styles import load_template, save_template
-from .template_library import merge_draft_styles
+from .template_library import merge_draft_styles, resolve_template_dir
 from .txt_import import DEFAULT_BODY_STYLE, import_txt_file
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
+DEFAULT_TEMPLATE = resolve_template_dir() / "neizai-zhengli.json"
+
+# 字型是使用者資產（二進位不入 repo，見 assets/fonts/FONTS.md 與 GAPS #12），
+# 不會跟著 wheel 走；pip 安裝形態非給不可，自 repo 執行則維持預設不必給。
+FONT_DIR_HELP = "字型目錄（預設 assets/fonts；pip 安裝形態需明給）"
 
 
 def _import_target(args, template):
@@ -219,6 +223,7 @@ def cmd_render(args) -> int:
         doc, template, args.output, dpi=args.dpi, basename=args.basename,
         footer=not args.no_footer, first_page=args.first_page,
         image_base_dir=Path(args.document).parent,
+        font_dir=args.font_dir or None,
     )
     print(f"渲染完成：{len(result.paths)} 頁 → {args.output}")
     if result.images_placed:
@@ -256,6 +261,7 @@ def cmd_export_pdf(args) -> int:
             press_marks=args.press_marks,
             registration_single_k=args.registration_single_k,
             license_policy=args.license_policy,
+            font_dir=args.font_dir or None,
         )
     except LicenseBlocked as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
@@ -422,6 +428,7 @@ def main(argv=None) -> int:
     p_render.add_argument("--basename", default="page")
     p_render.add_argument("--first-page", type=int, default=1, help="首頁的書頁碼（頁腳與鏡像奇偶依此）")
     p_render.add_argument("--no-footer", action="store_true", help="不畫頁腳三件組")
+    p_render.add_argument("--font-dir", default="", help=FONT_DIR_HELP)
     p_render.set_defaults(func=cmd_render)
 
     p_pdf = sub.add_parser("export-pdf", help="文件 JSON 匯出 PDF（字型子集嵌入，盒框依 PLAN §9）")
@@ -451,6 +458,7 @@ def main(argv=None) -> int:
     p_pdf.add_argument("--license-policy", choices=list(LICENSE_POLICIES), default="warn",
                        help="字型授權未過時的處置：warn 只提示（預設）；"
                             "block 不產出檔案")
+    p_pdf.add_argument("--font-dir", default="", help=FONT_DIR_HELP)
     p_pdf.set_defaults(func=cmd_export_pdf)
 
     p_asm = sub.add_parser("assemble",
