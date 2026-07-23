@@ -28,7 +28,7 @@
 
 使用者提出三項擴充：匯入 txt／md／docx、AI 自動排版初稿、AI 設定介面（Base URL／Key／Model）。評估結論全數可加，已寫入 PLAN §4.4 與 Phase 0／1／2／3。
 
-- **Endpoint 實測**：http://100.115.94.1:8080/v1（Tailscale 私有 qwen3.6-35b-a3b）當日可達，/v1/models 回 256K context、llama.cpp 後端。
+- **Endpoint 實測**：私有 Tailscale endpoint（qwen3.6-35b-a3b，位址與埠僅存 local/ai-config.local.json，GAPS #6）當日可達，/v1/models 回 256K context、llama.cpp 後端。
 - **PoC 結果**：spikes/spike5-ai-style-tagging/tag_probe.py，8 段自擬書稿段落（章名／小標／內文／引文／訪談發言／個案大標）六類分類 **8/8 全對**，temperature 0.2、共 398 tokens。
 - **定位校正**：「AI 自動排版」校正為「AI 輔助樣式指派初稿＋人工校正」；AI 只回段落分類，版面幾何一律由排版引擎計算。
 - **金鑰處理**：那組 Base URL／Key／Model 存入 local/ai-config.local.json（永不入 repo，GAPS #6）；產品介面預設空值。

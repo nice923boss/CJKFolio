@@ -1,0 +1,5 @@
+#!/bin/sh
+# 提交前紅線字串掃描（Sprint 114）。安裝方式見 hooks/README.md。
+# 掃的是 index 裡的內容，不是工作區，故 `git add -p` 只加一部分時驗的也是真正要進版的那份。
+set -e
+python tools/precommit_scan.py --staged

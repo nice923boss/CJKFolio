@@ -2,6 +2,48 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.108.0（2026-07-23，Sprint 114）提交前紅線字串掃描：首跑抓到一筆真實洩漏
+
+### 為什麼做這件事
+
+不是預防，是已經發生過。Sprint 97 的紅線稽核發現參考書逐字內容進了 11 個已追蹤檔案，當時留下的流程教訓寫在 PLAN §10：「`.gitignore` 只擋檔案層級，擋不住字串層級，同類洩漏會再發生」。本版補上那一層。
+
+### 首跑結果：全庫 261 份已追蹤檔案，1 筆真實紅線違反
+
+| 項目 | 內容 |
+| --- | --- |
+| 命中 | `devlog/archive/2026-07-10-spike1-pipeline-probe.md:31` 含私有 CGNAT 位址與埠 |
+| 違反 | GAPS #6（AI 金鑰與私有 endpoint 只存 `local/ai-config.local.json`） |
+| 存活 | 自 Spike 1 當日起 13 天，期間跑過一次紅線稽核未被發現（Sprint 97 只掃參考書字串，沒掃金鑰與位址類） |
+| 處置 | 依 Sprint 97 的匿名代號取代法改寫，保留「測過、哪個模型、當日可達」的量測語意，只移除位址與埠 |
+| 複驗 | 清洗後全庫重掃 0 命中；本版新增的五個檔案納入版控後再掃 266 份，又抓到一筆**自我命中**（測試 docstring 把 CGNAT 網段寫成完整字面量），改為描述式寫法後 0 命中 |
+
+### 新增
+
+- [實作] `tools/precommit_scan.py`：六條規則，金鑰三（`sk-`／Google／GitHub 權杖樣式）、私有位址二（Tailscale MagicDNS 與 CGNAT 100.64 起算的 /10 網段）、本機路徑一（`.py` 原始碼內含使用者目錄）。`--staged` 掃 index 內容（hook 用），`--all` 掃全部已追蹤檔案（稽核與 CI）。**命中片段一律遮蔽後才印**（`sk-…（共 35 字）`），掃描報告本身不得成為第二個外洩管道。
+- [實作] `hooks/pre-commit` 與 `hooks/README.md`：一行 `git config core.hooksPath hooks` 安裝，`--no-verify` 繞過視同紅線變更需 Owner 同意並留 GAPS 一列。
+- [實作] `.gitattributes` 釘 `hooks/pre-commit text eol=lf`：本機 `core.autocrlf=true`，checkout 會把 hook 轉成 CRLF，shebang 隨之帶上跳脫字元而 bad interpreter，hook 形同虛設。
+- [實作] `tests/test_precommit_scan.py` 21 測試：規則表每條須指得出紅線出處、命中與不命中都驗（100.63 與 100.200 屬公網不得誤擋、`100.64` 版本號不得誤判為位址）、遮蔽有效、**全庫 0 命中的回歸鎖**。測試內的假金鑰與假路徑一律以字串串接組出，否則測試檔自己就成了命中來源。
+
+### 兩個設計約束不是偷懶，是紅線本身逼出來的
+
+1. 參考書逐字字串清單若寫進掃描器，掃描器就成了新的洩漏源。故一律外置 `local/reference-strings.txt`（`.gitignore` 擋下 `local/`），清單不存在時據實印「規則略過」，不假裝通過。
+2. 書稿書名同理不寫進 `tools/`（會被既有素材外置守門測試掃到）。那一格由 `tests/test_long_book_tool.py` 守，兩者互補不重疊。
+
+### 修正
+
+- PLAN §10 決議紀錄表格：Sprint 108 那列在收尾時併進了 Sprint 107 列尾（缺換行），本版補回。屬 Gate 3 同類掃描的產物，本 Sprint 收尾時犯了同一種錯並自查發現，順帶掃出既有的一處，三份文件（PLAN／GAPS／CHANGELOG）全檔複驗後 0 殘留。
+
+### 待 Owner 真實素材驗收
+
+- hook 已用真提交實測擋下（含假金鑰的檔案，COMMIT_EXIT=1、無殘留），但 `core.hooksPath` 是本機設定，**Owner 需在自己的 clone 各設一次**。
+- `reference-verbatim` 規則目前空轉（本機清單未建立），Sprint 97 那類逐字洩漏在清單建立前不會被自動擋下，見 GAPS #70 (a)。
+- git 歷史仍含該私有位址（`git log -S` 可追至 Spike 1 起的 commit），repo 無遠端故未外流，是否重寫歷史與 GAPS #1 同一決策，待 Owner。
+
+### 測試
+
+1084 → 1105（+21：字串掃描器規則、全庫回歸鎖、hook 行尾守門），typecheck 0，smoke C1〜C23 SMOKE PASS 0 退步。
+
 ## v0.107.0（2026-07-23，Sprint 113）標點擠壓剩項的證據調查：規則 7／8 定案不做，行首行尾 PoC 通過待 Owner
 
 ### 本版不含任何產品程式碼改動
