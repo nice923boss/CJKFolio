@@ -1,3 +1,6 @@
 # git hook 由 sh 執行。本機 core.autocrlf=true，checkout 會把 hook 轉成 CRLF，
 # shebang 就變成 `/bin/sh\r` 而 bad interpreter，hook 等於形同虛設（Sprint 114）。
 hooks/pre-commit text eol=lf
+# 啟動檔須以 CRLF 落地（cmd 對 LF-only bat 的解析有既知邊角），
+# tests/test_launcher.py 驗工作區位元組，任何環境 checkout 都要拿到 CRLF（Sprint 122）
+*.bat text eol=crlf

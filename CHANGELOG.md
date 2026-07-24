@@ -2,6 +2,40 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.116.0（2026-07-24，Sprint 122）編輯器啟動檔與 Owner 真實稿件全鏈代驗
+
+### 為什麼做這件事
+
+Owner 放行兩項插隊需求：建一個可直接執行的啟動檔供手動測試全功能（真視窗批次 #19／#23／#10 的入口），並以真實稿件《成名之路》.txt（3.4 萬字小說，13 章）由執行工程師先行代驗。真稿與所有產物只存 `local/manual-test/`（`.gitignore` 內），不入 repo。
+
+### 新增
+
+- [實作] `啟動編輯器.bat`（更新既有檔）：repo 早有 b60f6b2（2026-07-12 為 #19 所建）版，本輪首版未查未讀就覆寫，於 commit 暫存見 `M` 狀態才發現，據實記錄這筆流程失誤；處置＝以既有版為骨架合併（PySide6 預檢、`title`、啟動訊息、`%*` 拖放轉發、失敗 `pause` 全保留），僅改 app.py 路徑正斜線與 `>nul` 改 `1>nul` 兩處；`.gitattributes` 加 `*.bat text eol=crlf`。合併版以 ShellExecute 形態（貼近真雙擊）實跑無參數與拖放兩形態皆存活。
+- [實作] `手動測試指南.md`：啟動三式、編輯器功能對照表（選單逐項＋預期行為）、#19／#23／#10 真視窗驗收打勾清單、CLI 全鏈指令與已代驗紀錄。
+- [實作] `tests/test_launcher.py` 7 測試（1235 → 1242）：bat 純 ASCII 可列印＋CRLF＋正斜線引用＋`%*` 與 PySide6 預檢在案（釘住 b60f6b2 既有行為不再被誤蓋）、指南存在且零破折號；檢查函式以當日真實壞樣本（BEL 串、裸 LF）反向驗證抓得到。
+
+### 一手教訓：Bash heredoc 會把 `\\` 摺疊成 `\`，落地成 BEL 損壞
+
+- 首版 bat 以 heredoc 產生，`"editor\\app.py"` 落地成 `editor<BEL>pp.py`（0x07）：`file` 仍判 ASCII text、肉眼難察，cmd 執行時才爆「can't open file `editor\x07pp.py`」。與既知「Bash 寫檔 `$` 展開」同級陷阱，此後含反斜線內容一律 Write 工具寫檔執行（入 PLAN 決議）。
+- 驗證過程另記兩雷：Git Bash 以 UTF-8 傳中文檔名給 cmd 遭 CP950 解析（驗證方法問題，Explorer 雙擊走 UTF-16 不受影響）；PowerShell `Get-Location` 不同步 Win32 CWD（子進程相對路徑失效，補 `-WorkingDirectory`）。
+
+### 真實稿件代驗（R5）數據
+
+- 單檔鏈：`import-txt` 407 段 → `render` 128 頁禁則 0 違規、超容忍 0 → `export-pdf` 3 款子集（思源宋體 2066 字形）→ `preflight` 12/12，TAC 最高 92%。Gate 4（PyMuPDF 直讀）：128 頁、TrimBox 148×210mm、3 款 Type0 子集前綴與匯出日誌逐字相符。
+- 組裝鏈：13 分章 txt 逐章匯入 → `book.json`（`generate_toc`）→ `assemble` 14 章 422 段 → 135 頁 → `preflight` 12/12；自動目錄 13 條目跨 2 頁，Gate 4 目錄頁碼對位 13/13。
+- 組裝版超容忍 1 行已定位：頁 135 終章檔尾的主題曲 YouTube 連結（合併檔尾僅「(完)」故單檔版 0），屬 GAPS #66 既知 URL 直排型，規則按設計運作，非新缺陷。
+- 編輯器匯入冒煙（offscreen）：載真稿 407 段／128 頁與 CLI 同源、含全文排版與重繪 0.11s、一步 undo 回原稿。
+- R5 親 Read 四頁：單檔首頁／頁 3／頁 128、組裝版目次頁，直排、禁則、擠壓、鏡像側別、目錄虛線與頁碼底錨皆正常。
+
+### 已知邊界（GAPS #78）
+
+- CLI `assign-styles` 對 407 段長稿跑 10 分鐘時間盒 0 輸出 0 產物即終止：CLI 路徑無進度回饋，長稿等待尺度未量測，本輪未取得真稿 AI 指派結果（編輯器路徑有背景執行緒不受此限）。
+
+### 待 Owner 真實素材驗收
+
+- 雙擊 `啟動編輯器.bat` 開真視窗，依 `手動測試指南.md` 逐項操作：#19 IME 直排組字、#23 視覺對位與拖曳手感、#10 Spike 1 對比圖抽檢。
+- 《成名之路》兩份 PDF（`local/manual-test/成名之路.pdf`、`local/manual-test/assemble/成名之路-全書.pdf`）供 Owner 翻閱抽檢。
+
 ## v0.115.0（2026-07-24，Sprint 121）相依解析與 sdist：解除 Spike 21 的兩個刻意隔離
 
 ### 為什麼做這件事
