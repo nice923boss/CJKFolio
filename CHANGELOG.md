@@ -2,6 +2,29 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.118.0（2026-07-24，Sprint 124）畫布縮放與平移：Ctrl+滾輪、檢視選單、整頁 fit
+
+### 為什麼做這件事
+
+Owner 真視窗回饋：預覽畫布不能放大看對齊、不能縮小看整頁，也不能左右移動，用戶操作非常不便。此前畫布是 150dpi 固定 1:1（874×1240px 的頁面塞 760px 寬視窗），開窗即被裁切，只有預設捲軸可用。本版把「看」這件事補齊成一般編輯器的操作體驗。
+
+### 變更
+
+- [實作] `editor/canvas_view.py` 縮放：**Ctrl+滾輪以游標位置為錨縮放**（每格 1.25 倍，高解析裝置依 delta/120 指數平滑），clamp 10%〜800%（`ZOOM_MIN`／`ZOOM_MAX`）；`set_zoom`／`zoom_in`／`zoom_out`／`fit_page`／`fit_width` API 供選單與快捷鍵共用，倍率變動一律經 `on_zoom(factor)` 回報。100%＝底圖 150dpi 像素 1:1。
+- [實作] 平移：**Shift+滾輪水平捲動**（明確實作、不賴平台預設；滾輪向下＝往右，瀏覽器慣例）、素滾輪維持垂直捲動；**中鍵拖曳**與**按住空白鍵＋左鍵拖曳**＝手形平移（InDesign 語意，游標切換開手／握拳）。平移吃掉按下事件：不觸發點選／範圍選取／置圖拖曳，游標與選取維持原狀。
+- [實作] `editor/app.py`「檢視」選單（放在「編輯」之後）：放大 `Ctrl+=`／`Ctrl++`、縮小 `Ctrl+-`、實際大小（100%）`Ctrl+1`、符合頁面 `Ctrl+0`、符合寬度 `Ctrl+2`（Acrobat／InDesign 慣例）；狀態列常駐**縮放百分比**（on_zoom 回呼更新）。
+- [實作] 開窗**整頁 fit**：showEvent 首次顯示以 `QTimer.singleShot(0)` 佈局落定後 `fit_page`，開窗先看到整張紙面再自行縮放（直排首行在紙面右緣，舊行為 1:1 開窗常看不到第一行）。`fit_width` 預留垂直捲軸寬度（先預測縮放後是否溢高），避免貼齊後又冒出水平捲軸。
+- [實作] **重繪保留視角**：`_rebuild` 在 setScene 前記視口中心、換 scene 後 `centerOn` 記回（縮放屬 view transform 本就跨 setScene 存活）。不保留＝每打一字 reflow 畫面就跳回原點，放大編輯不可用。
+- [實作] smoke **C26**（`editor/smoke_view.py`，行數紀律分檔慣例）：開窗整頁 fit（頁完整入視口、倍率區間、狀態列同步）＋檢視選單五項與快捷鍵＋set_zoom clamp 與 zoom_in/out 互逆＋真 `QWheelEvent`（Ctrl 縮放、Shift 水平、素滾輪垂直不被吃掉）＋`_rebuild` 保留縮放與視口中心（漂移 < 6 場景 px）＋真 `QMouseEvent` 中鍵與空白鍵拖曳平移（捲軸位移逐像素斷言、不誤觸點選）＋符合寬度置中不溢出。1245 綠不變（editor 依 Sprint 17 決議走 smoke 不入 pytest 基線），smoke C1〜C25 0 退步。
+
+### 一手發現
+
+- PySide6 `QAction.menu()` 回的 wrapper 在 shiboken 下指向已失效物件（`RuntimeError: Internal C++ object already deleted`），而選單本體實際存活（`findChildren(QMenu)` 同時可取得且五項俱在）。驗證碼一律走 `findChildren`，不用 `QAction.menu()`。
+
+### 待 Owner 真實素材驗收（GAPS #79，承 #19 批次）
+
+- 縮放錨點手感（Ctrl+滾輪是否貼著游標處放大）、觸控板慣性滾動、空白鍵＋拖曳與輸入欄焦點的互動；離屏 smoke 驗的是邏輯與倍率數學，`手動測試指南.md` 已補操作列。
+
 ## v0.117.0（2026-07-24，Sprint 123）編輯器起始體驗收口：從零開始、標題跟隨、引導明確
 
 ### 為什麼做這件事

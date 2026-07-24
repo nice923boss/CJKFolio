@@ -6,7 +6,10 @@
   按住左鍵拖曳 → 範圍選取（可跨段；刪除／套字元樣式／IME 替換，Sprint 65）、
   文字輸入欄：組字後按 Enter 提交 → 於游標插入（body 全文 reflow／框鏈重佈局）→ 重繪
   → 游標跟隨、Ctrl+Z／Ctrl+Y 復原重做（body 與框統一歷史，Sprint 60）；
-  選單面：稿件匯入、樣式與色票、模版庫、置圖與繞排、preflight、AI 指派、AI 設定。
+  選單面：稿件匯入、樣式與色票、模版庫、置圖與繞排、preflight、AI 指派、AI 設定；
+  檢視面（Sprint 124）：Ctrl+滾輪游標錨縮放、Shift+滾輪水平捲動、中鍵／空白鍵
+  拖曳平移、「檢視」選單（放大縮小／100%／符合頁面／符合寬度）＋狀態列縮放
+  百分比；開窗整頁 fit、重繪保留縮放與視口中心。
 
 誠實範圍（honest-planning R3）：
   [實作]（離屏 smoke_check.py 已驗）＝上列全部功能邏輯。
@@ -26,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -95,6 +98,7 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self.selection = None     # 拖曳範圍選取（DocSpan，僅 body，Sprint 65）
         self._sel_items = []      # 選取範圍 shading items
         self._drag_anchor = None  # 拖曳起點 (para_idx, span)，按下 body 字格時設定
+        self._did_fit_on_show = False  # 首次顯示整頁 fit（Sprint 124），只做一次
 
         if self.page is None:  # 先放預設語，_make_scene 的缺圖提示才不被蓋掉
             self.statusBar().showMessage(
@@ -109,7 +113,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self.view = CanvasView(self.scene, self._on_pick, self._on_key, self._on_drag,
                                on_move=self._on_image_move,
                                on_release=self._on_image_release,
-                               on_drop=self._on_image_drop)
+                               on_drop=self._on_image_drop,
+                               on_zoom=self._on_zoom_changed)
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
@@ -124,6 +129,10 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         box.addWidget(self.view)
         box.addWidget(self._ime)
         self.setCentralWidget(central)
+
+        self._zoom_label = QLabel("100%")  # 縮放百分比（on_zoom 回呼更新，Sprint 124）
+        self._zoom_label.setStyleSheet("color:#666; font-size:11px; padding:0 8px;")
+        self.statusBar().addPermanentWidget(self._zoom_label)
 
         credit = QLabel(AUTHOR)
         credit.setStyleSheet("color:#999; font-size:11px; padding:0 8px;")
@@ -143,6 +152,19 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
+
+        view_menu = self.menuBar().addMenu("檢視")
+        for label, keys, handler in (
+            ("放大", ("Ctrl+=", "Ctrl++"), self.view.zoom_in),
+            ("縮小", ("Ctrl+-",), self.view.zoom_out),
+            ("實際大小（100%）", ("Ctrl+1",), lambda: self.view.set_zoom(1.0)),
+            ("符合頁面", ("Ctrl+0",), self.view.fit_page),
+            ("符合寬度", ("Ctrl+2",), self.view.fit_width),
+        ):  # 快捷鍵取 Acrobat／InDesign 慣例（Ctrl+0 整頁、Ctrl+1 實際大小）
+            action = QAction(label, self)
+            action.setShortcuts([QKeySequence(k) for k in keys])
+            action.triggered.connect(handler)
+            view_menu.addAction(action)
 
         dock = QDockWidget("樣式", self)
         self._style_panel = StylePanel(
@@ -300,8 +322,12 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             self.page = pages[0]
         else:
             self.page = pages[min(self.page.number, len(pages)) - 1]
+        # 視角保留（Sprint 124）：縮放屬 view transform 本就跨 setScene 存活，
+        # 視口中心需自行記回，否則每次 reflow（每打一字）畫面就跳回原點
+        center = self.view.mapToScene(self.view.viewport().rect().center())
         self.scene, self._item_by_key = self._make_scene()
         self.view.setScene(self.scene)
+        self.view.centerOn(center)
         self._highlight = None
         self.selection = None
         self._sel_items = []
@@ -317,6 +343,17 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
     def _update_window_title(self) -> None:
         """視窗標題＝產品名＋現行文件名（init 與 _rebuild 呼叫）。"""
         self.setWindowTitle(f"CJKFolio 編輯器：{self.doc.title or '未命名'}")
+
+    def _on_zoom_changed(self, factor: float) -> None:
+        """CanvasView 縮放回呼：狀態列百分比跟隨（100%＝150dpi 像素 1:1）。"""
+        self._zoom_label.setText(f"{round(factor * 100)}%")
+
+    def showEvent(self, event) -> None:
+        """首次顯示整頁 fit（Sprint 124）：開窗先看得到整張紙面，再自行縮放。"""
+        super().showEvent(event)
+        if not self._did_fit_on_show:
+            self._did_fit_on_show = True
+            QTimer.singleShot(0, self.view.fit_page)  # 佈局落定後再量視口
 
     def _on_pick(self, item, scene_pos=None) -> None:
         if self.page is None:  # 空紙面無字格；點擊不動作（Sprint 123）
@@ -550,7 +587,10 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             "  8. 「樣式」選單「AI 樣式指派…」（需先於「設定」填好 AI 三欄位）：\n"
             "     逐段勾選採用建議後套用，確認一步 Ctrl+Z 可整批回退。\n"
             "  9. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
-            "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
+            "     （此為 §5.2 選 Qt 的關鍵理由）。\n"
+            "  10. 縮放平移：Ctrl+滾輪（游標處放大縮小）、Shift+滾輪左右捲動、\n"
+            "     中鍵或按住空白鍵拖曳平移；Ctrl+0 整頁、Ctrl+1 100%、Ctrl+2 符合\n"
+            "     寬度，確認縮放錨點與拖曳手感、狀態列百分比跟隨。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（現以下方輸入欄＋Enter 代替）、\n"
             "  跨段選取套段落樣式、框內拖曳選取。",

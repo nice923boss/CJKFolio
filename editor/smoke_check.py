@@ -20,6 +20,8 @@
      （Sprint 87〜112，實作抽於 editor/smoke_preflight.py：本檔逾 800 行上限）
   C19 畫布置圖 UI（Sprint 102，實作抽於 editor/smoke_images.py）：拖放置入、
      拖曳移動、拖角等比縮放、Delete 移除，各一步 undo；缺圖不炸
+  C26 畫布縮放平移（Sprint 124，實作抽於 editor/smoke_view.py）：檢視選單與
+     快捷鍵、Ctrl+滾輪／Shift+滾輪、開窗整頁 fit、重繪保留視角、拖曳平移
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -49,6 +51,7 @@ from editor.smoke_ai import check_ai_assign  # noqa: E402
 from editor.smoke_images import check_images, check_wrap_ui  # noqa: E402
 from editor.smoke_import import check_import  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
+from editor.smoke_view import check_view  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
     iter_cell_rects,
@@ -688,6 +691,9 @@ def main() -> int:
         "＋第二字沿游標接續、兩步 undo 回空紙面、匯入後標題跟文件名"
     )
 
+    # C26 畫布縮放平移（Sprint 124，抽於 editor/smoke_view.py，同行數紀律）
+    check_view(EditorWindow, DOC)
+
     print(
         "SMOKE PASS：離屏可跑＋雙層建構＋hit-test 100%＋provenance 一致＋編輯回路 reflow"
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
@@ -697,6 +703,7 @@ def main() -> int:
         "＋稿件匯入（txt／md／docx 落到現行模版樣式，壞稿不進畫布）"
         "＋行首擠壓互動層字格（首格上緣跟著字形位移、字格相連無死區）"
         "＋空白起始（未命名空紙面、輸入欄第一字即成頁、undo 回空、標題跟文件名）"
+        "＋畫布縮放平移（Ctrl+滾輪／Shift+滾輪／檢視選單／整頁 fit／重繪保留視角）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0
