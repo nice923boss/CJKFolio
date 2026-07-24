@@ -1,22 +1,22 @@
-"""CJKFolio 編輯器 Phase 2 真視窗 demo：雙層畫布＋點字格反查游標＋IME 提交插入 reflow。
+"""CJKFolio 編輯器真視窗（Phase 2〜5 逐 Sprint 構建；smoke C1〜C25 離屏守門）。
 
-承 editor/canvas.py 雙層畫布與 cjkfolio/editing.py 編輯引擎（EditSession），於真視窗展示：
+承 editor/canvas.py 雙層畫布與 cjkfolio/editing.py 編輯引擎（EditSession）：
+  無參數開啟＝未命名空白文件從零開始（匯入稿件或於輸入欄打字，Sprint 123）、
   雙層畫布（底圖 PNG＋互動層字格）、點字格 → 反查文件／框游標（段或框／字／樣式）＋高亮、
   按住左鍵拖曳 → 範圍選取（可跨段；刪除／套字元樣式／IME 替換，Sprint 65）、
-  IME 輸入區：組字後按 Enter 提交 → 於游標插入（body 全文 reflow／框鏈重佈局）→ 重繪
-  → 游標跟隨、Ctrl+Z／Ctrl+Y 復原重做（body 與框統一歷史，Sprint 60）。
+  文字輸入欄：組字後按 Enter 提交 → 於游標插入（body 全文 reflow／框鏈重佈局）→ 重繪
+  → 游標跟隨、Ctrl+Z／Ctrl+Y 復原重做（body 與框統一歷史，Sprint 60）；
+  選單面：稿件匯入、樣式與色票、模版庫、置圖與繞排、preflight、AI 指派、AI 設定。
 
 誠實範圍（honest-planning R3）：
-  [實作]（離屏 smoke_check.py 已驗）＝雙層畫布顯示＋點字格反查游標（body 與框）＋
-          IME 提交插入回路（body 走 session.insert 全文重排；框走 session.insert_frame
-          框鏈重佈局，Sprint 61 接線）＋undo／redo 快捷鍵＋拖曳範圍選取
-          （跨段選取 → Backspace 刪除／字元樣式面板套選取／IME 替換，Sprint 65）。
-  [Shell]／待 Owner（離屏測不了，GAPS #19）＝IME 直排組字是否順、候選字窗、真視窗視覺對位、
-          快捷鍵與拖曳手感。本 demo 以「輸入區組字 → Enter 提交」代替直排畫布內嵌 IME 游標；
-          畫布內嵌 IME 即點即打為 Phase 2 編輯 UI 後續工程。
+  [實作]（離屏 smoke_check.py 已驗）＝上列全部功能邏輯。
+  待 Owner 真視窗（離屏測不了，GAPS #19／#23）＝IME 直排組字是否順、候選字窗、
+          視覺對位、快捷鍵與拖曳手感。
+  [Shell]（後續工程）＝直排畫布內嵌 IME 即點即打（現以下方輸入欄＋Enter 代替）、
+          跨段選取套段落樣式、框內拖曳選取。
 
 執行（自 repo 根，需真視窗環境）：
-  python editor/app.py [文件路徑]   預設 samples/case-divider.doc.json
+  python editor/app.py [文件路徑]   無參數＝空白文件；亦可雙擊 啟動編輯器.bat
 
 製作者：黃政文
 """
@@ -43,11 +43,12 @@ from PySide6.QtWidgets import (  # noqa: E402
 
 from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
-from cjkfolio.frame_editing import FrameCursor, FrameEditResult  # noqa: E402
 from cjkfolio.images import ImageError  # noqa: E402
 from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_actions import AiActionsMixin  # noqa: E402
+from editor.blank_doc import blank_document  # noqa: E402
+from editor.edit_actions import EditActionsMixin  # noqa: E402
 from editor.library_panel import TemplateLibraryDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -70,16 +71,24 @@ AUTHOR = "製作者：黃政文"
 
 
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
-                   ImageActionsMixin, ImportActionsMixin, QMainWindow):
+                   ImageActionsMixin, ImportActionsMixin, EditActionsMixin,
+                   QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
-        self.setWindowTitle("CJKFolio 編輯器（Phase 2 骨架）")
         # 編輯狀態單一事實來源＝EditSession（Sprint 61 接線；doc／layout／template
         # 由 property 委派＝樣式編輯後畫布與面板恆用現行模版，Sprint 71）
-        self.session = EditSession(
-            load_document(str(doc_path)), load_template(str(TEMPLATE)))
-        self._doc_path = Path(doc_path)  # 置入圖相對路徑基準（preflight 匯出用）
-        self.page = self.layout_result.pages[0]
+        template = load_template(str(TEMPLATE))
+        if doc_path is None:  # 從零開始（Sprint 123）：未命名空白文件，匯入或打字起步
+            self.session = EditSession(
+                blank_document(template, TEMPLATE.stem), template)
+            # 檔案不存在，僅取 parent 當置入圖／preflight 的相對路徑基準
+            self._doc_path = ROOT / "未命名.doc.json"
+        else:
+            self.session = EditSession(load_document(str(doc_path)), template)
+            self._doc_path = Path(doc_path)  # 置入圖相對路徑基準（preflight 匯出用）
+        pages = self.layout_result.pages
+        self.page = pages[0] if pages else None  # None＝空白文件畫空紙面（Sprint 123）
+        self._update_window_title()
         self.cursor = None        # 目前選取 body 字格 (placed_idx, cell_idx)
         self.frame_cursor = None  # 目前選取框字格 ("frame", fi, li, ci)；與 body 游標互斥
         self._highlight = None
@@ -87,9 +96,15 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self._sel_items = []      # 選取範圍 shading items
         self._drag_anchor = None  # 拖曳起點 (para_idx, span)，按下 body 字格時設定
 
-        self.statusBar().showMessage(  # 先放預設語，_make_scene 的缺圖提示才不被蓋掉
-            "點頁面字格 → 反查游標；組字按 Enter 插入；Ctrl+Z／Ctrl+Y 復原重做"
-        )
+        if self.page is None:  # 先放預設語，_make_scene 的缺圖提示才不被蓋掉
+            self.statusBar().showMessage(
+                "從零開始：「檔案 > 匯入稿件」載入 txt／md／docx，"
+                "或直接在下方輸入欄打字按 Enter 從第一頁開始"
+            )
+        else:
+            self.statusBar().showMessage(
+                "點頁面字格 → 反查游標；組字按 Enter 插入；Ctrl+Z／Ctrl+Y 復原重做"
+            )
         self.scene, self._item_by_key = self._make_scene()
         self.view = CanvasView(self.scene, self._on_pick, self._on_key, self._on_drag,
                                on_move=self._on_image_move,
@@ -98,7 +113,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
 
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
-            "先點頁面字格選游標（body 或文字框），組字後按 Enter 於游標插入"
+            "文字輸入欄：在此打字（注音／倉頡／拼音）按 Enter 插入；"
+            "空白文件直接開始，點畫布字格可改插入位置"
         )
         self._ime.textChanged.connect(self._on_ime_preview)
         self._ime.returnPressed.connect(self._on_ime_commit)
@@ -251,6 +267,12 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         置入圖於此解析（Sprint 102）：讀不到的圖檔據實提示並照常顯示無圖版面，
         不讓一張缺圖使整個編輯器打不開（提示不沉默，缺圖仍留在文件裡）。"""
         scene = QGraphicsScene()
+        if self.page is None:  # 空白文件（Sprint 123）：畫空紙面等匯入或第一字
+            width_px = self.template.page_width_mm / 25.4 * DPI
+            height_px = self.template.page_height_mm / 25.4 * DPI
+            scene.addRect(0, 0, width_px, height_px,
+                          QPen(QColor("#c8c8c8")), QBrush(QColor("white")))
+            return scene, {}
         try:
             images = page_images(self.template, self.doc, self.layout_result,
                                  self.page, base_dir=self._doc_path.parent)
@@ -272,7 +294,12 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         一頁而非炸掉）。
         """
         pages = self.layout_result.pages
-        self.page = pages[min(self.page.number, len(pages)) - 1]
+        if not pages:  # 空白文件（undo 回空亦同）：回空紙面（Sprint 123）
+            self.page = None
+        elif self.page is None:
+            self.page = pages[0]
+        else:
+            self.page = pages[min(self.page.number, len(pages)) - 1]
         self.scene, self._item_by_key = self._make_scene()
         self.view.setScene(self.scene)
         self._highlight = None
@@ -285,8 +312,15 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
                                if self.doc.images else None)
         if hasattr(self, "_style_panel"):  # 面板清單同步現行模版（Sprint 71）
             self._style_panel.refresh(self.session.template)
+        self._update_window_title()  # 匯入／復原後標題跟隨現行文件名（Sprint 123）
+
+    def _update_window_title(self) -> None:
+        """視窗標題＝產品名＋現行文件名（init 與 _rebuild 呼叫）。"""
+        self.setWindowTitle(f"CJKFolio 編輯器：{self.doc.title or '未命名'}")
 
     def _on_pick(self, item, scene_pos=None) -> None:
+        if self.page is None:  # 空紙面無字格；點擊不動作（Sprint 123）
+            return
         key = item.data(0)
         self._set_selection(None)   # 重新按下＝清既有選取；拖曳起點隨本次點選重設
         self._drag_anchor = None    # 框字格不設拖曳起點（框選取 v1 不支援）
@@ -344,6 +378,9 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         hl.setZValue(3)
         self.scene.addItem(hl)
         self._highlight = hl
+        # 視口跟隨（Sprint 123）：直排第一行在紙面右緣，小視窗下插入或點選
+        # 後游標可能在可視區外，捲到可見才不迷路
+        self.view.ensureVisible(hl)
 
     def _on_drag(self, item) -> None:
         """按住左鍵拖曳過字格（Sprint 65）：自按下的 body 字格起劃範圍選取（可跨段）。
@@ -438,207 +475,6 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         )
         return True
 
-    def _on_ime_preview(self, text: str) -> None:
-        """組字中預覽插入目標（不變更文件；提交在 Enter）。"""
-        if not text:
-            return
-        if self.selection is not None:
-            self.statusBar().showMessage(
-                f"IME 組字：「{text}」→ 將替換選取"
-                f"（{self._selection_char_count()} 字，按 Enter）"
-            )
-            return
-        if self.frame_cursor is not None:
-            hit = self._frame_hit(*self.frame_cursor[1:])
-            pos = hit.span[1] if hit.span else "?"
-            self.statusBar().showMessage(
-                f"IME 組字：「{text}」→ 目標 框{hit.source_idx} 字位{pos}（按 Enter 插入框內）"
-            )
-            return
-        if self.cursor is None:
-            self.statusBar().showMessage(f"IME 組字：「{text}」→ 未選游標（先點一個字格）")
-            return
-        hit = resolve_hit(self.doc, self.page, *self.cursor)
-        pos = hit.span[1] if hit.span else "?"
-        self.statusBar().showMessage(
-            f"IME 組字：「{text}」→ 目標 段{hit.para_idx} 字位{pos}（按 Enter 插入並 reflow）"
-        )
-
-    def _on_ime_commit(self) -> None:
-        """Enter 提交：於游標插入（body 走 session.insert 全文 reflow；框走
-        session.insert_frame 框鏈重佈局）→ 畫布重繪 → 游標跟隨新落點。"""
-        text = self._ime.text()
-        if not text:
-            return
-        if self.selection is not None:  # 選取中提交＝替換選取（Sprint 65）
-            span = self.selection
-            res = self.session.replace_span(span, text)
-            self._follow_body_address(res)
-            self._ime.clear()
-            self.statusBar().showMessage(
-                f"已以「{text}」替換選取（段{span.start.para_idx}〜"
-                f"段{span.end.para_idx}）→ 游標 段{res.cursor.para_idx} "
-                f"字位{res.cursor.caret}"
-            )
-            return
-        if self.frame_cursor is not None:
-            self._commit_frame_insert(text)
-            return
-        if self.cursor is None:
-            self.statusBar().showMessage("先點一個字格選游標，再組字並按 Enter")
-            return
-        hit = resolve_hit(self.doc, self.page, *self.cursor)
-        if hit.para_idx is None or hit.span is None:
-            self.statusBar().showMessage("此字格無文件游標（拉丁串／空格），無法定位插入")
-            return
-        res = self.session.insert(DocCursor(hit.para_idx, hit.span[1]), text)
-        self._follow_body_address(res)
-        self._ime.clear()
-        self.statusBar().showMessage(
-            f"已插入「{text}」→ reflow：{len(self.layout_result.pages)} 頁、"
-            f"{len(self.layout_result.violations)} 禁則違規；"
-            f"游標 段{res.cursor.para_idx} 字位{res.cursor.caret}"
-        )
-
-    def _commit_frame_insert(self, text: str) -> None:
-        """框游標插入（Sprint 61）：session.insert_frame → 框鏈重佈局 → 游標跟隨。"""
-        hit = self._frame_hit(*self.frame_cursor[1:])
-        if hit.span is None:
-            self.statusBar().showMessage("此框字格無來源游標，無法定位插入")
-            return
-        res = self.session.insert_frame(FrameCursor(hit.source_idx, hit.span[1]), text)
-        self._follow_frame_address(res)
-        self._ime.clear()
-        self.statusBar().showMessage(
-            f"已插入框「{text}」→ 框{res.cursor.source_idx} 字位{res.cursor.caret}"
-            "（body 版面不重排）"
-        )
-
-    def _follow_frame_address(self, res) -> None:
-        """框編輯／還原後：重繪並讓框游標與高亮跟隨 address。"""
-        if res.address is not None:
-            self.page = self.layout_result.pages[res.address.page_number - 1]
-            self.frame_cursor = ("frame", res.address.frame_idx,
-                                 res.address.line_idx, res.address.cell_idx)
-        else:
-            self.frame_cursor = None
-        self.cursor = None
-        self._rebuild()
-        if self.frame_cursor is not None and self.frame_cursor in self._item_by_key:
-            self._draw_highlight(self._item_by_key[self.frame_cursor].rect())
-
-    def _follow_body_address(self, res) -> None:
-        """body 編輯／還原後：重繪並讓 body 游標與高亮跟隨 address。"""
-        if res.address is not None:
-            self.page = self.layout_result.pages[res.address.page_number - 1]
-            self.cursor = (res.address.placed_idx, res.address.cell_idx)
-        else:
-            self.page = self.layout_result.pages[0]
-            self.cursor = None
-        self.frame_cursor = None
-        self._rebuild()
-        if self.cursor is not None and self.cursor in self._item_by_key:
-            self._draw_highlight(self._item_by_key[self.cursor].rect())
-
-    def _on_undo(self) -> None:
-        self._apply_history(self.session.undo(), "復原")
-
-    def _on_redo(self) -> None:
-        self._apply_history(self.session.redo(), "重做")
-
-    def _apply_history(self, res, verb: str) -> None:
-        """undo／redo 共用：依還原態型別（body／框）跟隨游標並重繪（Sprint 61）。"""
-        if res is None:
-            self.statusBar().showMessage(f"無可{verb}")
-            return
-        if isinstance(res, FrameEditResult):
-            self._follow_frame_address(res)
-            self.statusBar().showMessage(
-                f"已{verb} → 框{res.cursor.source_idx} 字位{res.cursor.caret}")
-            return
-        self._follow_body_address(res)
-        self.statusBar().showMessage(
-            f"已{verb} → 段{res.cursor.para_idx} 字位{res.cursor.caret}")
-
-    def _on_key(self, event) -> bool:
-        """畫布鍵盤事件（Sprint 62）：Backspace／Delete 刪字、Enter 分段、PgUp／PgDn 換頁。
-
-        游標語意＝點選字格之後（與 IME 插入同）：Backspace 刪游標字、Delete 刪其後一字；
-        拖曳選取中（Sprint 65）Backspace／Delete 刪整段選取。
-        回 True＝已處理（未處理交回 QGraphicsView 預設行為）。"""
-        key = event.key()
-        if key in (Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
-            self._turn_page(1 if key == Qt.Key.Key_PageDown else -1)
-            return True
-        if (self._image_idx is not None
-                and key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)):
-            return self._remove_selected_image()  # 選取圖片時刪除吃圖不吃字
-        if self.selection is not None:  # 選取中（Sprint 65）：刪除吃整段選取、不分段
-            if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
-                return self._delete_selection()
-            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self.statusBar().showMessage("選取中不分段；先刪除選取或重新點選單一字格")
-                return True
-        if key == Qt.Key.Key_Backspace:
-            return self._delete_at_cursor(before=True)
-        if key == Qt.Key.Key_Delete:
-            return self._delete_at_cursor(before=False)
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            return self._split_at_cursor()
-        return False
-
-    def _turn_page(self, step: int) -> None:
-        """PgUp／PgDn 換顯示頁（版面頁號連續，index＝number−1）；換頁清游標。"""
-        pages = self.layout_result.pages
-        new_idx = max(0, min(len(pages) - 1, self.page.number - 1 + step))
-        if new_idx == self.page.number - 1:
-            self.statusBar().showMessage(
-                f"已在{'末' if step > 0 else '首'}頁（{self.page.number}/{len(pages)}）")
-            return
-        self.page = pages[new_idx]
-        self.cursor = None
-        self.frame_cursor = None
-        self._rebuild()
-        self.statusBar().showMessage(f"頁 {self.page.number}/{len(pages)}")
-
-    def _delete_at_cursor(self, before: bool) -> bool:
-        """Backspace（刪游標字）／Delete（刪其後一字）：body 與框皆走 session 入歷史。"""
-        if self.frame_cursor is not None:
-            hit = self._frame_hit(*self.frame_cursor[1:])
-            if hit.span is None:
-                return False
-            s, e = hit.span
-            src_len = len(self.doc.text_frames[hit.source_idx].text)
-            start, end = (s, e) if before else (e, min(e + 1, src_len))
-            if start >= end:
-                self.statusBar().showMessage("已在框文末，無後一字可刪")
-                return True
-            try:
-                res = self.session.delete_frame(hit.source_idx, start, end)
-            except ValueError as err:  # 框不可刪空（document@2 不變式）
-                self.statusBar().showMessage(f"無法刪除：{err}")
-                return True
-            self._follow_frame_address(res)
-            self.statusBar().showMessage(
-                f"已刪框{hit.source_idx} 字位 [{start}, {end})")
-            return True
-        if self.cursor is None:
-            return False
-        hit = resolve_hit(self.doc, self.page, *self.cursor)
-        if hit.para_idx is None or hit.span is None:
-            return False
-        s, e = hit.span
-        para_len = len(self.doc.paragraphs[hit.para_idx].text)
-        start, end = (s, e) if before else (e, min(e + 1, para_len))
-        if start >= end:
-            self.statusBar().showMessage("已在段末，無後一字可刪")
-            return True
-        res = self.session.delete(DocRange(hit.para_idx, start, end))
-        self._follow_body_address(res)
-        self.statusBar().showMessage(
-            f"已刪 段{hit.para_idx} 字位 [{start}, {end}) → 游標 字位{res.cursor.caret}")
-        return True
-
     def _apply_para_style_at_cursor(self, name: str) -> None:
         """樣式面板點段落樣式 → 套用至 body 游標所在段（session 入統一歷史）。
 
@@ -687,27 +523,12 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
     # 樣式選單域回呼（雙擊編輯／新增／刪除／改名／色票／另存）見 StyleActionsMixin
     # （editor/style_actions.py，Sprint 78 行數紀律分檔）。
 
-    def _split_at_cursor(self) -> bool:
-        """Enter＝body 游標處分段（session.split）；文字框為單段不分段。"""
-        if self.frame_cursor is not None:
-            self.statusBar().showMessage("文字框為單段，不分段（Enter 僅 body）")
-            return True
-        if self.cursor is None:
-            return False
-        hit = resolve_hit(self.doc, self.page, *self.cursor)
-        if hit.para_idx is None or hit.span is None:
-            return False
-        res = self.session.split(DocCursor(hit.para_idx, hit.span[1]))
-        self._follow_body_address(res)
-        self.statusBar().showMessage(
-            f"已分段 → 段{res.cursor.para_idx} 起（共 {len(self.doc.paragraphs)} 段）")
-        return True
-
     def _show_help(self) -> None:
         QMessageBox.information(
             self,
             "Owner IME 實測說明",
-            "本視窗為 Phase 2 畫布骨架＋編輯引擎 demo（GAPS #19）。\n\n"
+            "功能邏輯已由離屏 smoke（C1〜C25）自動驗證；本清單是只有真人\n"
+            "真視窗才驗得了的項目（GAPS #19／#23）。\n\n"
             "已實作（離屏 smoke_check 已驗）：\n"
             "  雙層畫布顯示、點字格 → 反查游標（body 段落與文字框皆可）、\n"
             "  IME 提交插入（body 全文重排／文字框框鏈重佈局，含串接跨框流動）、\n"
@@ -731,14 +552,14 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             "  9. 目檢頁面字形與互動層對位；確認直排 IME 組字與候選字窗正常\n"
             "     （此為 §5.2 選 Qt 的關鍵理由）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
-            "  直排畫布內嵌 IME 即點即打（本 demo 以輸入區＋Enter 代替）、\n"
+            "  直排畫布內嵌 IME 即點即打（現以下方輸入欄＋Enter 代替）、\n"
             "  跨段選取套段落樣式、框內拖曳選取。",
         )
 
 
 def main(argv=None) -> int:
     argv = list(sys.argv if argv is None else argv)
-    doc_path = argv[1] if len(argv) > 1 else DEFAULT_DOC
+    doc_path = argv[1] if len(argv) > 1 else None  # 無參數＝從零開始（Sprint 123）
     app = QApplication.instance() or QApplication(argv[:1])
     win = EditorWindow(doc_path)
     win.resize(760, 900)
