@@ -164,6 +164,23 @@ def iter_image_rects(doc: Document, page_number: int, scale: float) -> Iterator[
         yield idx, x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale
 
 
+def spread_pages(page_number: int, total: int):
+    """右翻書對開配對：回傳 (left_page, right_page)，None＝該側空白。
+
+    Sprint 22 側別（SSOT）：偶數書頁＝右頁（書口在右）、奇數書頁＝左頁（書口在左）；
+    右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大，故右頁號 < 左頁號。
+    一組 spread＝(偶 E, 奇 E+1)：右＝E、左＝E+1。頁1（奇）右夥伴頁0不存在＝單邊在左；
+    末頁若為偶則左夥伴 E+1 不存在＝單邊在右。導航到 spread 內任一頁都得同一組。
+    """
+    if page_number % 2 == 0:  # 偶＝右頁
+        right = page_number
+        left = page_number + 1 if page_number + 1 <= total else None
+    else:  # 奇＝左頁
+        left = page_number
+        right = page_number - 1 if page_number - 1 >= 1 else None
+    return left, right
+
+
 def build_page_scene(
     scene: QGraphicsScene,
     template: Template,
@@ -172,6 +189,7 @@ def build_page_scene(
     page,
     dpi: int = 150,
     images=(),
+    x_offset: float = 0.0,
 ) -> list:
     """在 scene 建雙層畫布（底圖 PNG z=0＋互動層透明字格 z=1）。回傳互動層 item list。
 
@@ -182,6 +200,9 @@ def build_page_scene(
 
     images＝該頁已解析的置入圖（page_images 產出），底圖據此繪製；呼叫端自行解析
     是為了讓「圖檔讀不到」的提示留在 UI 層（畫布不代為決定要不要吞錯）。
+
+    x_offset＝底圖與互動層一併水平平移的像素量（對頁檢視右頁置於 x=頁寬，Sprint 129）。
+    預設 0.0＝與單頁完全等價（byte-identical），既有單頁路徑不受影響。
     """
     scale = dpi / 72.0
     book_number = page.number
@@ -196,12 +217,13 @@ def build_page_scene(
     )
     base = QGraphicsPixmapItem(QPixmap.fromImage(pil_to_qimage(pil_img)))
     base.setZValue(0)
+    base.setPos(x_offset, 0.0)  # 對頁右頁整頁右移（Sprint 129）；預設 0.0＝不動
     scene.addItem(base)
     items: list = []
 
     def add_item(x: float, y: float, w: float, h: float, key: tuple,
                  z: float = 1) -> None:
-        item = QGraphicsRectItem(x, y, w, h)
+        item = QGraphicsRectItem(x + x_offset, y, w, h)
         item.setPen(Qt.NoPen)
         item.setBrush(QBrush(QColor(0, 0, 0, 0)))  # 全透明但保填充形狀（hit 區域）
         item.setZValue(z)

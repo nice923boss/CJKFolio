@@ -1,6 +1,7 @@
 """smoke C26：畫布縮放與平移（Sprint 124；自 smoke_check.py 抽出，行數紀律慣例）。
 
-離屏可驗的是邏輯與倍率數學：檢視選單五項與快捷鍵、set_zoom clamp 與狀態列
+離屏可驗的是邏輯與倍率數學：檢視選單六項與快捷鍵（含對頁檢視項可勾選＋Ctrl+3，
+行為驗於 C32）、set_zoom clamp 與狀態列
 同步、Ctrl+滾輪 1.25 倍階、Shift+滾輪水平捲動（素滾輪垂直不被吃掉）、開窗
 初始整頁 fit、重繪保留縮放與視口中心、中鍵與空白鍵拖曳平移（不誤觸點選）、
 符合頁面／符合寬度幾何。縮放錨點手感、觸控板慣性與真滑鼠拖曳需真視窗
@@ -32,18 +33,22 @@ def check_view(EditorWindow, doc_path) -> None:
     assert win._zoom_label.text() == f"{round(z0 * 100)}%", \
         f"狀態列百分比未同步：{win._zoom_label.text()}"
 
-    # 檢視選單五項與快捷鍵（Acrobat／InDesign 慣例）。查找走 findChildren：
+    # 檢視選單六項與快捷鍵（縮放五項＋對頁檢視）。查找走 findChildren：
     # QAction.menu() 回的 wrapper 在 shiboken 下會指到已失效物件（實測），不可靠
     view_menu = next(
         m for m in win.menuBar().findChildren(QMenu) if m.title() == "檢視")
-    acts = view_menu.actions()
+    acts = [a for a in view_menu.actions() if not a.isSeparator()]
     assert [a.text() for a in acts] == \
-        ["放大", "縮小", "實際大小（100%）", "符合頁面", "符合寬度"], \
+        ["放大", "縮小", "實際大小（100%）", "符合頁面", "符合寬度",
+         "對頁檢視（雙頁併排）"], \
         f"檢視選單項異常：{[a.text() for a in acts]}"
     keys = {a.text(): [s.toString() for s in a.shortcuts()] for a in acts}
     assert keys["放大"] == ["Ctrl+=", "Ctrl++"] and keys["縮小"] == ["Ctrl+-"]
     assert keys["實際大小（100%）"] == ["Ctrl+1"] and keys["符合頁面"] == ["Ctrl+0"]
     assert keys["符合寬度"] == ["Ctrl+2"], f"快捷鍵異常：{keys}"
+    facing = acts[-1]  # 對頁檢視（Sprint 129）：可勾選、Ctrl+3，行為驗於 C32
+    assert facing.isCheckable() and keys["對頁檢視（雙頁併排）"] == ["Ctrl+3"], \
+        f"對頁檢視項屬性異常：checkable={facing.isCheckable()} keys={keys}"
 
     # set_zoom 絕對倍率、clamp 邊界、狀態列同步；zoom_in/out 步進互逆
     view.set_zoom(2.0)
@@ -155,7 +160,8 @@ def check_view(EditorWindow, doc_path) -> None:
 
     print(
         f"C26 畫布縮放平移：開窗整頁 fit（{round(z0 * 100)}%，頁完整可見）＋檢視選單"
-        "五項快捷鍵（Ctrl+= / - / 1 / 0 / 2）＋set_zoom clamp 10%〜800% 與狀態列同步"
+        "縮放五項快捷鍵（Ctrl+= / - / 1 / 0 / 2）＋對頁檢視項（Ctrl+3 可勾選）"
+        "＋set_zoom clamp 10%〜800% 與狀態列同步"
         "＋Ctrl+滾輪 1.25 倍階＋Shift+滾輪水平（素滾輪垂直照舊）＋重繪保留縮放與"
         "視口中心＋中鍵與空白鍵拖曳平移（不誤觸點選）＋符合寬度置中且不溢出"
     )

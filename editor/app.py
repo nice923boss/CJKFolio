@@ -65,6 +65,7 @@ from editor.canvas import (  # noqa: E402
     page_images,
     resolve_frame_hit,
     resolve_hit,
+    spread_pages,
 )
 from editor.canvas_view import CanvasView  # noqa: E402
 from editor.file_actions import FileActionsMixin  # noqa: E402
@@ -111,6 +112,7 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self._sel_items = []      # 選取範圍 shading items
         self._drag_anchor = None  # 拖曳起點 (para_idx, span)，按下 body 字格時設定
         self._did_fit_on_show = False  # 首次顯示整頁 fit（Sprint 124），只做一次
+        self._facing = False      # 對頁檢視（雙頁併排，Sprint 129）；純檢視，不影響匯出
 
         if self.page is None:  # 先放預設語，_make_scene 的缺圖提示才不被蓋掉
             self.statusBar().showMessage(
@@ -228,6 +230,12 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             action.setShortcuts([QKeySequence(k) for k in keys])
             action.triggered.connect(handler)
             view_menu.addAction(action)
+        view_menu.addSeparator()  # 對頁檢視（雙頁併排，Sprint 129）：純檢視，不影響匯出
+        self._facing_action = QAction("對頁檢視（雙頁併排）", self)
+        self._facing_action.setCheckable(True)
+        self._facing_action.setShortcut(QKeySequence("Ctrl+3"))
+        self._facing_action.triggered.connect(self._toggle_facing)
+        view_menu.addAction(self._facing_action)
 
         tools_menu = self.menuBar().addMenu("工具")  # 字數統計與文件資訊（Sprint 128 丙2）
         info_action = QAction("文件資訊…", self)
@@ -371,6 +379,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             scene.addRect(0, 0, width_px, height_px,
                           QPen(QColor("#c8c8c8")), QBrush(QColor("white")))
             return scene, {}
+        if self._facing:  # 對頁檢視（Sprint 129）：兩頁併排，另走 _make_spread_scene
+            return self._make_spread_scene(scene)
         try:
             images = page_images(self.template, self.doc, self.layout_result,
                                  self.page, base_dir=self._doc_path.parent)
@@ -382,6 +392,45 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             images=images,
         )
         return scene, {it.data(0): it for it in items}
+
+    def _make_spread_scene(self, scene):
+        """對頁檢視（Sprint 129 甲4）：右翻書偶右奇左（Sprint 22 側別）兩頁併排。
+
+        左頁置於 x=0、右頁置於 x=頁寬（螢幕左右＝實體書攤開左右）。目前頁照常建
+        可互動字格（keys 原樣入 item_map，編輯行為不變）；另一頁整頁改標
+        ("facing", 頁號)＝點它跳頁（不進 item_map，單頁 hit-test 路徑永遠看不到其
+        keys，故既有 C1〜C31 命中邏輯零影響）。純檢視：不改版面、不影響匯出。
+        """
+        pages = self.layout_result.pages
+        left_no, right_no = spread_pages(self.page.number, len(pages))
+        page_w_px = self.template.page_width_mm / 25.4 * DPI
+        item_map: dict = {}
+        for pg_no, x_off in ((left_no, 0.0), (right_no, page_w_px)):
+            if pg_no is None:  # 該側空白（頁1 左單邊、末偶頁右單邊）
+                continue
+            pg = pages[pg_no - 1]
+            try:
+                images = page_images(self.template, self.doc, self.layout_result,
+                                     pg, base_dir=self._doc_path.parent)
+            except ImageError as err:
+                images = ()
+                self.statusBar().showMessage(f"置入圖無法載入（本頁不顯示圖）：{err}")
+            items = build_page_scene(
+                scene, self.template, self.doc, self.layout_result, pg, dpi=DPI,
+                images=images, x_offset=x_off,
+            )
+            if pg.number == self.page.number:  # 目前頁：keys 原樣，照常可編輯
+                item_map.update({it.data(0): it for it in items})
+            else:  # 對頁：整頁改標跳頁鍵，不進 item_map（單頁命中路徑看不到其 keys）
+                for it in items:
+                    it.setData(0, ("facing", pg.number))
+        return scene, item_map
+
+    def _toggle_facing(self) -> None:
+        """對頁檢視開關（Sprint 129）：切換後重繪並整頁 fit（單雙頁版面尺寸不同）。"""
+        self._facing = self._facing_action.isChecked()
+        self._rebuild()
+        self.view.fit_page()
 
     def _rebuild(self) -> None:
         """reflow 後重繪：換上新 scene，高亮與選取清空（舊 scene 連同其 item 一併丟棄）。
@@ -456,6 +505,9 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         if key and key[0] == "frame":  # 文字框字格（Sprint 58）：顯示框游標，不設插入游標
             self._on_pick_frame(item, *key[1:])
             return
+        if key and key[0] == "facing":  # 對頁檢視點另一頁（Sprint 129）：跳到該頁
+            self._goto_page(key[1])
+            return
         pi, ci = key
         hit = resolve_hit(self.doc, self.page, pi, ci)
         self.cursor = (pi, ci)
@@ -513,8 +565,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         起訖以文件序正規化（反向拖曳等價）；拖回起點字格＝退回單游標；
         框字格不支援拖曳選取（框編輯以單游標為單位，v1 設計）。"""
         key = item.data(0)
-        if self._drag_anchor is None or not key or key[0] == "frame":
-            return
+        if self._drag_anchor is None or not key or key[0] in ("frame", "facing"):
+            return  # facing＝對頁（另一頁）字格，不參與本頁範圍選取（Sprint 129）
         hit = resolve_hit(self.doc, self.page, *key)
         if hit.para_idx is None or hit.span is None:
             return

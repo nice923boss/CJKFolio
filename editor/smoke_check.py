@@ -63,6 +63,7 @@ from editor.smoke_find import check_find  # noqa: E402
 from editor.smoke_info import check_info  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
+from editor.smoke_spread import check_spread  # noqa: E402
 from editor.smoke_view import check_view  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -721,6 +722,9 @@ def main() -> int:
     # C31 文件資訊（Sprint 128 丙2，抽於 editor/smoke_info.py）
     check_info(EditorWindow, DOC)
 
+    # C32 對頁檢視（Sprint 129 甲4，抽於 editor/smoke_spread.py）
+    check_spread(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -745,6 +749,8 @@ def main() -> int:
         "＋尋找／取代（編輯選單 Ctrl+F／Ctrl+H＋純函式 find_matches＋真樣本命中頁定位"
         "高亮＋取代單一 undo 步＋全部取代 N 步復原）＋文件資訊（工具選單字數統計：總字數"
         "／段數／頁數／樣式用量）"
+        "＋對頁檢視（檢視選單勾選項＋Ctrl+3＋右翻書偶右奇左併排＋目前頁偏移後全命中"
+        "＋點對頁跳頁＋頁1 單邊＋純檢視不改版面頁數）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0
