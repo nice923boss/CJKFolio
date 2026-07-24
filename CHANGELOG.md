@@ -2,6 +2,29 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.121.0（2026-07-24，Sprint 127）轉存 PDF 介面：檔案＞轉存為 PDF，背景匯出印前成品
+
+### 為什麼做這件事
+
+出版工作流補完系列乙4（PLAN Phase 5 盤點）：印前成品（PDF/X）此前**只能經 CLI 產出**，編輯器 preflight 雖在內部匯出臨時 PDF 檢查，但那份成品使用者拿不到，等於「排好版卻沒有出口鈕」。`export_pdf` 的全選項（X-1a／X-4、輸出 ICC、裁切標記、首頁書頁碼）早已由 CLI 與 pytest 驗過，缺的只是 UI。本版把印前出口補成 InDesign 式「檔案＞轉存」。
+
+### 變更
+
+- [實作] 檔案選單新增**轉存為 PDF…** `Ctrl+E`（InDesign 檔案＞轉存慣例，分隔線置於匯入之後）。
+- [實作] `editor/export_panel.py` `ExportDialog`：**只暴露 export_pdf 已驗且送印必要的選項**（輸出路徑、PDF/X 形態 X-1a／X-4、輸出 ICC、首頁書頁碼、頁腳頁碼、裁切標記）；X-4 才啟用 ICC 欄（DestOutputProfile 強制嵌），X-1a 走 registry 識別免嵌並停用該欄避誤導；**accept 前擋空輸出路徑與 X-4 未選 ICC**（都留在對話框據實說明「不默默改存 X-1a」）。
+- [實作] `editor/export_actions.py` `ExportActionsMixin`＋`ExportThread`（分檔慣例控 app.py 行數）：**背景匯出**沿用 preflight 的 QThread＋done／failed Signal 模式（收 doc／template 不可變快照，避免全書渲染凍 GUI）；**空白文件守門**（無版面頁據實擋不起執行緒）＋**匯出中不重入**（提示進行中不起第二輪）；MRO 置於 PreflightActionsMixin 之後，closeEvent 依序收兩背景執行緒。
+- [實作] **成品報告**沿用 CLI `cmd_export_pdf` 語彙（UI 與命令列同一套說法）：statusBar 一行結論＋對話框完整報告（OutputIntent 識別／裁切標記／置入圖／影像解析度 PPI／油墨總量 TAC／字型授權），印廠條件（§9，非 PDF/X 條款）如實列為提示不改動 X 結論。
+- [實作] smoke **C29**（`editor/smoke_export.py`）：選單轉存項＋Ctrl+E、空白守門、驅動選項對話框後背景 `export_pdf` 真產出成品並以 **PyMuPDF 獨立讀回頁數／Title／首頁文字（Gate 4）**、匯出跑於非 GUI 執行緒（tid 相異）、X-4 未選 ICC 擋 accept、取消與重入據實提示。同類修正（Gate 3）：`smoke_file.py` C28 檔案選單清單斷言補「轉存為 PDF…」。1245 綠不變、smoke C1〜C29 全過。
+- [Doc] `手動測試指南.md` 新增「轉存 PDF」操作列與 #82 待驗項。
+
+### 效能與保真實測（R5 真實素材：case-divider.doc.json 經真 UI 路徑）
+
+- 真書樣本經 `_export_pdf_dialog`（同使用者點檔案＞轉存）產出耐久 PDF；**Gate 4** PyMuPDF 獨立讀回 `%PDF-1.3` 檔頭、1 頁、/Title「案例速寫｜重新安放生活的重量」、首頁 95 字可抽取；**Gate 1** 親 Read PDF 光柵化目視：直排 CJK 右至左欄流、四角裁切標記、標題＋【空間】三房兩廳＋【成員】夫妻與兩名子女、3 款 Source Han 嵌入字型、OutputIntent JC200103。內容為合成案例速寫（非《內在整理》真書稿，紅線安全）。多頁全書量匯出正確性由既有 pytest `test_book`（引擎路徑同一支 export_pdf）覆蓋。
+
+### 待 Owner 真實素材驗收（GAPS #82，承 #19 批次）
+
+- 印前標記 `press_marks`／套準單 K `registration_single_k`（耦合一組、印前標記自擬配置非標準控制條）v1 對話框未納入，CLI 仍可用；ExportDialog 與原生檔案選取器 modal 手感、UI 路徑多頁真書稿端到端（待編輯器多模版落地）待真視窗驗。
+
 ## v0.120.0（2026-07-24，Sprint 126）檔案生命週期：儲存、開啟、新建、髒標記與關閉確認
 
 ### 為什麼做這件事
