@@ -6,14 +6,15 @@
 # 升版可能改變整個專案的授權結論，所以每個相依都在下方註記了授權。
 #
 # 注意：本專案的支援形態是自 repo 根執行（python -m cjkfolio.cli ...）。
-# Sprint 119（Spike 21）首度量過安裝形態：wheel 建得出、裝進 venv 後在 repo 外跑得完
-# CLI（字型須以 --font-dir 明給）。但相依解析未驗（探針以 --no-deps 裝）、sdist 未建、
-# PyPI 未上架，故仍不宣稱可散布。實測數據見 spikes/spike21-packaging/report.md。
+# 安裝形態兩輪實測：Sprint 119（Spike 21）wheel 建得出、venv 內 repo 外跑得完 CLI
+# （字型須以 --font-dir 明給）；Sprint 121（Spike 23）sdist 建得出且裝得起來、乾淨 venv
+# 不帶 --no-deps 相依全部解析成功（單機單 Python 版本）。PyPI 未上架（對外發布待 Owner），
+# 故仍無 pip 安裝管道。實測數據見 spikes/spike21-packaging/ 與 spikes/spike23-sdist-deps/。
 
 [project]
 name = "cjkfolio"
 # 版本策略（Sprint 119 定案）：恆等於 CHANGELOG 最新一則的版本號，測試釘死。
-version = "0.114.0"
+version = "0.115.0"
 description = "CJK 直排書冊排版編輯器：出版級直排引擎與自寫 PDF/X 輸出"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "黃政文" }]

@@ -35,7 +35,7 @@
 | 直排畫布內嵌 IME 即點即打 | **[Shell]** | 目前以輸入區組字加 Enter 提交代替，見 `editor/README.md` |
 | 注音 ruby 的 group／jukugo 與橫排 ruby | 未做 | 缺帶注音的真實稿件，待真實用例（GAPS #46） |
 | 印刷廠實體打樣校色 | 未做 | Phase 5 驗收項，待安排 |
-| pip 安裝散布 | **[Spike]** | wheel 建得出、裝進 venv 後在 repo 外跑得動 CLI；相依解析與上架未驗，故不宣稱（見「快速開始」） |
+| pip 安裝散布 | **[Spike]** | wheel 與 sdist 建得出、乾淨 venv 相依全裝得起來、repo 外跑得完 CLI 全鏈（單機實測）；PyPI 未上架，故仍無 pip 安裝管道（見「快速開始」） |
 
 已跑過的真實素材驗收：
 
@@ -81,7 +81,7 @@ python editor/app.py
 
 Windows 可直接雙擊根目錄的 `啟動編輯器.bat`。無視窗環境請改跑離屏煙霧驗證 `python editor/smoke_check.py`。
 
-本專案的支援形態是自 repo 根執行（`python -m cjkfolio.cli ...`），編輯器也只有這個形態（`editor/` 不是套件，不進 wheel）。Sprint 119 首度量過 pip 安裝形態：wheel 建得出、裝進 venv 後在 repo 外跑得完 `import-md` 與 `render`（字型是使用者資產不隨 wheel 走，需以 `--font-dir` 指目錄）。但相依解析未驗（探針以 `--no-deps` 安裝）、sdist 未建、PyPI 未上架，故仍不提供也不宣稱 pip 安裝。實測數據見 `spikes/spike21-packaging/report.md`。
+本專案的支援形態是自 repo 根執行（`python -m cjkfolio.cli ...`），編輯器也只有這個形態（`editor/` 不是套件，不進 wheel）。pip 安裝形態已兩輪實測：Sprint 119 量出 wheel 建得出、裝進 venv 後在 repo 外跑得完 CLI（字型是使用者資產不隨 wheel 走，需以 `--font-dir` 指目錄）；Sprint 121 補上先前刻意隔離的兩半（sdist 建得出且裝得起來、乾淨 venv 不帶 `--no-deps` 相依全部解析成功，repo 外全鏈 preflight 12/12），皆為單機單 Python 版本的實測。PyPI 未上架（對外發布待 Owner），故仍無 pip 安裝管道。實測數據見 `spikes/spike21-packaging/report.md` 與 `spikes/spike23-sdist-deps/report.md`。
 
 其他 CLI 子命令：`import-txt`、`import-docx`、`assign-styles`、`extract-styles`、`merge-styles`、`assemble`。完整用法見 `python -m cjkfolio.cli --help`，樣張重現指令見 `samples/README.md`。
 

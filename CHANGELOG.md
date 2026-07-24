@@ -2,6 +2,43 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.115.0（2026-07-24，Sprint 121）相依解析與 sdist：解除 Spike 21 的兩個刻意隔離
+
+### 為什麼做這件事
+
+GAPS #75 (a)(d) 是 Sprint 119 自己留下的兩個「完全未經驗證」：相依解析（當時探針以 `--no-deps` 隔離）與 sdist（`python -m build --sdist` 沒跑過）。Sprint 120 清掉授權阻擋項後，其決議明記這是乾淨的下一步。PyPI 上架不在本版範圍：對外發布行為需 Owner 帳號與授權，且依序在法律複核（#55 (f)）與條款正文（#76）之後。
+
+### 一手發現：setuptools 82 的 sdist 預設會把 tests/ 收進去
+
+- 首跑建出 113 個成員，tests/*.py 佔 66 個；刪掉殘留 `cjkfolio.egg-info/` 重建結果相同，證實是現行預設行為而非舊 SOURCES.txt 種子。「預設清單很窄」是文件說法，不是實況。
+- 紅線樣式（local/、out/、assets/、內在整理、.git）兩輪皆 0 命中，但那是實測當下的行為，不是保證。
+- 處置：新增 `MANIFEST.in`，只准出現排除指令（測試釘死），紅線目錄 prune 為第二道保險；tests 不入 sdist（sdist 內沒有 conftest.py、samples/ 與字型，收進來的是一包跑不動的測試）。終態 sdist 48 檔 162,585 bytes，原始碼與模版全進、LICENSE 在。
+
+### 相依解析與 repo 外全鏈（實測數據）
+
+- 乾淨 venv（不帶 `--system-site-packages`、不帶 `--no-deps`）自 wheel 安裝 29.3s、自 sdist 安裝 48.2s（含 build isolation），`pip check` 皆乾淨，六枚相依 import 冒煙皆過。
+- repo 外 CLI 全鏈（系統 temp 工作目錄）：`import-md` 41 段 → `render` 11 頁禁則 0 違規 → `export-pdf` 5 款子集 → `preflight` 12/12，與 README 快速開始的預期輸出逐項相同。
+- 解析到的版本比本機新四枚（PyMuPDF 1.28.0、PySide6 6.11.1、pillow 12.3.0、fonttools 4.63.0）。以 venv 直譯器對新集合重跑 `tools/audit_licenses.py`：九枚全相容 EXIT=0，漂移鎖未觸發（pymupdf 授權字串逐字不變）。freetype-py 與 uharfbuzz 版本未動，Sprint 118／120 的 FreeType 與 HarfBuzz 結論對新集合仍成立。
+
+### 新增
+
+- [Spike] `spikes/spike23-sdist-deps/`：pre-mortem、`probe_sdist_build.py`（建置＋完整清單紅線掃描）、`probe_clean_install.py`（乾淨 venv 安裝＋repo 外 CLI 全鏈，素材與字型由呼叫端顯式指定）、`report.md`（S1〜S5 全過）。
+- [實作] `MANIFEST.in`：sdist 範圍鎖，只准縮小。
+- [實作] `tests/test_packaging.py` 新增 4 測試（12 → 16）：MANIFEST 只准排除指令、紅線排除逐條在案（只認有效指令行；RED 驗證抓到初版子字串比對連註解也算數的弱點，當場改掉）、build requires 前提鎖、sdist 實物鎖（真建一份逐項驗成員，離線 4.1s，抽掉 `prune tests` 確實 RED）。
+- 文件同步三處（README 能力表與快速開始、`pyproject.toml` 檔頭）：自「相依解析未驗、sdist 未建」改為兩輪實測後的現況；`pip install cjkfolio` 字面仍不出現，上架前該守門仍正確。
+
+### 已知邊界（GAPS #77）
+
+- 單機（Windows 11）單 Python（3.12.10）單次網路狀態的實測，數字不可移植。
+- 相依只釘下限，解析組合會漂移；稽核結論對當下那組成立，換組須重跑（工具已備）。
+- pillow 12.3.0 的夾帶二進位上游條款未逐枚重查（本機仍 12.2.0，Sprint 118 的查證對 12.2.0 成立）。
+- PyPI 上架待 Owner（與 #55 (f)、#76 同批）。
+
+### 待 Owner 真實素材驗收
+
+- 安裝形態的驗證素材為 repo 內自撰公開章節（`samples/paiban-xiaoji-ch1.md`），已是 R5 允許的真實素材；Owner 若要以自有書稿在安裝形態複跑，指令與 Sprint 119 相同（`--font-dir` 指向字型目錄），可直接沿用。
+- 既有批次項不變：#19 真視窗批次、#10 Spike 1 對比圖、#23 斷行逐行一致率。
+
 ## v0.114.0（2026-07-24，Sprint 120）夾帶二進位的上游條款：把「取不到正文」拆成三個答得出來的問題
 
 ### 為什麼做這件事

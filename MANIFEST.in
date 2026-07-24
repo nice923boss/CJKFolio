@@ -1,0 +1,17 @@
+# sdist 範圍鎖（Sprint 121，Spike 23）。
+#
+# 本檔只准出現排除指令（prune／exclude／global-exclude／recursive-exclude，
+# tests/test_packaging.py 釘死），讓 sdist 永遠只能比 setuptools 預設更窄，
+# 不能被任何人靜默加寬。
+#
+# 紅線目錄（GAPS #1／#6）：Spike 23 實測 setuptools 82 的預設本就不收這些目錄，
+# 此處是第二道保險絲，防的是「未來 setuptools 換預設」而非今日的實況。
+prune local
+prune out
+prune assets
+global-exclude *.pdf
+
+# 測試不入 sdist：Spike 23 實測 setuptools 82 預設會把 tests/*.py 收進 sdist
+# （113 個檔案中佔 66 個），但 conftest.py、samples/ 與本機字型都不在 sdist 裡，
+# 收進來的是一包跑不動的測試。sdist 的定位＝可安裝的原始碼（與 wheel 對齊）。
+prune tests
