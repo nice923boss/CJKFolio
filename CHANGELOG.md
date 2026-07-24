@@ -2,6 +2,28 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.122.0（2026-07-24，Sprint 128）尋找／取代與文件資訊：全文檢索命中頁定位，字數統計面板
+
+### 為什麼做這件事
+
+出版工作流補完系列丙1＋丙2（PLAN Phase 5 盤點）：3.4 萬字真稿此前**沒有任何檢索手段**，要找一個詞得靠肉眼翻頁，改一個反覆出現的用語得逐處手動定位，這對長書是硬缺口；同時總字數、段數、頁數、段落樣式用量**無處可看**，作者無從掌握稿件規模。地基早已備妥（`doc.paragraphs` 純文字層、`session.replace_span` 單一取代＝單 undo 步已於 Sprint 65 驗、`_selected_cell_keys` 半開字格重疊判定、`_goto_page` 跳頁、`_set_selection` 選取高亮），缺的只是把它們接成 InDesign 式「編輯＞尋找／取代」與「工具＞文件資訊」。
+
+### 變更
+
+- [實作] 編輯選單新增**尋找…** `Ctrl+F` 與**取代…** `Ctrl+H`（分隔線置於復原／重做之後，InDesign 慣例）。
+- [實作] `editor/find_panel.py` `FindDialog`：**非模態**（show 而非 exec，檢索時仍可捲動畫布看版面）尋找欄＋取代欄＋區分大小寫核取＋找下一個／取代／全部取代／關閉；只收欄位與發射訊號，命中計算與取代全在 mixin（純函式離屏可驗）。
+- [實作] `editor/find_actions.py` `FindActionsMixin`＋純函式 `find_matches`：逐段掃出命中（段內半開區間 `[start, end)`、非重疊、由左至右），命中經 `_page_of_match`（沿用 `_selected_cell_keys` 同款半開字格重疊判定）定位頁、`_goto_page` 跳頁、`_set_selection` 選取 shading 高亮並捲入可視區；**找下一個**自目前錨之後推進、到底環繞回首個；**取代一處**單一 `replace_span`＝**單一 undo 步**，錨前進到取代字串之後（避免取代字串含 query 時原地反覆命中）；**全部取代**由後往前逐一 `replace_span`（偏移保序有效），據實報「N 步復原」（多段單一 undo 需核心批次 API，v1 未做，入 GAPS #83 不沉默降級）。
+- [實作] 工具選單（新設，置於檢視之後）新增**文件資訊…**；`editor/info_panel.py` `DocInfoDialog`＋`editor/info_actions.py` `InfoActionsMixin`＋純函式 `document_stats`：總字數（各 body 段 text 長度和）、段數、版面頁數、段落樣式用量直方（依用量遞減、同量依樣式名遞增），對話框以表格列出樣式用量、statusBar 一行摘要。
+- [實作] smoke **C30**（`editor/smoke_find.py`）＋**C31**（`editor/smoke_info.py`）：純函式釘死偏移語意（非重疊／大小寫／空 query／CJK 重複字／樣式用量排序與同量名序）、選單快捷鍵、非模態旗標、真樣本「三」命中 2 處經訊號驅動頁定位高亮、找不到據實提示、**取代一處單一 undo 步**與**全部取代 2 處 2 步復原**（GAPS #83 據實）、真樣本 case-divider 48 字 6 段樣式直方 2／2／1／1、工具選單文件資訊項、開啟回填狀態列摘要、`DocInfoDialog` 用量表列數。1245 綠不變、smoke C1〜C31 全過。
+
+### 效能與保真實測（R5 真實素材：case-divider.doc.json 經真 UI 路徑）
+
+- 真書樣本經 smoke C30／C31 的真 EditorWindow 路徑（同使用者點編輯＞尋找、工具＞文件資訊）驅動：**Gate 4** 以人工列舉法（逐字元掃描、逐段字面加總，非 `find_matches`／`document_stats` 本身）獨立重算並比對＝總字數 48、段數 6、樣式直方 `個案中標-NotoSans`2／`內文-明體直排`2／`個案扉頁大標-NotoSans`1／`個案欄標-黑W7`1、「三」命中偏移 `(段3,0,1)`／`(段3,6,7)` 三項全數逐一相等；**Gate 1** 親 Read `find_actions.py`／`find_panel.py`／`info_actions.py`／`info_panel.py`／`smoke_find.py`／`smoke_info.py` 全檔確認命中頁定位半開判定、全部取代 reversed 順序保序、取代錨前進、非模態旗標無誤。命中高亮以既有選取 shading 呈現、取代一處確為單一 undo 步、全部取代 N 步復原皆經 smoke 斷言（含突變式反證：抽掉錨前進則取代字串含 query 時原地反覆）。內容為合成案例速寫（非《內在整理》真書稿，紅線安全）。
+
+### 待 Owner 真實素材驗收（GAPS #83，承 #19 批次）
+
+- FindDialog 非模態對話框與畫布同框的焦點切換、命中高亮視覺辨識度、取代後畫布重繪手感、DocInfoDialog 樣式用量表可讀性皆待真視窗；全部取代 v1 為 N 步復原（非原子單元，待核心批次替換 API）、不分大小寫變長折疊字元（ß／İ）偏移未精算、無正則／整字／全半形歸一、總字數只計 body 段（frames 與圖片不計）為 v1 誠實邊界。
+
 ## v0.121.0（2026-07-24，Sprint 127）轉存 PDF 介面：檔案＞轉存為 PDF，背景匯出印前成品
 
 ### 為什麼做這件事

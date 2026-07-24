@@ -59,6 +59,8 @@ from editor.smoke_images import check_images, check_wrap_ui  # noqa: E402
 from editor.smoke_import import check_import  # noqa: E402
 from editor.smoke_file import check_file  # noqa: E402
 from editor.smoke_export import check_export  # noqa: E402
+from editor.smoke_find import check_find  # noqa: E402
+from editor.smoke_info import check_info  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
 from editor.smoke_view import check_view  # noqa: E402
@@ -713,6 +715,12 @@ def main() -> int:
     # C29 轉存 PDF 介面（Sprint 127，抽於 editor/smoke_export.py）
     check_export(EditorWindow, DOC)
 
+    # C30 尋找／取代（Sprint 128 丙1，抽於 editor/smoke_find.py）
+    check_find(EditorWindow, DOC)
+
+    # C31 文件資訊（Sprint 128 丙2，抽於 editor/smoke_info.py）
+    check_info(EditorWindow, DOC)
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -734,6 +742,9 @@ def main() -> int:
         "＋檔案生命週期（儲存另存開啟新建／髒標記／關閉確認／round-trip 守門）"
         "＋轉存 PDF 介面（檔案選單轉存項＋Ctrl+E＋空白守門＋背景 export_pdf 真產出"
         "成品／PyMuPDF 讀回驗／X-4 未選 ICC 擋 accept／取消與重入據實提示）"
+        "＋尋找／取代（編輯選單 Ctrl+F／Ctrl+H＋純函式 find_matches＋真樣本命中頁定位"
+        "高亮＋取代單一 undo 步＋全部取代 N 步復原）＋文件資訊（工具選單字數統計：總字數"
+        "／段數／頁數／樣式用量）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

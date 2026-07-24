@@ -57,6 +57,7 @@ from editor.ai_actions import AiActionsMixin  # noqa: E402
 from editor.blank_doc import blank_document  # noqa: E402
 from editor.edit_actions import EditActionsMixin  # noqa: E402
 from editor.export_actions import ExportActionsMixin  # noqa: E402
+from editor.find_actions import FindActionsMixin  # noqa: E402
 from editor.library_panel import TemplateLibraryDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
     build_page_scene,
@@ -69,6 +70,7 @@ from editor.canvas_view import CanvasView  # noqa: E402
 from editor.file_actions import FileActionsMixin  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.import_actions import ImportActionsMixin  # noqa: E402
+from editor.info_actions import InfoActionsMixin  # noqa: E402
 from editor.nav_actions import NavActionsMixin  # noqa: E402
 from editor.page_panel import PagePanel  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
@@ -83,7 +85,8 @@ AUTHOR = "製作者：黃政文"
 
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
                    ExportActionsMixin, ImageActionsMixin, ImportActionsMixin,
-                   EditActionsMixin, NavActionsMixin, FileActionsMixin,
+                   EditActionsMixin, FindActionsMixin, InfoActionsMixin,
+                   NavActionsMixin, FileActionsMixin,
                    QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
@@ -185,6 +188,15 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
+        edit_menu.addSeparator()
+        find_action = QAction("尋找…", self)  # 全文檢索（Sprint 128 丙1）
+        find_action.setShortcut(QKeySequence("Ctrl+F"))
+        find_action.triggered.connect(lambda: self._open_find_dialog())
+        edit_menu.addAction(find_action)
+        replace_action = QAction("取代…", self)
+        replace_action.setShortcut(QKeySequence("Ctrl+H"))
+        replace_action.triggered.connect(lambda: self._open_find_dialog(replace=True))
+        edit_menu.addAction(replace_action)
 
         layout_menu = self.menuBar().addMenu("版面")  # 翻頁可見入口（Sprint 125）
         for label, keys, handler in (
@@ -216,6 +228,11 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             action.setShortcuts([QKeySequence(k) for k in keys])
             action.triggered.connect(handler)
             view_menu.addAction(action)
+
+        tools_menu = self.menuBar().addMenu("工具")  # 字數統計與文件資訊（Sprint 128 丙2）
+        info_action = QAction("文件資訊…", self)
+        info_action.triggered.connect(lambda: self._show_document_info())
+        tools_menu.addAction(info_action)
 
         page_dock = QDockWidget("頁面", self)  # 縮圖面板（Sprint 125）
         self._page_panel = PagePanel(self._goto_page)
