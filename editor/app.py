@@ -12,6 +12,8 @@
   百分比；開窗整頁 fit、重繪保留縮放與視口中心。
   導航面（Sprint 125）：左側「頁面」縮圖面板（背景渲染、點選跳頁、目前頁高
   亮）、「版面」選單（上一頁／下一頁／首末頁／Ctrl+J 跳頁）＋狀態列「頁 N／M」。
+  檔案面（Sprint 126）：新建／開啟／儲存／另存（.doc.json）、標題未存標記 *、
+  關閉確認；髒判定＝document 引用同一性（undo 回存檔點自動轉乾淨）。
 
 誠實範圍（honest-planning R3）：
   [實作]（離屏 smoke_check.py 已驗）＝上列全部功能邏輯。
@@ -63,6 +65,7 @@ from editor.canvas import (  # noqa: E402
     resolve_hit,
 )
 from editor.canvas_view import CanvasView  # noqa: E402
+from editor.file_actions import FileActionsMixin  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.import_actions import ImportActionsMixin  # noqa: E402
 from editor.nav_actions import NavActionsMixin  # noqa: E402
@@ -79,7 +82,7 @@ AUTHOR = "製作者：黃政文"
 
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
                    ImageActionsMixin, ImportActionsMixin, EditActionsMixin,
-                   NavActionsMixin, QMainWindow):
+                   NavActionsMixin, FileActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         # 編輯狀態單一事實來源＝EditSession（Sprint 61 接線；doc／layout／template
@@ -147,6 +150,21 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self.statusBar().addPermanentWidget(credit)
 
         file_menu = self.menuBar().addMenu("檔案")
+        for label, key, handler in (  # 檔案生命週期（Sprint 126）
+            ("新建", "Ctrl+N", self._new_document),
+            ("開啟…", "Ctrl+O", self._open_document_dialog),
+            (None, None, None),
+            ("儲存", "Ctrl+S", lambda: self._save_document()),
+            ("另存新檔…", "Ctrl+Shift+S", lambda: self._save_document_as()),
+            (None, None, None),
+        ):
+            if label is None:
+                file_menu.addSeparator()
+                continue
+            action = QAction(label, self)
+            action.setShortcut(QKeySequence(key))
+            action.triggered.connect(handler)
+            file_menu.addAction(action)
         import_action = QAction("匯入稿件…（txt／md／docx）", self)
         import_action.triggered.connect(lambda: self._import_manuscript_dialog())
         file_menu.addAction(import_action)
@@ -258,6 +276,7 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self.menuBar().addMenu("說明").addAction(help_action)
 
         self._init_nav()  # 頁面面板首輪同步＋縮圖 debounce 計時器（Sprint 125）
+        self._init_file_state()  # 存檔基準＝開檔當下引用（Sprint 126 髒判定）
 
     def _open_library(self, directory=None) -> None:
         """模版庫對話框（§4.3；v1 目錄＝內建 templates/，使用者庫目錄慣例後續）。"""
@@ -376,8 +395,9 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             self._sync_page_panel()
 
     def _update_window_title(self) -> None:
-        """視窗標題＝產品名＋現行文件名（init 與 _rebuild 呼叫）。"""
-        self.setWindowTitle(f"CJKFolio 編輯器：{self.doc.title or '未命名'}")
+        """視窗標題＝產品名＋現行文件名＋未存標記 *（init 與 _rebuild 呼叫）。"""
+        dirty = " *" if self._is_dirty() else ""  # Sprint 126 髒標記
+        self.setWindowTitle(f"CJKFolio 編輯器：{self.doc.title or '未命名'}{dirty}")
 
     def _on_zoom_changed(self, factor: float) -> None:
         """CanvasView 縮放回呼：狀態列百分比跟隨（100%＝150dpi 像素 1:1）。"""
@@ -391,7 +411,11 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             QTimer.singleShot(0, self.view.fit_page)  # 佈局落定後再量視口
 
     def closeEvent(self, event) -> None:
-        """關窗收攏背景縮圖執行緒（Sprint 125：運行中被銷毀會 abort 進程）。"""
+        """關窗：未存改動先確認（Sprint 126），再收攏背景縮圖執行緒（Sprint 125：
+        運行中被銷毀會 abort 進程）。"""
+        if not self._confirm_discard("關閉編輯器"):
+            event.ignore()  # 取消關閉：視窗與執行緒照常活著
+            return
         self._shutdown_thumbnails()
         super().closeEvent(event)
 
