@@ -36,6 +36,7 @@ from .pdf_objects import PdfBuilder
 from .pdfx_meta import xmp_packet
 from .layout import (
     line_justified_advance,
+    ruby_group_height,
     style_advance_pt,
     style_line_slots,
 )
@@ -43,7 +44,7 @@ from .placement import (
     horizontal_cell_advance_pt,
     horizontal_placements,
     rotated_latin_placements,
-    ruby_axis_and_top,
+    group_ruby_axis_and_top,
     run_width_pt,
     tcy_placements,
     ttb_char_placements,
@@ -370,7 +371,8 @@ class _PdfPageWriter:
             adv, _status = line_justified_advance(placed.line, advance)
             line_top = top_pt + placed.line.start_slot * advance + placed.lead_offset_pt
             content_i = 0
-            for cell in placed.line.cells:
+            cells = placed.line.cells
+            for ci, cell in enumerate(cells):
                 cell_top = line_top + content_i * adv
                 if cell.char_style:  # run 覆寫字型與級數；字槽網格仍依段落樣式
                     cstyle = template.character_styles[cell.char_style]
@@ -382,9 +384,10 @@ class _PdfPageWriter:
                 cell_top += cell.glyph_offset * use_size  # 字形位移（em×字級，Sprint 117）
                 if cell.kind == "cjk":
                     pls = ttb_char_placements(use_shaper, cell.text, axis, cell_top, use_size)
-                    if cell.ruby:  # 注音／ruby：字右側鄰欄、垂直置中（同 render 同源幾何、同字型與填色）
-                        rx, rtop, rsize = ruby_axis_and_top(
-                            axis, cell_top, adv, use_size, len(cell.ruby))
+                    if cell.ruby:  # ruby：字右側鄰欄、於 base 群組範圍置中（同 render 同源）
+                        rx, rtop, rsize = group_ruby_axis_and_top(
+                            axis, cell_top, ruby_group_height(cells, ci, adv),
+                            use_size, len(cell.ruby))
                         pls = pls + ttb_char_placements(use_shaper, cell.ruby, rx, rtop, rsize)
                 elif cell.kind == "tcy":
                     pls = tcy_placements(use_shaper, cell.text, axis, cell_top, use_size, adv)

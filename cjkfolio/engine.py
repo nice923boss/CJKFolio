@@ -69,7 +69,9 @@ class Cell:
     span: Optional[tuple] = None  # 文件 provenance：來源 text 半開區間 (start, end)。
     # 座標系＝tokenize 輸入 text；經 offsets 映射後＝文件段 text（normalize 前）座標。
     ruby: Optional[str] = None  # 注音／ruby 標注（Sprint 86）：直排繪於字右側置中；
-    # 僅單字 base run 的 cjk cell 帶值（不影響 width／斷行禁則）。
+    # 掛 base 群組的**首** cell（單字 base＝v1 mono-ruby，即 span=1 的特例）。
+    ruby_span: int = 0  # 本 cell 起算的 base 群組 cell 數（Sprint 134 group ruby）；
+    # 0＝非群組首。群組不被斷行切開（切開則 ruby 無處可放），ruby 於群組範圍置中。
     glyph_offset: float = 0.0  # 字形位移（em；Sprint 117）：字軸方向，負值＝往行首。
     # 純載體，不影響 width／斷行／禁則；三處渲染一律乘字級（非乘齊行字距）。
 
@@ -240,6 +242,26 @@ def tokenize(text: str, char_style=None, vertical: bool = True, offsets=None) ->
     return cells
 
 
+def _ruby_group(cells: list, ruby: str) -> list:
+    """把一個 run 產出的 cells 標成一個 ruby 群組，並依 ruby 長度加寬 base。
+
+    ruby 驅動 base 間距（Sprint 134）：ruby 串佔的槽數＝字數×RUBY_SIZE_RATIO，
+    超過 base 群組原寬時把差額**等分**攤回各 base cell。不加寬的話 ruby 會排到
+    群組範圍外、壓上相鄰欄的字（v1 GAPS #46 (c) 登記的溢出，日文「蟋蟀
+    《きりぎりす》」這類 2 字配 5 假名的詞即會踩到）。ruby 較短時不縮排
+    （base 維持整數槽，版心網格不因注音而鬆動）。
+    """
+    from .placement import RUBY_SIZE_RATIO
+
+    span = len(cells)
+    base_width = sum(c.width for c in cells)
+    need = len(ruby) * RUBY_SIZE_RATIO
+    if need > base_width:  # 等分加寬（保持群組內各字等距）
+        per = need / span
+        cells = [replace(c, width=per) for c in cells]
+    return [replace(cells[0], ruby=ruby, ruby_span=span), *cells[1:]]
+
+
 def cells_from_runs(runs, vertical: bool = True) -> list:
     """run 序列 → cells（各 run 內部正規化＋標注字元樣式；拉丁串不跨 run 合併）。
 
@@ -254,8 +276,8 @@ def cells_from_runs(runs, vertical: bool = True) -> list:
         norm, offs = normalize_with_offsets(text)
         produced = tokenize(norm, char_style, vertical,
                             offsets=tuple(base + o for o in offs))
-        if ruby and produced:  # 單字 base（document 已守門）→ ruby 掛該 cell
-            produced = [replace(produced[0], ruby=ruby), *produced[1:]]
+        if ruby and produced:  # base 群組（單字＝mono-ruby 的特例，Sprint 134）
+            produced = _ruby_group(produced, ruby)
         cells.extend(produced)
         base += len(text)
     return cells
@@ -421,10 +443,26 @@ def _break_one_line(cells: list, idx: int, cap: int):
                     line.pop()
             continue
         break
+    # ruby 群組不可拆行（Sprint 134）：行尾落在群組中間就整組退到下一行
+    # （切開則 ruby 無處可放）。群組本身寬於整行時不退（退了行會空，且無解），
+    # 容許溢出並由 check_overflow 據實回報，同單枚超寬 cell 的處置。
+    cut = _ruby_group_cut(line)
+    if cut is not None and cut > 0:
+        idx -= len(line) - cut
+        del line[cut:]
     if not line:  # 病理情形防護：強制收一字避免死循環
         line.append(cells[idx])
         idx += 1
     return line, idx
+
+
+def _ruby_group_cut(line: list):
+    """行尾若切在 ruby 群組中間，回傳該群組在 line 中的起始索引；否則 None。"""
+    for i in range(len(line) - 1, -1, -1):
+        span = line[i].ruby_span
+        if span:
+            return i if i + span > len(line) else None
+    return None
 
 
 def check_kinsoku(lines) -> list:

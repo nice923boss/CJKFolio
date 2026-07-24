@@ -17,6 +17,24 @@ TCY_SIZE_RATIO = 1.0
 RUBY_SIZE_RATIO = 0.5  # 注音／ruby 相對 base 字級（CLREQ 慣例：約半形）
 
 
+def group_ruby_axis_and_top(base_axis_x_pt: float, group_top_pt: float,
+                            group_height_pt: float, base_size_pt: float,
+                            ruby_len: int, ratio: float = RUBY_SIZE_RATIO):
+    """直排 group／jukugo ruby 幾何（純函式，兩後端共用；Sprint 134）。
+
+    與 mono-ruby（ruby_axis_and_top）唯一的差別是**置中的範圍**：ruby 串垂直
+    置中於整個 base 群組（group_top 起算 group_height），而非單一字槽。單字
+    群組代入即完全退化為 v1 幾何（測試釘死），故兩者為同一公式的一般化。
+
+    回傳 (ruby_axis_x_pt, ruby_top_pt, ruby_size_pt)。ruby 較長時的溢出由
+    engine 端加寬 base 群組（cells_from_runs）避免，此處不做水平調整。
+    """
+    ruby_size = base_size_pt * ratio
+    ruby_axis_x = base_axis_x_pt + base_size_pt / 2 + ruby_size / 2
+    ruby_top = group_top_pt + group_height_pt / 2 - ruby_len * ruby_size / 2
+    return ruby_axis_x, ruby_top, ruby_size
+
+
 def ruby_axis_and_top(base_axis_x_pt: float, cell_top_pt: float,
                       base_advance_pt: float, base_size_pt: float, ruby_len: int,
                       ratio: float = RUBY_SIZE_RATIO):

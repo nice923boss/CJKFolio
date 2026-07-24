@@ -18,6 +18,7 @@ from .frames import resolve_text_frames
 from .images import resolve_placed_images
 from .layout import (
     line_justified_advance,
+    ruby_group_height,
     style_advance_pt,
     style_line_slots,
 )
@@ -25,7 +26,7 @@ from .placement import (
     ASCENT_RATIO,
     TCY_SIZE_RATIO,
     horizontal_cell_advance_pt,
-    ruby_axis_and_top,
+    group_ruby_axis_and_top,
 )
 from .primitives import (
     StrokeLine,
@@ -319,7 +320,8 @@ class PageRenderer:
             adv, _status = line_justified_advance(placed.line, advance)
             line_top = top_pt + placed.line.start_slot * advance + placed.lead_offset_pt
             content_i = 0
-            for cell in placed.line.cells:
+            cells = placed.line.cells
+            for ci, cell in enumerate(cells):
                 cell_top = line_top + content_i * adv
                 if cell.char_style:  # run 覆寫字型與級數；字槽網格仍依段落樣式
                     cstyle = template.character_styles[cell.char_style]
@@ -331,9 +333,10 @@ class PageRenderer:
                 ink = _ink_gray(resolve_text_cmyk(template, cstyle, style))
                 if cell.kind == "cjk":
                     missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale, ink)
-                    if cell.ruby:  # 注音／ruby：字右側鄰欄、垂直置中（同源幾何）
-                        rx, rtop, rsize = ruby_axis_and_top(
-                            axis, cell_top, adv, use_size, len(cell.ruby))
+                    if cell.ruby:  # 注音／ruby：字右側鄰欄、於 base 群組範圍置中
+                        rx, rtop, rsize = group_ruby_axis_and_top(
+                            axis, cell_top, ruby_group_height(cells, ci, adv),
+                            use_size, len(cell.ruby))
                         missing = missing + _draw_ttb_char(
                             img, use_shaper, cell.ruby, rx, rtop, rsize, self.scale, ink)
                 elif cell.kind == "tcy":

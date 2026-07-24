@@ -78,6 +78,17 @@ def style_line_slots(style: ParagraphStyle, grid: Grid) -> int:
 JUSTIFY_TOLERANCE_SLOTS = 2  # 齊行容忍（槽）：偏差超過維持等距網格（列入統計不沉默）
 
 
+def ruby_group_height(cells, index: int, advance_pt: float) -> float:
+    """ruby 群組（自 cells[index] 起 ruby_span 個 cell）的總高（pt）。
+
+    兩後端共用（Sprint 134 group ruby）：ruby 於此高度上垂直置中
+    （placement.group_ruby_axis_and_top）。span 為 0 或 1 時退化為單一字槽高，
+    即 v1 mono-ruby 的幾何。
+    """
+    span = cells[index].ruby_span or 1
+    return sum(c.width for c in cells[index:index + span]) * advance_pt
+
+
 def line_justified_advance(line, advance_pt: float):
     """非段末行的齊行實效字距（行首行尾雙錨定，字距均勻縮放）。
 

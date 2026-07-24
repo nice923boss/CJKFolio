@@ -108,10 +108,11 @@ def _runs_from_list(raw, idx: int) -> tuple:
         if ruby is not None:
             if not isinstance(ruby, str) or not ruby:
                 raise DocumentError(f"paragraphs[{idx}].runs[{j}] ruby 需為非空字串")
-            if len(r["text"]) != 1:
+            # Sprint 134：base 放寬為多字（group／jukugo ruby），但仍不得為空
+            # ——空 base 無處可掛 ruby。ruby 在整個 base 群組上置中，群組不拆行。
+            if not r["text"]:
                 raise DocumentError(
-                    f"paragraphs[{idx}].runs[{j}] 帶 ruby 的 run base text 須恰為單一字"
-                    f"（v1 mono-ruby），得到 {r['text']!r}"
+                    f"paragraphs[{idx}].runs[{j}] 帶 ruby 的 run base text 不得為空"
                 )
         runs.append(Run(r["text"], char_style, ruby))
     if not runs:

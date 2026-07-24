@@ -78,12 +78,14 @@ def test_run_ruby_parse_and_roundtrip(tmp_path):
 
 
 def test_run_ruby_validation_fast_fail():
-    with pytest.raises(DocumentError, match="ruby"):
-        _doc([{"text": "漢字", "ruby": "x"}])   # base 多字
+    # base 多字自 Sprint 134 起合法（group／jukugo ruby，見 tests/test_group_ruby.py）；
+    # 此處只釘仍該擋的三種：空 ruby、非字串 ruby、空 base。
     with pytest.raises(DocumentError, match="ruby"):
         _doc([{"text": "漢", "ruby": ""}])       # 空 ruby
     with pytest.raises(DocumentError, match="ruby"):
         _doc([{"text": "漢", "ruby": 123}])      # 非字串
+    with pytest.raises(DocumentError, match="ruby"):
+        _doc([{"text": "", "ruby": "ㄏㄢˋ"}])    # 空 base 無處可掛
 
 
 def test_paragraph_text_shortcut_not_used_with_ruby(tmp_path):
