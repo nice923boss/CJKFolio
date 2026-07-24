@@ -14,7 +14,7 @@
 [project]
 name = "cjkfolio"
 # 版本策略（Sprint 119 定案）：恆等於 CHANGELOG 最新一則的版本號，測試釘死。
-version = "0.124.0"
+version = "0.125.0"
 description = "CJK 直排書冊排版編輯器：出版級直排引擎與自寫 PDF/X 輸出"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "黃政文" }]

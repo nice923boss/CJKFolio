@@ -2,6 +2,31 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.125.0（2026-07-25，Sprint 131）書冊管理介面：檔案選單組裝書冊，多章串接與自動目錄進編輯器
+
+### 為什麼做這件事
+
+出版工作流補完系列丁2（PLAN Phase 5 盤點，**系列末片**）：多章組裝與自動目錄核心自 Sprint 52（純 path 串接）、Sprint 85（自動目錄）、Sprint 108（多層階層）就在，但**過去只有 CLI**（`cjkfolio assemble book.json -o …`），編輯器無入口。寫書是一章一檔的工作流，要看全書（含自動目錄真頁碼）得離開編輯器跑命令列。本版把它接進「檔案 > 組裝書冊…」：選書冊清單 JSON 即組裝成當前工作文件，可翻頁看自動目錄頁碼、再儲存或轉存 PDF。**系列七項（甲1〜丁2，Sprint 125〜131）至此全數完成**。
+
+### 變更
+
+- [實作] 檔案選單新增**「組裝書冊…」**（匯入稿件之後、轉存 PDF 之前，無快捷鍵）。新模組 `editor/book_actions.py`（`BookActionsMixin`，分檔慣例控 app.py 行數）。
+- [實作] **核心與薄殼分離**（file_actions 慣例，modal offscreen 跑不了）：`_assemble_book_dialog`（髒先確認＋QFileDialog 選書冊清單）→ `_assemble_book` 核心（`load_book` → 模版一致守門 → auto-TOC 感知組裝〔有 `generate_toc` 走 `assemble_book_with_toc`＋`toc_items`，否則 `assemble_book`〕→ `unknown_style_refs` 與 `EditSession` KeyError 守門 → `_adopt_session` 換工作檔）。任一步失敗（清單解析、模版不一致、章檔缺、樣式缺、空章、重排）據實提示且**目前文件不動**（同 `_open_document` 兩段守門）。
+- [實作] **模版一致守門**（pre-mortem 首險）：`book.template` 與編輯器現行文件 `template` 不一致即 fast-fail 不組裝（否則會用現行模版幾何排出頁碼全錯的目錄），smoke 以 `jiejiao-manxing` 書冊擋在 `neizai-zhengli` 編輯器外釘死。
+- [實作] **開啟語意**（PLAN §10 代決）：組裝結果可由清單確定性重生＝乾淨、歷史清空（防 undo 把書冊剝離成無關單章）；佔位路徑 `manifest.stem+.doc.json`（不存在故儲存轉另存）；一經編輯轉髒受關閉確認保護。
+- [實作] 狀態列據實報：**內容章數**（`generate_toc` 指令項不計，誠實標示）、段數（節首數）、頁數、自動目錄 N 項（純 path 書冊不報）。
+- [實作] smoke **C34**（`editor/smoke_book.py`）：選單項位置與無快捷鍵、自動目錄書冊（`samples/book-auto-toc.json` 3 內容章）組裝 **Gate 4**（UI 段落序＝獨立 `assemble_book_with_toc` 全等、`toc_items` 3 項標題＝清單 `toc_title` 且頁碼 ≥1 遞增）、開啟語意（undo 清空、乾淨、編輯轉髒）、模版守門（現行文件不動）、純 path 書冊（`book.json` 6 章不報自動目錄）、缺章據實提示（現行文件不動）。同類更新（Gate 3）：smoke_file C28 檔案選單清單斷言補「組裝書冊…」。
+- [Doc] `手動測試指南.md` 新增「組裝書冊」操作列與 #86 待驗項。
+
+### 效能與保真實測（R5 真實素材：《成名之路》真稿經真 UI 路徑）
+
+- 真書稿 13 章＋自動目次書冊清單（`local/manual-test/assemble/book-chengming.json`，不入 repo）經真 UI `_assemble_book` 組裝：**13 章 → 422 段（14 節首）／135 頁、自動目錄 13 項**，頁碼 [3, 11, 22, 36, 52, 61, 72, 81, 90, 100, 108, 117, 127] 全數 ≥1 且遞增；開啟語意實測（dirty=False、undo 歷史空、停頁 1）。**Gate 4**（獨立方法）：獨立呼叫 `assemble_book_with_toc`／`toc_items` 與 UI 組裝**段落序全等**、目次標題＝清單 `toc_title` 逐一相等。**Gate 1** 親 Read `book_actions.py` 全檔確認守門分支與開啟語意。僅記統計數據（紅線）。
+- 全庫 1259 綠 0 退步（本輪無新核心純函式＝無新 pytest，驗證重心在 smoke C34，同 Sprint 127 型）、typecheck EXIT_CODE=0、smoke C1〜C34 全過。行數：app.py 760／book_actions 106／smoke_book 109，皆規範帶。
+
+### 待 Owner 真實素材驗收（GAPS #86，承 #19 批次）
+
+- 書冊清單選檔對話框（QFileDialog）手感與組裝後翻頁瀏覽自動目錄頁碼的視覺辨識度待真視窗；first_page 固定 1（前置頁偏移 UI 不提供）、改章文件後須手動重新組裝（單向快照無增量同步）、跨模版書冊開不了（單模版硬綁）為 v1 誠實邊界。
+
 ## v0.124.0（2026-07-24，Sprint 130）主版指派介面：頁面面板右鍵指派節式主版
 
 ### 為什麼做這件事

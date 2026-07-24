@@ -55,6 +55,7 @@ from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_actions import AiActionsMixin  # noqa: E402
 from editor.blank_doc import blank_document  # noqa: E402
+from editor.book_actions import BookActionsMixin  # noqa: E402
 from editor.edit_actions import EditActionsMixin  # noqa: E402
 from editor.export_actions import ExportActionsMixin  # noqa: E402
 from editor.find_actions import FindActionsMixin  # noqa: E402
@@ -88,8 +89,8 @@ AUTHOR = "製作者：黃政文"
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
                    ExportActionsMixin, ImageActionsMixin, ImportActionsMixin,
                    EditActionsMixin, FindActionsMixin, InfoActionsMixin,
-                   NavActionsMixin, MasterActionsMixin, FileActionsMixin,
-                   QMainWindow):
+                   NavActionsMixin, MasterActionsMixin, BookActionsMixin,
+                   FileActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         # 編輯狀態單一事實來源＝EditSession（Sprint 61 接線；doc／layout／template
@@ -176,6 +177,9 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         import_action = QAction("匯入稿件…（txt／md／docx）", self)
         import_action.triggered.connect(lambda: self._import_manuscript_dialog())
         file_menu.addAction(import_action)
+        book_action = QAction("組裝書冊…", self)  # 多章組裝＋自動目錄（Sprint 131 丁2）
+        book_action.triggered.connect(lambda: self._assemble_book_dialog())
+        file_menu.addAction(book_action)
         file_menu.addSeparator()
         export_action = QAction("轉存為 PDF…", self)  # 印前成品出口（Sprint 127）
         export_action.setShortcut(QKeySequence("Ctrl+E"))  # InDesign 轉存慣例

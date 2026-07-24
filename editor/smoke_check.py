@@ -55,6 +55,7 @@ from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
 from editor.smoke_ai import check_ai_assign  # noqa: E402
+from editor.smoke_book import check_book  # noqa: E402
 from editor.smoke_images import check_images, check_wrap_ui  # noqa: E402
 from editor.smoke_import import check_import  # noqa: E402
 from editor.smoke_file import check_file  # noqa: E402
@@ -733,6 +734,9 @@ def main() -> int:
         ROOT / "samples" / "paiban-xiaoji-ch1.doc.json",
     )
 
+    # C34 書冊管理介面（Sprint 131 丁2，抽於 editor/smoke_book.py）
+    check_book(EditorWindow, DOC, ROOT)
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -761,6 +765,8 @@ def main() -> int:
         "＋點對頁跳頁＋頁1 單邊＋純檢視不改版面頁數）"
         "＋主版指派介面（頁面面板右鍵七主版著作序＋勾選跟隨 page.master＋既有節首頁換節"
         "主版＋節內乾淨起頁升新節首延續至下一節首＋取消節首併回前節＋跨頁續段起頁停用提示）"
+        "＋書冊管理介面（檔案選單組裝書冊項＋自動目錄書冊組裝＝獨立 assemble_book_with_toc"
+        "／目錄真頁碼遞增＋開啟語意乾淨可重生編輯轉髒＋模版一致守門＋純 path 書冊＋缺章提示）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

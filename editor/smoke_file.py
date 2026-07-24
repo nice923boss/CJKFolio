@@ -29,7 +29,7 @@ def check_file(EditorWindow, doc_path) -> None:
     acts = [a for a in menu.actions() if not a.isSeparator()]
     assert [a.text() for a in acts] == \
         ["新建", "開啟…", "儲存", "另存新檔…", "匯入稿件…（txt／md／docx）",
-         "轉存為 PDF…"], \
+         "組裝書冊…", "轉存為 PDF…"], \
         f"檔案選單項異常：{[a.text() for a in acts]}"
     keys = {a.text(): a.shortcut().toString() for a in acts}
     assert keys["新建"] == "Ctrl+N" and keys["開啟…"] == "Ctrl+O", keys
