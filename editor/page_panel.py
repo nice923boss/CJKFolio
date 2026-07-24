@@ -18,7 +18,7 @@
 """
 import time
 
-from PySide6.QtCore import QSize, QThread, Signal
+from PySide6.QtCore import Qt, QSize, QThread, Signal
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QListWidget, QListWidgetItem
 
@@ -84,9 +84,10 @@ class PagePanel(QListWidget):
     不會與 _rebuild 互相遞迴。
     """
 
-    def __init__(self, on_goto, parent=None) -> None:
+    def __init__(self, on_goto, on_context_menu=None, parent=None) -> None:
         super().__init__(parent)
         self._on_goto = on_goto
+        self._on_context_menu = on_context_menu
         self.setMinimumWidth(THUMB_W + 34)  # icon＋捲軸與邊距（單欄下限）
         self.setViewMode(QListWidget.ViewMode.IconMode)
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
@@ -96,6 +97,16 @@ class PagePanel(QListWidget):
         self.setUniformItemSizes(True)
         self.itemClicked.connect(
             lambda item: self._on_goto(self.row(item) + 1))
+        if on_context_menu is not None:  # 右鍵指派主版（Sprint 130）
+            self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.customContextMenuRequested.connect(self._emit_context_menu)
+
+    def _emit_context_menu(self, pos) -> None:
+        """把面板本地座標的右鍵轉成（頁碼, 全域座標）交回呼；空白處不觸發。"""
+        row = self.indexAt(pos).row()
+        if row < 0:
+            return
+        self._on_context_menu(row + 1, self.viewport().mapToGlobal(pos))
 
     def sizeHint(self) -> QSize:
         """dock 初始寬取單欄縮圖寬（QListView 預設 sizeHint 約 256px，會把

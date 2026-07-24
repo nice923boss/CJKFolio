@@ -72,6 +72,7 @@ from editor.file_actions import FileActionsMixin  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.import_actions import ImportActionsMixin  # noqa: E402
 from editor.info_actions import InfoActionsMixin  # noqa: E402
+from editor.master_actions import MasterActionsMixin  # noqa: E402
 from editor.nav_actions import NavActionsMixin  # noqa: E402
 from editor.page_panel import PagePanel  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
@@ -87,7 +88,7 @@ AUTHOR = "製作者：黃政文"
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
                    ExportActionsMixin, ImageActionsMixin, ImportActionsMixin,
                    EditActionsMixin, FindActionsMixin, InfoActionsMixin,
-                   NavActionsMixin, FileActionsMixin,
+                   NavActionsMixin, MasterActionsMixin, FileActionsMixin,
                    QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
@@ -243,7 +244,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         tools_menu.addAction(info_action)
 
         page_dock = QDockWidget("頁面", self)  # 縮圖面板（Sprint 125）
-        self._page_panel = PagePanel(self._goto_page)
+        self._page_panel = PagePanel(
+            self._goto_page, on_context_menu=self._page_context_menu)
         page_dock.setWidget(self._page_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, page_dock)
 

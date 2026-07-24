@@ -41,6 +41,7 @@ from .editing import (
     locate_cell,
     rename_char_style_refs,
     rename_paragraph_style_refs,
+    set_section_master,
 )
 from .frame_editing import (
     FrameCursor,
@@ -231,6 +232,14 @@ class EditSession:
         模版不變）。未知樣式名全文重排 KeyError 快速失敗；全數等值 no-op 回 None。"""
         return self._commit_pair(
             change_paragraph_styles(self._document, assignments), self._template)
+
+    def set_section_master(self, para_idx: int, master: Optional[str]):
+        """指派節式主版入**單一 undo 步**（Sprint 130 主版指派介面的核心半邊；
+        復用 _commit_pair＝文件變模版不變）。para_idx==0 改首節 doc.master，其餘
+        設段落節首標記（None＝承前節）。未知主版名於套用前全文重排 KeyError 快速
+        失敗、狀態不變不入歷史；等值 no-op 回 None。"""
+        return self._commit_pair(
+            set_section_master(self._document, para_idx, master), self._template)
 
     def replace_document(self, document: Document):
         """整份換文件（Sprint 107 稿件匯入）：游標歸零，入統一 undo 歷史。

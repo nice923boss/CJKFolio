@@ -468,6 +468,49 @@ def change_paragraph_styles(doc: Document, assignments) -> Document:
     return out
 
 
+def set_section_master(
+    document: Document, para_idx: int, master: Optional[str]
+) -> Document:
+    """指派第 para_idx 段起的節式主版，回傳新 Document（不可變）。
+
+    節式主版模型（Sprint 51／52）：主版按「節」指派，非逐頁自由套。三種情形：
+
+    - para_idx==0 且段 0 無自帶 master：改的是首節預設主版 doc.master（寫回
+      meta.master），不設段落標記（首節主版存 doc.master，無節首標記可設）。
+    - para_idx==0 且段 0 自帶 master（自蓋首節）：改段 0 的節首標記；清成 None
+      即退回 doc.master 預設（有前設可承，不 raise）。
+    - para_idx>0：設 Paragraph.master 節首標記＝自該段起新開一頁並切主版
+      （None＝承前節，清標記併回前節）。同名亦強制分頁的語意由版面層處理，本
+      函式只管文件模型。
+
+    系統邊界快速失敗：para_idx 越界 raise IndexError；首節（段 0 無自帶 master）
+    清成 None（無前節可承）raise ValueError。等值為 no-op 回原物件。主版名是否存
+    在於模版不在此驗（純文件層），由 session 全文重排守門（raise KeyError，同
+    change_paragraph_style 慣例）。
+    """
+    if not 0 <= para_idx < len(document.paragraphs):
+        raise IndexError(
+            f"para_idx {para_idx} 超出段落範圍 0..{len(document.paragraphs) - 1}"
+        )
+    para = document.paragraphs[para_idx]
+    if para_idx == 0 and para.master is None:
+        # 首節：主版存於 doc.master（無節首標記可設；清 None 無前節可承）
+        if master is None:
+            raise ValueError("首節主版不得清除（無前節可承）")
+        if document.master == master:  # 主版無變化 no-op
+            return document
+        return replace(document, master=master)
+    if para.master == master:  # 節首標記無變化 no-op
+        return document
+    new_para = replace(para, master=master)
+    new_paras = (
+        document.paragraphs[:para_idx]
+        + (new_para,)
+        + document.paragraphs[para_idx + 1 :]
+    )
+    return replace(document, paragraphs=new_paras)
+
+
 def apply_para_style(
     doc: Document, template: Template, cursor: DocCursor, style: str
 ) -> EditResult:

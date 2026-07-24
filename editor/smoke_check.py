@@ -61,6 +61,7 @@ from editor.smoke_file import check_file  # noqa: E402
 from editor.smoke_export import check_export  # noqa: E402
 from editor.smoke_find import check_find  # noqa: E402
 from editor.smoke_info import check_info  # noqa: E402
+from editor.smoke_master import check_master  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
 from editor.smoke_spread import check_spread  # noqa: E402
@@ -725,6 +726,13 @@ def main() -> int:
     # C32 對頁檢視（Sprint 129 甲4，抽於 editor/smoke_spread.py）
     check_spread(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
 
+    # C33 主版指派介面（Sprint 130 丁1，抽於 editor/smoke_master.py）
+    check_master(
+        EditorWindow,
+        ROOT / "samples" / "chapter-opening.doc.json",
+        ROOT / "samples" / "paiban-xiaoji-ch1.doc.json",
+    )
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -751,6 +759,8 @@ def main() -> int:
         "／段數／頁數／樣式用量）"
         "＋對頁檢視（檢視選單勾選項＋Ctrl+3＋右翻書偶右奇左併排＋目前頁偏移後全命中"
         "＋點對頁跳頁＋頁1 單邊＋純檢視不改版面頁數）"
+        "＋主版指派介面（頁面面板右鍵七主版著作序＋勾選跟隨 page.master＋既有節首頁換節"
+        "主版＋節內乾淨起頁升新節首延續至下一節首＋取消節首併回前節＋跨頁續段起頁停用提示）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

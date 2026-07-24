@@ -2,6 +2,29 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.124.0（2026-07-24，Sprint 130）主版指派介面：頁面面板右鍵指派節式主版
+
+### 為什麼做這件事
+
+出版工作流補完系列丁1（PLAN Phase 5 盤點）：節式主版核心自 Sprint 51 就在（主版按「節」指派、非逐頁自由套），但**過去無 UI 入口**，要換某節主版只能手寫 `.doc.json` 的 `meta.master` 與段落 `master` 標記。真稿有部扉、個案扉頁、序文、版權頁等多種版式，卻無從在編輯器裡指派。本版補成 InDesign 式「頁面面板右鍵指派主版」：對某頁按右鍵即對該頁起始段設節式主版，畫布渲染與 export 兩後端同源解析 `page.master`。
+
+### 變更
+
+- [實作] 頁面面板（左側縮圖列）**右鍵選單「指派主版（頁 N）」子選單**，列模版七主版依著作序（A-內文版 至 G-圖文版）、可勾選，勾選項跟隨該頁 `page.master`，點某主版即指派。新模組 `editor/master_actions.py`（`MasterActionsMixin`，分檔慣例控 app.py 行數，同 style_actions／nav_actions）；`editor/page_panel.py` 加 `customContextMenuRequested` 把右鍵轉成（頁碼, 全域座標）回呼。
+- [實作] **三種落點**（皆作用於頁起始段，語意見 `cjkfolio.editing.set_section_master`）：頁 1 改首節預設 `doc.master`；既有節首頁換該節主版（節範圍不變）；節內乾淨起頁升為新節首（自該段起新開一節、延續至下一節首），狀態列據實提示「延續至下一節首」不讓使用者誤解為只換單頁。帶節首標記的頁另給「取消節首（併回前節）」。指派後留在右鍵頁（非跳游標頁）、單一 undo 步。
+- [實作] **跨頁續段守門**：頁若以跨頁續段開頭（`_page_start_para` 回 None），指派會逼該續段成節首把內容往前拉重排，故該頁指派項停用並提示「請於段落起始頁指派」。段落層級「此段起新節」通用入口（可對任一段而非只頁起始段）v1 不做（入 GAPS #85）。
+- [實作] 純函式與包裝：`cjkfolio/editing.py` `set_section_master(document, para_idx, master)`（未知主版 KeyError、無變更回 None、首節不可清 None、para0 自蓋可清回 `doc.master`）；`cjkfolio/session.py` `EditSession.set_section_master` 包 undo（`_commit_pair` 先試排版再改，快速失敗）。`tests/test_master_assign.py` +9 測釘死三落點、KeyError、no-op、越界、首節清空拒絕、para0 自蓋清回、重排分節、單一 undo、未知主版快速失敗。
+- [實作] smoke **C33**（`editor/smoke_master.py`）：以 `chapter-opening.doc.json`（多節樣張）驗頁 1 七主版著作序＋勾選＝B-部扉＋無取消節首、頁 2 節首指派 E-序文版換節主版並留在頁 2、取消節首併回前節（皆可 undo）；以 `paiban-xiaoji-ch1.doc.json`（11 頁單節）驗節內乾淨起頁（頁 2 段 5）升新節首「延續至下一節首」、跨頁續段頁（頁 3）指派停用僅提示。1250 綠增至 1259（+9＝test_master_assign）、smoke C1〜C33 全過。行數：app.py 756／master_actions 115／smoke_master 105／page_panel 135，皆規範帶。
+- [Doc] `手動測試指南.md` 新增「主版指派」操作列與 #85 待驗項。
+
+### 效能與保真實測（R5 真實素材：《成名之路》真稿經真 UI 路徑）
+
+- 真書稿（local 本機、不入 repo）以 neizai-zhengli 載入 128 頁、單節（`doc.master=A-內文版`、407 段），經 EditorWindow 頁面面板右鍵路徑（同使用者對縮圖按右鍵）：對頁 4（乾淨起頁、起始段 9）指派 **B-部扉** 升為新節首，全書由 **128 頁真實重排為 291 頁**（B-部扉版式容量不同、下游整節重流），狀態列據實報「自頁 4（段 9）起新開一節，主版 B-部扉，延續至下一節首（全書 291 頁）」、指派後停在右鍵頁 4。**Gate 4**（獨立方法）：另寫一支節式主版解析器就 `doc.paragraphs` 逐段推每頁所屬節主版，與引擎 `layout` 的 `page.master` **逐頁比對，四種狀態全數一致**（指派前 128 頁、指派後 291 頁、undo 後 128 頁、頁 1 改 `doc.master` 為 E-序文版後 128 頁）；一步 undo 完全還原（段 9 標記回 None、回 128 頁、`doc.master` 回 A-內文版）。**Gate 1** 親 Read `master_actions.py` 全檔確認三落點分支、跨頁守門回 None、`_build_page_menu` 不 exec 離屏可驗、KeyError 據實不炸。全程 doc 未改存（稿件只讀），僅記統計數據（紅線）。
+
+### 待 Owner 真實素材驗收（GAPS #85，承 #19 批次）
+
+- 右鍵選單的**彈出位置與座標**、子選單七款主版辨識度、勾選態視覺、指派後畫布換版的重繪手感皆待真視窗；段落層級「此段起新節」通用入口（可對頁中任一段而非只頁起始段）v1 未做，欲對頁中某段起新節須手寫 JSON 或待後續片；跨頁續段頁不能就地指派（守門即正確行為，須於段落起始頁指派）為 v1 誠實邊界。
+
 ## v0.123.0（2026-07-24，Sprint 129）對頁檢視：右翻書對開併排，純檢視不影響匯出
 
 ### 為什麼做這件事
