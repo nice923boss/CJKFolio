@@ -408,7 +408,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         keys，故既有 C1〜C31 命中邏輯零影響）。純檢視：不改版面、不影響匯出。
         """
         pages = self.layout_result.pages
-        left_no, right_no = spread_pages(self.page.number, len(pages))
+        left_no, right_no = spread_pages(self.page.number, len(pages),
+                                         self.layout_result.cover_pages)
         page_w_px = self.template.page_width_mm / 25.4 * DPI
         item_map: dict = {}
         for pg_no, x_off in ((left_no, 0.0), (right_no, page_w_px)):

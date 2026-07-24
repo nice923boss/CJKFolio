@@ -15,7 +15,7 @@ from math import ceil, floor
 
 from .engine import Exclusion
 from .layout import layout_document
-from .primitives import PT_PER_MM, line_axis_x_pt
+from .primitives import PT_PER_MM, book_number_for, line_axis_x_pt
 
 _EPS = 1e-6
 
@@ -48,7 +48,8 @@ def image_exclusion(rect, template, master, book_number: int,
                      span_lo_pt=y0 - top_pt, span_hi_pt=y1 - top_pt)
 
 
-def page_exclusions(doc, pages, template, first_page: int = 1) -> dict:
+def page_exclusions(doc, pages, template, first_page: int = 1,
+                    cover_pages: int = 0) -> dict:
     """{版面頁號: (Exclusion, ...)}：doc 中 wrap 圖依其落點頁主版與鏡像換算。
 
     pages＝Pass 1 的 LayoutPage 序列（提供逐頁主版與書寫方向）。橫排頁 v1 不繞排
@@ -64,7 +65,8 @@ def page_exclusions(doc, pages, template, first_page: int = 1) -> dict:
         if page is None or not page.vertical:
             continue
         master = template.masters[page.master]
-        ex = image_exclusion(im.rect, template, master, im.page + first_page - 1,
+        ex = image_exclusion(im.rect, template, master,
+                             book_number_for(im.page, first_page, cover_pages),
                              margin_pt=im.wrap_margin_mm * PT_PER_MM)
         if ex is not None:
             out.setdefault(im.page, []).append(ex)
@@ -83,7 +85,8 @@ def layout_with_wrap(doc, template, first_page: int = 1,
     result = layout_document(doc, template, first_para_continues)
     if not any(im.wrap for im in doc.images):
         return result
-    exclusions = page_exclusions(doc, result.pages, template, first_page)
+    exclusions = page_exclusions(doc, result.pages, template, first_page,
+                                 result.cover_pages)
     if not exclusions:
         return result
     final = layout_document(doc, template, first_para_continues,

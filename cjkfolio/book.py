@@ -73,6 +73,9 @@ class Book:
     template: str  # 模版 id；各章文件 meta.template 必須一致
     chapters: tuple
     images: tuple = ()  # 書冊層級 PlacedImage（page＝全書版面頁號）
+    # 封面主版名（選配，Sprint 132）：組裝後成為 Document.cover，全書首頁為封面，
+    # 頁碼自封面翻開後起算（自動目錄頁碼同步位移）。None＝無封面。
+    cover: Optional[str] = None
 
 
 def _toc_chapter_from_dict(ch, i: int) -> ChapterRef:
@@ -176,7 +179,11 @@ def book_from_dict(data) -> Book:
         images = _images_from_list(raw_images)
     except DocumentError as e:
         raise BookError(str(e)) from e
-    return Book(title=title, template=template, chapters=tuple(chapters), images=images)
+    cover = meta.get("cover")
+    if cover is not None and not (isinstance(cover, str) and cover):
+        raise BookError(f"meta.cover 需為非空字串（封面主版名），得到 {cover!r}")
+    return Book(title=title, template=template, chapters=tuple(chapters),
+                images=images, cover=cover)
 
 
 def load_book(path) -> Book:
@@ -247,4 +254,5 @@ def assemble_book(book: Book, base_dir=None) -> Document:
         master=first_master,
         paragraphs=tuple(paragraphs),
         images=book.images,
+        cover=book.cover,
     )

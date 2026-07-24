@@ -8,6 +8,7 @@
   "height_mm": 210.0
  },
  "default_master": "A-內文版",
+ "default_cover": "H-封面",
  "colors": {
   "暖黑": {
    "cmyk": [
@@ -45,7 +46,8 @@
   "h2": "個案大標-NotoSans",
   "h3": "章節小標-黑體",
   "blockquote": "引文-仿宋語錄",
-  "paragraph": "內文-明體直排"
+  "paragraph": "內文-明體直排",
+  "cover_title": "封面書名-明體W9"
  },
  "md_inline_mapping": {
   "strong": "內文強調-明體W9",
@@ -161,6 +163,14 @@
    "para_gap_slots": 1,
    "source_font": "DFMingStd-W7",
    "note": "十章章扉；§4.2 原記明體W9，全書掃描修正為 W7"
+  },
+  "封面書名-明體W9": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 28.0,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "note": "封面書名（Sprint 132，自擬非量測）：真書封面為美術設計，不在內文 PDF 量測範圍，故級數自擬（28pt＝內文 11.5pt 的 2.4 倍，較部扉大標 21.9pt 大一階）。封面文字一律走 text_frames 自由佈局，此樣式只定字形與級數，位置由使用者拖放決定"
   },
   "標籤-篇序小標": {
    "font_family": "思源宋體 TC",
@@ -492,6 +502,24 @@
     "note": "前後對照照片保留區；典型雙照片全頁一手量測（Sprint 27）"
    },
    "evidence": "版心承 A 一手驗證（Sprint 27，tools/measure_figure_page.py，32 全頁圖文版頁）：圖框保留區橫向承 A 版心（R 頁 x0=72.51／x1=360.0、L 頁 59.53／347.02，鏡像感知），縱向雙照片區 top 107.04pt（38.20mm）／bottom 467.62pt（一致值）；辰宇落雁體圖說 15.92pt（31 span 同值，頂錨 y0≈117）。頁型＝房名黑體標題＋前後對照灰階照片＋手寫圖說（本書整理術核心頁型，如廚房整理前/後）。圖框以淡虛線佔位框標示（Phase 1 骨架，photo-slot），Phase 2 圖片置入取代。已知差異（GAPS #13）：真書照片略溢版心 1〜4pt、實際照片逐頁變異（單/雙、高度 385〜500pt）屬美術自由佈局（§8）；房名黑體標題、辰宇自由圖說位置、裝飾括號為美術＋Phase 2；照片嵌入為 Phase 2、圖文繞排為 Phase 4"
+  },
+  "H-封面": {
+   "margins_mm": {
+    "top": 32.49,
+    "bottom": 41.13,
+    "outer": 21.0,
+    "inner": 25.58
+   },
+   "grid": {
+    "chars_per_line": 32,
+    "lines_per_page": 13,
+    "char_advance_pt": 12.08,
+    "line_pitch_pt": 23.0,
+    "base_size_pt": 11.5
+   },
+   "mirror": true,
+   "evidence": "自擬，非量測（Sprint 132）：真書封面為美術設計，不在內文 PDF 的量測範圍（GAPS #1 紅線亦不取其圖像），故版心承 A-內文版數值以維持同一版面語言，未宣稱與真書封面一致。封面內容一律走 text_frames／images 自由佈局（rect 座標），本主版的 margins 與 grid 只供文字框度量換算（frames.frame_pitch_pt 依 line_pitch/base_size 比例），不定位置。",
+   "note": "封面主版：無 footer 宣告＝不印頁碼（封面不編頁碼另由 render／pdf_writer 強制，雙保險）；mirror true 使封面書頁號 0（偶數）落右頁＝右翻書封面在右（Sprint 22 側別 SSOT）"
   }
  }
 }

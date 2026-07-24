@@ -1,0 +1,62 @@
+{
+ "schema": "cjkfolio/document@2",
+ "meta": {
+  "title": "排版小記",
+  "template": "neizai-zhengli",
+  "master": "A-內文版",
+  "cover": "H-封面"
+ },
+ "paragraphs": [
+  {
+   "text": "封面之後就是內文首頁，書上印的頁碼從這裡才開始算第一頁。",
+   "style": "內文-明體直排"
+  }
+ ],
+ "images": [
+  {
+   "path": "cover-art.png",
+   "page": 1,
+   "rect": [
+    41.95,
+    238.11,
+    234.94,
+    523.84
+   ]
+  }
+ ],
+ "text_frames": [
+  {
+   "text": "排版小記",
+   "style": "封面書名-明體W9",
+   "page": 1,
+   "rect": [
+    248.0,
+    92.1,
+    360.0,
+    461.17
+   ]
+  },
+  {
+   "text": "黃政文　著",
+   "style": "內文-明體直排",
+   "page": 1,
+   "rect": [
+    202.0,
+    92.1,
+    243.4,
+    306.4
+   ]
+  },
+  {
+   "text": "CJKFolio 開源排版",
+   "style": "內文-明體直排",
+   "page": 1,
+   "rect": [
+    302.06,
+    369.07,
+    325.06,
+    565.51
+   ]
+  }
+ ]
+}

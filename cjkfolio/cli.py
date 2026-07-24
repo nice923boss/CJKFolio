@@ -45,6 +45,7 @@ from .reference_extract import extract_draft
 from .render import render_document
 from .styles import load_template, save_template
 from .template_library import merge_draft_styles, resolve_template_dir
+from .cover import with_cover
 from .txt_import import DEFAULT_BODY_STYLE, import_txt_file
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +76,19 @@ def _import_target(args, template):
     return template_id, master
 
 
+def _maybe_cover(doc, template, args):
+    """--cover 時於書首建封面頁（Sprint 132）；未指定即回原文件。
+
+    三個匯入子命令共用單一入口：封面主版與書名樣式一律由模版宣告推導
+    （cjkfolio.cover），三處各自寫死即為 Sprint 107 修過的同型缺陷。
+    """
+    if not getattr(args, "cover", False):
+        return doc
+    doc = with_cover(doc, template)
+    print(f"已建封面（主版 {doc.cover}）：頁碼自封面翻開後起算")
+    return doc
+
+
 def cmd_import_txt(args) -> int:
     template = load_template(args.template)
     template_id, master = _import_target(args, template)
@@ -88,6 +102,7 @@ def cmd_import_txt(args) -> int:
         template_id=template_id,
         master=master,
     )
+    doc = _maybe_cover(doc, template, args)
     save_document(doc, args.output)
     print(f"匯入完成：{len(doc.paragraphs)} 段 → {args.output}")
     return 0
@@ -104,6 +119,7 @@ def cmd_import_md(args) -> int:
         template_id=template_id,
         master=master,
     )
+    doc = _maybe_cover(doc, template, args)
     save_document(doc, args.output)
     styles_used = sorted({p.style for p in doc.paragraphs})
     print(f"匯入完成：{len(doc.paragraphs)} 段 → {args.output}")
@@ -122,6 +138,7 @@ def cmd_import_docx(args) -> int:
         template_id=template_id,
         master=master,
     )
+    doc = _maybe_cover(doc, template, args)
     save_document(doc, args.output)
     styles_used = sorted({p.style for p in doc.paragraphs})
     print(f"匯入完成：{len(doc.paragraphs)} 段 → {args.output}")
@@ -374,6 +391,8 @@ def main(argv=None) -> int:
     p_import.add_argument("--template", default=str(DEFAULT_TEMPLATE))
     p_import.add_argument("--master", default="",
                           help="掛哪張主版（預設取模版宣告的 default_master）")
+    p_import.add_argument("--cover", action="store_true",
+                          help="於書首建封面頁（可置圖與加字），頁碼自封面翻開後起算")
     p_import.set_defaults(func=cmd_import_txt)
 
     p_md = sub.add_parser("import-md", help="Markdown 匯入（標題層級直接對映模版樣式）")
@@ -383,6 +402,8 @@ def main(argv=None) -> int:
     p_md.add_argument("--master", default="",
                       help="掛哪張主版（預設取模版宣告的 default_master）")
     p_md.add_argument("--title", default="")
+    p_md.add_argument("--cover", action="store_true",
+                          help="於書首建封面頁（可置圖與加字），頁碼自封面翻開後起算")
     p_md.set_defaults(func=cmd_import_md)
 
     p_docx = sub.add_parser("import-docx", help="docx 匯入（OOXML 標題層級直接對映模版樣式，不依賴 Word）")
@@ -392,6 +413,8 @@ def main(argv=None) -> int:
     p_docx.add_argument("--master", default="",
                         help="掛哪張主版（預設取模版宣告的 default_master）")
     p_docx.add_argument("--title", default="")
+    p_docx.add_argument("--cover", action="store_true",
+                          help="於書首建封面頁（可置圖與加字），頁碼自封面翻開後起算")
     p_docx.set_defaults(func=cmd_import_docx)
 
     p_assign = sub.add_parser("assign-styles",

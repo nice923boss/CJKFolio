@@ -29,6 +29,7 @@ from .placement import (
 )
 from .primitives import (
     StrokeLine,
+    book_number_for,
     cip_frame_rect,
     figure_slot_edges,
     figure_slot_rect,
@@ -527,9 +528,11 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
     out.mkdir(parents=True, exist_ok=True)
     paths = []
     for page in layout.pages:
-        book_number = page.number + first_page - 1  # 書頁號（鏡像與頁腳奇偶依此）
+        # 書頁號（鏡像與頁腳奇偶依此）；帶封面時頁碼自封面翻開後起算
+        book_number = book_number_for(page.number, first_page, layout.cover_pages)
         texts = None
-        if footer and masters_by_page[page.number].footer:  # 頁腳依該頁主版 gate
+        is_cover = page.number <= layout.cover_pages  # 封面不編頁碼（不繪頁腳）
+        if footer and not is_cover and masters_by_page[page.number].footer:
             texts = {
                 "number": str(book_number),
                 "title": doc.title,

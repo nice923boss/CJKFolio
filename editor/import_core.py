@@ -17,6 +17,7 @@ md／docx 走 md_mapping 本就由模版驅動，txt 缺的正是同一件事：
 """
 from pathlib import Path
 
+from cjkfolio.cover import with_cover
 from cjkfolio.docx_import import import_docx
 from cjkfolio.md_import import import_markdown_file
 from cjkfolio.styles import Template
@@ -46,10 +47,14 @@ def _import_defaults(template: Template, template_id: str) -> tuple:
     return master, body_style
 
 
-def import_manuscript(path, template: Template, template_id: str, *, title: str = ""):
+def import_manuscript(path, template: Template, template_id: str, *,
+                      title: str = "", cover: bool = False):
     """匯入一份稿件為 Document；副檔名決定解析器，預設值一律由 template 推導。
 
     title 預設取檔名（不含副檔名）。不支援的副檔名明確列出支援清單，不沉默略過。
+    cover=True 時（Sprint 132）於書首建封面頁（主版取 template.default_cover、
+    書名框取 md_mapping.cover_title 樣式），頁碼自封面翻開後起算；預設 False＝
+    既有行為不變（CLI 既有腳本與量測工具的分頁與頁碼零變更）。
     """
     path = Path(path)
     suffix = path.suffix.lower()
@@ -61,9 +66,12 @@ def import_manuscript(path, template: Template, template_id: str, *, title: str 
     common = {"title": title or path.stem, "template_id": template_id, "master": master}
 
     if suffix == ".txt":
-        return import_txt_file(path, default_style=body_style, **common)
-    structured = {"mapping": template.md_mapping,
-                  "inline_mapping": template.md_inline_mapping}
-    if suffix == ".docx":
-        return import_docx(path, **structured, **common)
-    return import_markdown_file(path, **structured, **common)
+        doc = import_txt_file(path, default_style=body_style, **common)
+    else:
+        structured = {"mapping": template.md_mapping,
+                      "inline_mapping": template.md_inline_mapping}
+        if suffix == ".docx":
+            doc = import_docx(path, **structured, **common)
+        else:
+            doc = import_markdown_file(path, **structured, **common)
+    return with_cover(doc, template) if cover else doc

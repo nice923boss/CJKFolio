@@ -34,8 +34,11 @@ class ImportActionsMixin:
 
         try:
             # 模版 id 取自目前文件的宣告（編輯器同時只持一份模版）
+            # cover：書該有封面（Owner Sprint 132 回饋），模版有宣告封面主版才建，
+            # 未宣告的模版照舊直接自內文首頁起（不硬造主版）。
             incoming = import_manuscript(
-                path, self.session.template, self.doc.template)
+                path, self.session.template, self.doc.template,
+                cover=bool(self.session.template.default_cover))
         except (OSError, ValueError, UnicodeDecodeError) as err:
             self.statusBar().showMessage(f"無法匯入「{path.name}」：{err}")
             return
@@ -56,10 +59,18 @@ class ImportActionsMixin:
         self.statusBar().showMessage(self._import_summary(path, incoming))
 
     def _import_summary(self, path: Path, doc) -> str:
-        """匯入結果摘要：段數、頁數、樣式分布，txt 另提示可接 AI 指派。"""
+        """匯入結果摘要：段數、頁數、樣式分布，txt 另提示可接 AI 指派。
+
+        帶封面時頁數分開報（封面 1 頁＋內文 N 頁）：總頁數把封面算進去會與頁碼
+        對不上（頁碼自封面翻開後起算），一個數字讀者無從分辨。
+        """
         styles = sorted({p.style for p in doc.paragraphs})
+        total = len(self.layout_result.pages)
+        cover_pages = self.layout_result.cover_pages
+        pages_text = (f"封面 1 頁＋內文 {total - cover_pages} 頁"
+                      if cover_pages else f"{total} 頁")
         summary = (f"已匯入「{path.name}」：{len(doc.paragraphs)} 段、"
-                   f"{len(self.layout_result.pages)} 頁，"
+                   f"{pages_text}，"
                    f"樣式 {'、'.join(styles)}")
         if path.suffix.lower() == ".txt":
             # txt 無結構訊號（PLAN §4.4），全段落同一樣式，正是 AI 指派的用例

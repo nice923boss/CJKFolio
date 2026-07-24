@@ -139,6 +139,9 @@ class LayoutResult:
     vertical: bool = True  # 首節方向（相容欄位）；逐頁方向以 LayoutPage.vertical 為準（Sprint 53）
     toc_marks: dict = field(default_factory=dict)  # page number → (TocEntryMark, ...)
     rule_breaks: dict = field(default_factory=dict)  # page number → (RuleBreak, ...)
+    # 封面佔的版面頁數（Sprint 132）：0＝無封面。下游書頁號一律以此位移
+    # （primitives.book_number_for），使頁碼自封面翻開後起算。
+    cover_pages: int = 0
 
 
 def _toc_marks(pages, template: Template) -> tuple:
@@ -243,6 +246,14 @@ def layout_document(doc, template: Template, first_para_continues: bool = False,
     layout 只負責把節內頁序換算為版面頁號（page_offset）後轉交 flow_pages。
     """
     pages: list = []
+    cover_pages = 0
+    if doc.cover is not None:  # 封面＝版面頁 1 的空流排頁（Sprint 132）
+        if doc.cover not in template.masters:
+            raise KeyError(f"文件引用未知封面主版：{doc.cover}")
+        # 方向取直排（本產品利基）：封面不吃內文流，兩後端 body 繪製對空 placed
+        # 皆為空迴圈，故此欄位對封面頁的輸出無影響。
+        pages.append(LayoutPage(1, (), master=doc.cover, vertical=True))
+        cover_pages = 1
     for si, (master_name, lo, hi) in enumerate(_sections(doc)):
         if master_name not in template.masters:
             raise KeyError(f"文件引用未知主版：{master_name}")
@@ -302,6 +313,8 @@ def layout_document(doc, template: Template, first_para_continues: bool = False,
             _, status = line_justified_advance(pl.line, 1.0)
             if status in stats:
                 stats[status] += 1
+    body_pages = pages[cover_pages:]  # 首節方向取首個內文頁（封面無內文流不代表方向）
     return LayoutResult(pages=pages, violations=violations, justify_stats=stats,
-                        vertical=pages[0].vertical if pages else True,
-                        toc_marks=toc_marks, rule_breaks=rule_breaks)
+                        vertical=body_pages[0].vertical if body_pages else True,
+                        toc_marks=toc_marks, rule_breaks=rule_breaks,
+                        cover_pages=cover_pages)

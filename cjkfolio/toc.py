@@ -23,6 +23,7 @@ from typing import Optional
 
 from .book import Book, BookError, _resolve_chapter
 from .document import Document, Paragraph
+from .primitives import book_number_for
 from .wrap import layout_with_wrap
 
 
@@ -131,19 +132,20 @@ def _build(book: Book, template, base: Path, first_page: int):
         _assemble_pass1(book, base)
     pass1 = Document(
         title=book.title, template=book.template, master=first_master,
-        paragraphs=tuple(paragraphs), images=book.images)
+        paragraphs=tuple(paragraphs), images=book.images, cover=book.cover)
     # 與 render／pdf_writer 同一重排入口（Sprint 103）：書冊帶 wrap 圖時，繞排會
     # 把內文往後推，用不繞排的分頁定條目頁碼會印出比實際早的頁（實測差 1 頁）。
     result = layout_with_wrap(pass1, template, first_page=first_page)
     items: list = []
     paras = list(paragraphs)
     for pos, target, entry in zip(entry_positions, entry_targets, entries):
-        page = _first_page_of(result, target) + first_page - 1
+        page = book_number_for(_first_page_of(result, target), first_page,
+                               result.cover_pages)
         items.append(TocItem(title=entry.title, page=page, level=entry.level))
         paras[pos] = replace(paras[pos], page_no=str(page))
     final = Document(
         title=book.title, template=book.template, master=first_master,
-        paragraphs=tuple(paras), images=book.images)
+        paragraphs=tuple(paras), images=book.images, cover=book.cover)
     return final, tuple(items)
 
 

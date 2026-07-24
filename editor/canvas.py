@@ -29,6 +29,7 @@ from cjkfolio.layout import (
     style_advance_pt,
     style_line_slots,
 )
+from cjkfolio.primitives import book_number_for
 from cjkfolio.render import PageRenderer, line_axis_x_pt, mm_to_pt
 from cjkfolio.styles import Template
 
@@ -164,20 +165,26 @@ def iter_image_rects(doc: Document, page_number: int, scale: float) -> Iterator[
         yield idx, x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale
 
 
-def spread_pages(page_number: int, total: int):
-    """右翻書對開配對：回傳 (left_page, right_page)，None＝該側空白。
+def spread_pages(page_number: int, total: int, cover_pages: int = 0):
+    """右翻書對開配對：回傳 (left_page, right_page)，None＝該側空白。頁號皆版面頁號。
 
     Sprint 22 側別（SSOT）：偶數書頁＝右頁（書口在右）、奇數書頁＝左頁（書口在左）；
     右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大，故右頁號 < 左頁號。
     一組 spread＝(偶 E, 奇 E+1)：右＝E、左＝E+1。頁1（奇）右夥伴頁0不存在＝單邊在左；
     末頁若為偶則左夥伴 E+1 不存在＝單邊在右。導航到 spread 內任一頁都得同一組。
+
+    封面（Sprint 132）：封面是書的最外層，實體上不與任何內頁攤開併排，故封面頁
+    一律單邊顯示（在右，＝右翻書封面在右）；奇偶配對改以書頁號判定（帶封面時
+    版面頁號與書頁號差 cover_pages，用版面頁號會整組配錯）。
     """
-    if page_number % 2 == 0:  # 偶＝右頁
+    if page_number <= cover_pages:  # 封面單邊在右（不與內頁併排）
+        return None, page_number
+    if (page_number - cover_pages) % 2 == 0:  # 書頁號偶＝右頁
         right = page_number
         left = page_number + 1 if page_number + 1 <= total else None
-    else:  # 奇＝左頁
+    else:  # 書頁號奇＝左頁
         left = page_number
-        right = page_number - 1 if page_number - 1 >= 1 else None
+        right = page_number - 1 if page_number - 1 > cover_pages else None
     return left, right
 
 
@@ -190,6 +197,7 @@ def build_page_scene(
     dpi: int = 150,
     images=(),
     x_offset: float = 0.0,
+    first_page: int = 1,
 ) -> list:
     """在 scene 建雙層畫布（底圖 PNG z=0＋互動層透明字格 z=1）。回傳互動層 item list。
 
@@ -205,9 +213,12 @@ def build_page_scene(
     預設 0.0＝與單頁完全等價（byte-identical），既有單頁路徑不受影響。
     """
     scale = dpi / 72.0
-    book_number = page.number
+    # 書頁號（鏡像與頁腳奇偶依此）：帶封面時頁碼自封面翻開後起算，與兩後端同源
+    # （Sprint 132）。畫布原直接用版面頁號＝隱含 first_page=1 且無封面。
+    book_number = book_number_for(page.number, first_page, layout.cover_pages)
     renderer = PageRenderer(template, doc.master, dpi=dpi)
-    footer = {"number": str(book_number), "title": doc.title or ""}
+    footer = None if page.number <= layout.cover_pages else {  # 封面不編頁碼
+        "number": str(book_number), "title": doc.title or ""}
     vertical = getattr(page, "vertical", layout.vertical)  # 逐頁方向（Sprint 53）
     frames = page_frame_placements(template, doc, layout, page)
     pil_img = renderer.render_page(

@@ -1,7 +1,7 @@
 """smoke C33：主版指派介面（Sprint 130 丁1；自 smoke_check.py 分檔，行數紀律慣例）。
 
 離屏可驗（不含視覺與滑鼠實測）：頁面面板右鍵選單「指派主版（頁 N）」子選單，
-七主版依模版著作序（A→G）、勾選跟隨該頁 page.master；指派既有節首頁換節主版
+八主版依模版著作序（A→H，H-封面 Sprint 132）、勾選跟隨該頁 page.master；指派既有節首頁換節主版
 （重排後留在右鍵頁、狀態列據實）；勾選跟隨改派後主版；節內乾淨起頁升為新節首
 （狀態列提示「延續至下一節首」）；取消節首併回前節；跨頁續段起頁指派項停用並提示。
 真右鍵手感與選單彈出位置待 Owner 真視窗（GAPS #19 批次）。
@@ -34,9 +34,9 @@ def check_master(EditorWindow, chapter_path, paiban_path) -> None:
     pages = win.layout_result.pages
     assert len(pages) == 2, f"樣張應 2 頁，得 {len(pages)}"
     masters_order = list(win.template.masters)
-    assert len(masters_order) == 7, masters_order
+    assert len(masters_order) == 8, masters_order  # A〜G＋H-封面（Sprint 132）
 
-    # 頁 1：七主版著作序、皆可勾、勾選＝B-部扉、無「取消節首」（段 0 未帶標記＝首節預設）
+    # 頁 1：八主版著作序、皆可勾、勾選＝B-部扉、無「取消節首」（段 0 未帶標記＝首節預設）
     menu1 = win._build_page_menu(1)
     acts1 = _master_acts(menu1)
     assert _assign_submenu(menu1).title() == "指派主版（頁 1）"
@@ -99,7 +99,7 @@ def check_master(EditorWindow, chapter_path, paiban_path) -> None:
     for w in (win, win2):  # 退出安全：縮圖執行緒收工（closeEvent 同路徑）
         w._shutdown_thumbnails()
     print(
-        "C33 主版指派介面：右鍵選單七主版著作序（A→G）＋勾選跟隨 page.master、"
+        "C33 主版指派介面：右鍵選單八主版著作序（A→H）＋勾選跟隨 page.master、"
         "指派既有節首頁換節主版（留在右鍵頁）、勾選跟隨改派、節內乾淨起頁升新節首"
         "（延續至下一節首）、取消節首併回前節（可 undo）、跨頁續段起頁指派停用並提示"
     )

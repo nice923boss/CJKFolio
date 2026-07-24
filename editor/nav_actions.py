@@ -49,13 +49,20 @@ class NavActionsMixin:
             return
         number = max(1, min(len(pages), number))
         if number == self.page.number:
-            self.statusBar().showMessage(f"頁 {number}/{len(pages)}")
+            self.statusBar().showMessage(self._goto_message(number))
             return
         self.page = pages[number - 1]
         self.cursor = None
         self.frame_cursor = None
         self._rebuild()
-        self.statusBar().showMessage(f"頁 {number}/{len(pages)}")
+        self.statusBar().showMessage(self._goto_message(number))
+
+    def _goto_message(self, number: int) -> str:
+        """跳頁後的狀態列訊息：無封面時維持既有「頁 N/M」（版面頁號），
+        帶封面時改報書頁語意（封面標「封面」），與指示器同一套說法。"""
+        if not self.layout_result.cover_pages:
+            return f"頁 {number}/{len(self.layout_result.pages)}"
+        return self._page_label_text(number)
 
     def _prompt_goto_page(self) -> None:
         """Ctrl+J：跳至頁碼對話框（InDesign 慣例鍵）。"""
@@ -65,20 +72,38 @@ class NavActionsMixin:
         if not pages or self.page is None:
             self.statusBar().showMessage("空白文件尚無頁面；先匯入稿件或在輸入欄打字")
             return
+        # 對話框吃書頁碼（使用者看到的頁碼），內部轉版面頁號；無封面時兩者相等，
+        # 既有行為與訊息零變更。封面不編頁碼故不在可輸入範圍（走「版面 → 第一頁」）。
+        cover_pages = self.layout_result.cover_pages
+        last = len(pages) - cover_pages
         number, ok = QInputDialog.getInt(
-            self, "跳至頁碼", f"頁碼（1〜{len(pages)}）",
-            self.page.number, 1, len(pages))
+            self, "跳至頁碼", f"頁碼（1〜{last}）",
+            max(1, self.page.number - cover_pages), 1, last)
         if ok:
-            self._goto_page(number)
+            self._goto_page(number + cover_pages)
 
     # --- 面板與指示器同步（_rebuild 尾端呼叫） ---
+
+    def _page_label_text(self, number) -> str:
+        """狀態列頁碼指示器文字（Sprint 132 起認封面）。
+
+        使用者想的是書上印的頁碼，不是版面頁號；帶封面時兩者差一。故封面頁直接
+        標「封面」（它本就不編頁碼），內文頁報書頁號與內文總頁數，兩數同一語意。
+        """
+        if number is None:
+            return "頁 −／−"
+        pages = self.layout_result.pages
+        cover_pages = self.layout_result.cover_pages
+        if number <= cover_pages:
+            return "封面"
+        return f"頁 {number - cover_pages}／{len(pages) - cover_pages}"
 
     def _sync_page_panel(self) -> None:
         pages = self.layout_result.pages
         self._page_panel.set_page_count(len(pages))
         self._page_panel.set_current(self.page.number if self.page else None)
         self._page_label.setText(
-            f"頁 {self.page.number}／{len(pages)}" if self.page else "頁 −／−")
+            self._page_label_text(self.page.number if self.page else None))
         if self._thumb_snapshot is not self.layout_result:  # 版面真的重排過
             self._thumb_snapshot = self.layout_result
             self._thumb_timer.start()

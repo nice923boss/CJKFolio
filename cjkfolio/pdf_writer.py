@@ -68,6 +68,7 @@ from .primitives import (
 )
 from .render import (
     Shaper,
+    book_number_for,
     horizontal_baseline_y_pt,
     horizontal_left_x_pt,
     is_right_page,
@@ -676,9 +677,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         selected = [p for p in selected if p.number in wanted]
     contents = []
     for page in selected:
-        book_number = page.number + first_page - 1  # 書頁號（鏡像與頁腳奇偶依此）
-        texts = None
-        if footer and masters_by_page[page.number].footer:  # 頁腳依該頁主版 gate
+        book_number = book_number_for(page.number, first_page, layout.cover_pages)
+        texts = None  # 頁腳依該頁主版 gate；封面不編頁碼故一律不繪
+        if footer and page.number > layout.cover_pages and masters_by_page[page.number].footer:
             texts = {"number": str(book_number), "title": doc.title}
         contents.append(writer.build_page(
             page, footer_texts=texts, book_number=book_number,

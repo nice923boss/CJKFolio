@@ -23,6 +23,18 @@ def is_right_page(book_number: int) -> bool:
     return book_number % 2 == 0
 
 
+def book_number_for(page_number: int, first_page: int = 1,
+                    cover_pages: int = 0) -> int:
+    """版面頁號 → 書頁號（鏡像、頁腳奇偶與目錄頁碼一律依此，Sprint 12 SSOT）。
+
+    cover_pages＝封面佔的版面頁數（Sprint 132）：頁碼自封面翻開後起算，故內文
+    首頁的書頁號恆為 first_page，封面依序往前推（單頁封面＝first_page−1，預設
+    即 0）。封面書頁號 0 為偶數＝右頁（is_right_page），與右翻書封面在右一致。
+    cover_pages=0 時退化為既有公式（版面頁號＋first_page−1），無封面文件零變更。
+    """
+    return page_number - cover_pages + first_page - 1
+
+
 def line_axis_x_pt(template, master, slot: int, page_number: int,
                    line_slots: int = 1) -> float:
     """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，偶數＝右頁書口在右；

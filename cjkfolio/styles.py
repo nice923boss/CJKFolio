@@ -316,6 +316,10 @@ class Template:
     # 匯入新稿時掛哪張主版（Sprint 105）。原為寫死於各 import_* 的預設「A-內文版」，
     # 對第二本書即為錯的主版名，故搬進模版資料層由各模版自行宣告。
     default_master: str = ""
+    # 新稿建封面時掛哪張主版（Sprint 132，同 default_master 的資料層慣例）：
+    # 封面主版名逐模版而異（第一本 H-封面、第二本 丁-封面），寫死於匯入層即為
+    # 對另一本書錯的名字（Sprint 107 已修過的同型缺陷）。""＝該模版不提供封面。
+    default_cover: str = ""
 
 
 def _require(data: dict, key: str, context: str):
@@ -561,10 +565,14 @@ def template_from_dict(data) -> Template:
         md_mapping=dict(data.get("md_mapping", {})),
         md_inline_mapping=dict(data.get("md_inline_mapping", {})),
         default_master=str(data.get("default_master", "")),
+        default_cover=str(data.get("default_cover", "")),
     )
     if template.default_master and template.default_master not in template.masters:
         raise TemplateError(
             f"default_master「{template.default_master}」不存在於 masters")
+    if template.default_cover and template.default_cover not in template.masters:
+        raise TemplateError(
+            f"default_cover「{template.default_cover}」不存在於 masters")
     for mname, master in template.masters.items():
         if master.toc and master.toc.page_no_style not in template.character_styles:
             raise TemplateError(
@@ -701,6 +709,8 @@ def template_to_dict(template: Template) -> dict:
     }
     if template.default_master:  # 未宣告者不寫出空鍵（round-trip 不變形）
         out["default_master"] = template.default_master
+    if template.default_cover:
+        out["default_cover"] = template.default_cover
     return out
 
 

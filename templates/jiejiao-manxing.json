@@ -8,6 +8,7 @@
   "height_mm": 190.0
  },
  "default_master": "甲-內文",
+ "default_cover": "丁-封面",
  "colors": {
   "墨黑": {
    "cmyk": [0, 0, 0, 0.9],
@@ -27,7 +28,8 @@
   "h2": "小節標-黑體",
   "h3": "小節標-黑體",
   "blockquote": "引語-宋體縮排",
-  "paragraph": "內文-宋體直排"
+  "paragraph": "內文-宋體直排",
+  "cover_title": "封面書名-宋體特粗"
  },
  "md_inline_mapping": {
   "strong": "強調-宋體特粗",
@@ -51,6 +53,15 @@
    "para_gap_slots": 1,
    "color": "墨黑",
    "note": "章扉大標（乙-章扉主版）；亦供內文版的章名使用"
+  },
+  "封面書名-宋體特粗": {
+   "font_family": "思源宋體 TC",
+   "font_weight": "heavy",
+   "size_pt": 26.0,
+   "indent_chars": 0,
+   "para_gap_slots": 0,
+   "color": "墨黑",
+   "note": "封面書名（Sprint 132，自擬）：級數 26pt＝內文 10.5pt 的 2.5 倍，較章名 18pt 大一階；位置由 text_frames 自由佈局決定"
   },
   "小節標-黑體": {
    "font_family": "思源黑體 TC",
@@ -199,6 +210,24 @@
    },
    "evidence": "自擬設計：天頭 30mm 較內文深以留白，欄長 30×11.03＝330.9pt 短於內文版（條目不滿欄）；頁碼底錨 455pt 落於欄長終點 415.03pt 之下的地腳區；引導線淡墨 K55、線寬 0.25pt。",
    "note": "本主版刻意不設 rule（水平虛線），用以檢驗 rule 為選配而非必填"
+  },
+  "丁-封面": {
+   "margins_mm": {
+    "top": 24.0,
+    "bottom": 33.701,
+    "outer": 16.0,
+    "inner": 21.396
+   },
+   "grid": {
+    "chars_per_line": 34,
+    "lines_per_page": 13,
+    "char_advance_pt": 11.03,
+    "line_pitch_pt": 21.0,
+    "base_size_pt": 10.5
+   },
+   "mirror": true,
+   "evidence": "自擬設計（Sprint 132），承本模版甲-內文的自擬幾何：版心與網格取同值以維持同一版面語言。封面內容一律走 text_frames／images 自由佈局（rect 座標），本主版的 margins 與 grid 只供文字框度量換算（frames.frame_pitch_pt 依 line_pitch/base_size 比例），不定位置。",
+   "note": "封面主版：無 footer 宣告＝不印頁碼（封面不編頁碼另由 render／pdf_writer 強制，雙保險）；mirror true 使封面書頁號 0（偶數）落右頁＝右翻書封面在右（Sprint 22 側別 SSOT）"
   }
  }
 }

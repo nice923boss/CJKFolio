@@ -294,6 +294,12 @@ def document_from_dict(data) -> "Document":
         raise DocumentError("使用 text_frames 需 schema document@2")
     if not isinstance(raw_frames, list):
         raise DocumentError("text_frames 必須是陣列")
+    cover = meta.get("cover")
+    if cover is not None:
+        if schema == SCHEMA_V1:
+            raise DocumentError("使用 meta.cover 需 schema document@2")
+        if not (isinstance(cover, str) and cover):
+            raise DocumentError(f"meta.cover 需為非空字串（封面主版名），得到 {cover!r}")
     return Document(
         title=str(meta.get("title", "")),
         template=str(meta.get("template", "")),
@@ -302,6 +308,7 @@ def document_from_dict(data) -> "Document":
         language=str(meta.get("language", "zh-TW")),
         images=_images_from_list(raw_images),
         text_frames=_frames_from_list(raw_frames),
+        cover=cover,
     )
 
 
@@ -314,6 +321,10 @@ class Document:
     language: str = "zh-TW"
     images: tuple = ()  # PlacedImage 序列（@2 相容擴充；槽式與 rect 任意圖框）
     text_frames: tuple = ()  # TextFrame 序列（@2 相容擴充；獨立文字框，Sprint 55）
+    # 封面主版名（@2 相容擴充選配，Sprint 132）：非 None＝書首多一頁不吃內文流的
+    # 封面，內容用既有 images／text_frames 掛版面頁 1；頁碼自封面翻開後起算
+    # （primitives.book_number_for）。None＝無封面，既有行為完全不變。
+    cover: Optional[str] = None
 
 
 def _paragraph_to_dict(p: Paragraph) -> dict:
@@ -346,6 +357,7 @@ def document_to_dict(doc: Document) -> dict:
             "template": doc.template,
             "master": doc.master,
             "language": doc.language,
+            **({"cover": doc.cover} if doc.cover else {}),
         },
         "paragraphs": [_paragraph_to_dict(p) for p in doc.paragraphs],
     }
