@@ -198,6 +198,7 @@ def build_page_scene(
     images=(),
     x_offset: float = 0.0,
     first_page: int = 1,
+    base_dpi: int = 0,
 ) -> list:
     """在 scene 建雙層畫布（底圖 PNG z=0＋互動層透明字格 z=1）。回傳互動層 item list。
 
@@ -212,11 +213,12 @@ def build_page_scene(
     x_offset＝底圖與互動層一併水平平移的像素量（對頁檢視右頁置於 x=頁寬，Sprint 129）。
     預設 0.0＝與單頁完全等價（byte-identical），既有單頁路徑不受影響。
     """
-    scale = dpi / 72.0
+    scale = dpi / 72.0  # 互動層字格幾何一律依 dpi（scene 座標系），不隨底圖畫質變
+    base_dpi = base_dpi or dpi  # 底圖渲染解析度（Sprint 133，畫質用；預設同 scene）
     # 書頁號（鏡像與頁腳奇偶依此）：帶封面時頁碼自封面翻開後起算，與兩後端同源
     # （Sprint 132）。畫布原直接用版面頁號＝隱含 first_page=1 且無封面。
     book_number = book_number_for(page.number, first_page, layout.cover_pages)
-    renderer = PageRenderer(template, doc.master, dpi=dpi)
+    renderer = PageRenderer(template, doc.master, dpi=base_dpi)
     footer = None if page.number <= layout.cover_pages else {  # 封面不編頁碼
         "number": str(book_number), "title": doc.title or ""}
     vertical = getattr(page, "vertical", layout.vertical)  # 逐頁方向（Sprint 53）
@@ -228,6 +230,14 @@ def build_page_scene(
     )
     base = QGraphicsPixmapItem(QPixmap.fromImage(pil_to_qimage(pil_img)))
     base.setZValue(0)
+    # 高 dpi 底圖縮回 scene 尺寸（Sprint 133）：畫面上像素更密而 scene 座標不變，
+    # 故互動層字格幾何零改動。平滑轉換讓非整數倍縮放不出硬鋸齒。
+    base.setTransformationMode(Qt.SmoothTransformation)
+    if base_dpi != dpi:
+        base.setScale(dpi / base_dpi)
+    # data(1)＝底圖標記（畫質升級時據此找回該頁底圖）。**刻意不用 data(0)**：
+    # 那是互動層的字格鍵，底圖帶了就會被 _cell_item_at 當成字格命中。
+    base.setData(1, page.number)
     base.setPos(x_offset, 0.0)  # 對頁右頁整頁右移（Sprint 129）；預設 0.0＝不動
     scene.addItem(base)
     items: list = []

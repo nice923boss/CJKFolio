@@ -68,6 +68,10 @@ from editor.canvas import (  # noqa: E402
     resolve_hit,
     spread_pages,
 )
+from editor.canvas_quality import (  # noqa: E402
+    CANVAS_DPI,
+    CanvasQualityMixin,
+)
 from editor.canvas_view import CanvasView  # noqa: E402
 from editor.file_actions import FileActionsMixin  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
@@ -86,7 +90,8 @@ DPI = 150
 AUTHOR = "製作者：黃政文"
 
 
-class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
+class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
+                   PreflightActionsMixin,
                    ExportActionsMixin, ImageActionsMixin, ImportActionsMixin,
                    EditActionsMixin, FindActionsMixin, InfoActionsMixin,
                    NavActionsMixin, MasterActionsMixin, BookActionsMixin,
@@ -314,6 +319,7 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self.menuBar().addMenu("說明").addAction(help_action)
 
         self._init_nav()  # 頁面面板首輪同步＋縮圖 debounce 計時器（Sprint 125）
+        self._init_quality()  # 底圖畫質 debounce 計時器（Sprint 133）
         self._init_file_state()  # 存檔基準＝開檔當下引用（Sprint 126 髒判定）
 
     def _open_library(self, directory=None) -> None:
@@ -473,6 +479,10 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self._update_window_title()  # 匯入／復原後標題跟隨現行文件名（Sprint 123）
         if hasattr(self, "_thumb_timer"):  # 頁面面板與指示器跟隨（Sprint 125）
             self._sync_page_panel()
+        # 新 scene 的底圖是基準 dpi（reflow 要快，Spike 24：150dpi 34ms／450dpi
+        # 162ms），停手後再由背景補畫質（漸進式細化，Sprint 133）
+        self._quality_dpi = CANVAS_DPI
+        self._schedule_quality()
 
     def _update_window_title(self) -> None:
         """視窗標題＝產品名＋現行文件名＋未存標記 *（init 與 _rebuild 呼叫）。"""
@@ -480,8 +490,13 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         self.setWindowTitle(f"CJKFolio 編輯器：{self.doc.title or '未命名'}{dirty}")
 
     def _on_zoom_changed(self, factor: float) -> None:
-        """CanvasView 縮放回呼：狀態列百分比跟隨（100%＝150dpi 像素 1:1）。"""
+        """CanvasView 縮放回呼：狀態列百分比跟隨，並排程底圖畫質升級。
+
+        放大時 150dpi 底圖會被拉伸而糊（Spike 24 對照圖），故縮放停止後以足夠
+        的解析度重渲染底圖（Sprint 133）；scene 座標與互動層不受影響。
+        """
         self._zoom_label.setText(f"{round(factor * 100)}%")
+        self._schedule_quality()
 
     def showEvent(self, event) -> None:
         """首次顯示整頁 fit（Sprint 124）：開窗先看得到整張紙面，再自行縮放。"""
@@ -497,6 +512,7 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             event.ignore()  # 取消關閉：視窗與執行緒照常活著
             return
         self._shutdown_thumbnails()
+        self._shutdown_quality()  # 底圖畫質執行緒同理（Sprint 133）
         super().closeEvent(event)
 
     def _on_pick(self, item, scene_pos=None) -> None:
