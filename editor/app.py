@@ -10,6 +10,8 @@
   檢視面（Sprint 124）：Ctrl+滾輪游標錨縮放、Shift+滾輪水平捲動、中鍵／空白鍵
   拖曳平移、「檢視」選單（放大縮小／100%／符合頁面／符合寬度）＋狀態列縮放
   百分比；開窗整頁 fit、重繪保留縮放與視口中心。
+  導航面（Sprint 125）：左側「頁面」縮圖面板（背景渲染、點選跳頁、目前頁高
+  亮）、「版面」選單（上一頁／下一頁／首末頁／Ctrl+J 跳頁）＋狀態列「頁 N／M」。
 
 誠實範圍（honest-planning R3）：
   [實作]（離屏 smoke_check.py 已驗）＝上列全部功能邏輯。
@@ -63,6 +65,8 @@ from editor.canvas import (  # noqa: E402
 from editor.canvas_view import CanvasView  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.import_actions import ImportActionsMixin  # noqa: E402
+from editor.nav_actions import NavActionsMixin  # noqa: E402
+from editor.page_panel import PagePanel  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
 from editor.style_panel import StylePanel  # noqa: E402
@@ -75,7 +79,7 @@ AUTHOR = "製作者：黃政文"
 
 class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
                    ImageActionsMixin, ImportActionsMixin, EditActionsMixin,
-                   QMainWindow):
+                   NavActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         # 編輯狀態單一事實來源＝EditSession（Sprint 61 接線；doc／layout／template
@@ -130,6 +134,10 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         box.addWidget(self._ime)
         self.setCentralWidget(central)
 
+        self._page_label = QLabel("頁 −／−")  # 頁碼指示器（Sprint 125，_sync_page_panel 更新）
+        self._page_label.setStyleSheet("color:#666; font-size:11px; padding:0 8px;")
+        self.statusBar().addPermanentWidget(self._page_label)
+
         self._zoom_label = QLabel("100%")  # 縮放百分比（on_zoom 回呼更新，Sprint 124）
         self._zoom_label.setStyleSheet("color:#666; font-size:11px; padding:0 8px;")
         self.statusBar().addPermanentWidget(self._zoom_label)
@@ -153,6 +161,24 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
 
+        layout_menu = self.menuBar().addMenu("版面")  # 翻頁可見入口（Sprint 125）
+        for label, keys, handler in (
+            ("上一頁", ("PgUp",), lambda: self._turn_page(-1)),
+            ("下一頁", ("PgDown",), lambda: self._turn_page(1)),
+            ("第一頁", ("Ctrl+Home",), lambda: self._goto_page(1)),
+            ("最後一頁", ("Ctrl+End",),
+             lambda: self._goto_page(len(self.layout_result.pages))),
+        ):  # QAction 攔下快捷鍵＝輸入欄 focus 時也可翻頁（view 鍵盤路徑為備援）
+            action = QAction(label, self)
+            action.setShortcuts([QKeySequence(k) for k in keys])
+            action.triggered.connect(handler)
+            layout_menu.addAction(action)
+        layout_menu.addSeparator()
+        goto_action = QAction("跳至頁碼…", self)
+        goto_action.setShortcut(QKeySequence("Ctrl+J"))  # InDesign 慣例
+        goto_action.triggered.connect(self._prompt_goto_page)
+        layout_menu.addAction(goto_action)
+
         view_menu = self.menuBar().addMenu("檢視")
         for label, keys, handler in (
             ("放大", ("Ctrl+=", "Ctrl++"), self.view.zoom_in),
@@ -165,6 +191,11 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             action.setShortcuts([QKeySequence(k) for k in keys])
             action.triggered.connect(handler)
             view_menu.addAction(action)
+
+        page_dock = QDockWidget("頁面", self)  # 縮圖面板（Sprint 125）
+        self._page_panel = PagePanel(self._goto_page)
+        page_dock.setWidget(self._page_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, page_dock)
 
         dock = QDockWidget("樣式", self)
         self._style_panel = StylePanel(
@@ -225,6 +256,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         help_action = QAction("Owner IME 實測說明", self)
         help_action.triggered.connect(self._show_help)
         self.menuBar().addMenu("說明").addAction(help_action)
+
+        self._init_nav()  # 頁面面板首輪同步＋縮圖 debounce 計時器（Sprint 125）
 
     def _open_library(self, directory=None) -> None:
         """模版庫對話框（§4.3；v1 目錄＝內建 templates/，使用者庫目錄慣例後續）。"""
@@ -339,6 +372,8 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         if hasattr(self, "_style_panel"):  # 面板清單同步現行模版（Sprint 71）
             self._style_panel.refresh(self.session.template)
         self._update_window_title()  # 匯入／復原後標題跟隨現行文件名（Sprint 123）
+        if hasattr(self, "_thumb_timer"):  # 頁面面板與指示器跟隨（Sprint 125）
+            self._sync_page_panel()
 
     def _update_window_title(self) -> None:
         """視窗標題＝產品名＋現行文件名（init 與 _rebuild 呼叫）。"""
@@ -354,6 +389,11 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
         if not self._did_fit_on_show:
             self._did_fit_on_show = True
             QTimer.singleShot(0, self.view.fit_page)  # 佈局落定後再量視口
+
+    def closeEvent(self, event) -> None:
+        """關窗收攏背景縮圖執行緒（Sprint 125：運行中被銷毀會 abort 進程）。"""
+        self._shutdown_thumbnails()
+        super().closeEvent(event)
 
     def _on_pick(self, item, scene_pos=None) -> None:
         if self.page is None:  # 空紙面無字格；點擊不動作（Sprint 123）
@@ -590,7 +630,10 @@ class EditorWindow(StyleActionsMixin, AiActionsMixin, PreflightActionsMixin,
             "     （此為 §5.2 選 Qt 的關鍵理由）。\n"
             "  10. 縮放平移：Ctrl+滾輪（游標處放大縮小）、Shift+滾輪左右捲動、\n"
             "     中鍵或按住空白鍵拖曳平移；Ctrl+0 整頁、Ctrl+1 100%、Ctrl+2 符合\n"
-            "     寬度，確認縮放錨點與拖曳手感、狀態列百分比跟隨。\n\n"
+            "     寬度，確認縮放錨點與拖曳手感、狀態列百分比跟隨。\n"
+            "  11. 頁面導航：左側「頁面」面板點縮圖跳頁（目前頁藍色高亮）、\n"
+            "     「版面」選單上一頁／下一頁／第一頁／最後一頁、Ctrl+J 跳至頁碼，\n"
+            "     確認縮圖清晰可辨、點選跳頁順手、狀態列「頁 N／M」跟隨。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（現以下方輸入欄＋Enter 代替）、\n"
             "  跨段選取套段落樣式、框內拖曳選取。",

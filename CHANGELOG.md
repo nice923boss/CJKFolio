@@ -2,6 +2,29 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.119.0（2026-07-24，Sprint 125）頁面導航與縮圖面板：頁碼指示、版面選單、點縮圖跳頁
+
+### 為什麼做這件事
+
+Owner 真視窗回饋：載入《成名之路》真稿（128 頁）只看到第一頁，找不到任何縮圖或翻頁功能。實況是 PgUp／PgDn 翻頁自 Sprint 62 存在但介面零入口（無頁碼顯示、無選單項、無縮圖）＝可發現性為零，功能在但看不見等於沒有。據此同輪以出版從業人員視角全面盤點編輯器工作流缺口（儲存、匯出 PDF、尋找取代、對頁檢視等，見 PLAN Phase 5「編輯器出版工作流補完系列」排程 Sprint 125〜131），本版先補 Owner 當下痛點：頁面導航三件組＋縮圖面板。
+
+### 變更
+
+- [實作] `editor/app.py` 狀態列常駐**頁碼指示器**「頁 N／M」（空白文件顯示「頁 −／−」）；「版面」選單（「編輯」之後）：上一頁 `PgUp`、下一頁 `PgDn`、第一頁 `Ctrl+Home`、最後一頁 `Ctrl+End`、跳至頁碼… `Ctrl+J`（InDesign 慣例）。QAction 攔下快捷鍵＝下方輸入欄 focus 時也能翻頁（過去只有畫布 focus 才吃 PgUp／PgDn），view 鍵盤路徑轉備援。
+- [實作] `editor/page_panel.py` 左側「頁面」dock **縮圖面板**：IconMode 縮圖上頁號下、點縮圖即跳該頁（itemClicked 真點擊才觸發，程式面高亮不遞迴）、目前頁藍色高亮跟隨每次重繪；`sizeHint` 覆寫單欄寬 140px（一手實錘：QListView 預設 sizeHint 約 256px，會把 760px 視窗的畫布壓到 164px 不可用，smoke C26 抓到）。
+- [實作] `editor/nav_actions.py` `NavActionsMixin`（分檔慣例控 app.py 行數）：跳頁核心 `_goto_page`（clamp、同頁短路、換頁清游標）＋跳頁對話框＋面板與指示器同步＋**背景縮圖渲染調度**：`ThumbnailThread`（QThread，preflight 慣例）收不可變快照、自建 `PageRenderer` 逐頁 18dpi 渲染逐頁上牆（QPixmap 只能 GUI 執行緒建故 emit QImage）；世代守門（過期輪全丟棄）＋debounce 400ms（連續編輯收斂一輪）＋單執行緒接力（輪中改動 cancel＋pending 補渲染）；翻頁不重排不觸發；缺圖頁無圖渲染並計數據實提示。執行緒安全論證：render.py 全狀態 per-instance、全庫無模組級快取（grep 一手）＋preflight 背景匯出先例。
+- [實作] 退出安全：`closeEvent` 與 smoke 收尾統一 `_shutdown_thumbnails`（cancel＋wait；QThread 運行中被銷毀會 abort 進程）。
+- [實作] smoke **C27**（`editor/smoke_nav.py`）：指示器、版面選單五項與快捷鍵、跳頁 clamp／短路／清游標、面板真點擊訊號跳頁、首輪縮圖等 all_done＋像素驗上牆、編輯後世代遞增、翻頁不觸發、空白 0 項不炸；C26 視窗等寬跟隨新左 dock（760→900）。1245 綠不變、smoke C1〜C27 全過。
+- [Doc] `手動測試指南.md` 補「頁面導航」操作列與 #80 待驗項；PLAN Phase 5 新增「編輯器出版工作流補完系列」盤點小節（12 項缺口、既有地基、Sprint 125〜131 排程）與 §10 排程決議。
+
+### 效能實測（R5 真實素材：《成名之路》128 頁，local/ 不入 repo）
+
+- 開檔 0.15 秒；首輪縮圖全書背景一輪 **1.45 秒（每頁 11 毫秒）**、缺圖 0 頁、期間 UI 不凍；跳頁 64 高亮與指示器跟隨正確。offscreen grab 兩張親 Read：縮圖上牆可辨頁面紋理、畫布頁 64 書眉＋頁碼右下（偶數頁＝右頁側別互證）。
+
+### 待 Owner 真實素材驗收（GAPS #80，承 #19 批次）
+
+- 縮圖 18dpi 辨識度、面板點選手感、Ctrl+J 跳頁對話框互動；面板進階操作（右鍵、主版指派、頁面排序）與對頁檢視依系列排程 Sprint 129／130。
+
 ## v0.118.0（2026-07-24，Sprint 124）畫布縮放與平移：Ctrl+滾輪、檢視選單、整頁 fit
 
 ### 為什麼做這件事

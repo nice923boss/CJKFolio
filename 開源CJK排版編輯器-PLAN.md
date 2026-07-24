@@ -469,6 +469,33 @@ CJKFolio/
 - **進度（2026-07-24 Sprint 123）**：編輯器起始體驗收口 [實作]（Owner 真視窗驗收回饋開的插隊項：標題殘留「Phase 2 骨架」、開啟預載個案樣張非從零開始、操作引導不明）。**空白起始**：新增 `editor/blank_doc.py` 的 `blank_document(template, template_id)`（單一空段掛模版 `md_mapping["paragraph"]` 與 `default_master`，走 `document_from_dict` 完整驗證，Qt 無關同 import_core 慣例）；一手 probe 發現**引擎對空段排 0 頁**（天真起始直接 IndexError），處置取「空紙面＋輸入即成頁」不動排版核心：`EditorWindow(None)` 時 `self.page = None`，`_make_scene` 畫 148×210mm 空紙面、`_rebuild` 與 `_follow_body_address` 容 0 頁（undo 回到空紙面同路徑）、空白時翻頁與點擊據實提示不炸。**標題跟隨**：`_update_window_title()` 掛 `_rebuild`，「CJKFolio 編輯器：未命名／現行文件名」，匯入與復原自動跟隨；「Phase 2 骨架」字樣自標題、docstring、說明對話框三處清除（文案同步現況：C1〜C25 離屏已驗、真視窗待 Owner 清單、[Shell] 畫布內嵌 IME 現以輸入欄代替）。**輸入欄第一字**：游標未選且空白文件時 Enter 直接落 `DocCursor(0, 0)`，第二字起沿游標接續不需點字格；`_draw_highlight` 加 `ensureVisible` 視口跟隨（真視窗回饋間接暴露的既有 UX 缺口：直排第一行在紙面右緣，小視窗下插入與點選後高亮可能在視口外，既有高亮路徑從不捲動）。**行數紀律**：本輪加防禦後 `editor/app.py` 803 行超 800 上限（hook 抓到），依 Sprint 78 慣例拆「編輯輸入回路域」成 `editor/edit_actions.py` 的 `EditActionsMixin`（IME 預覽與提交、框插入、body／框位址跟隨、undo／redo、鍵盤刪字分段翻頁，251 行），app.py 收至 571 行，孤兒 import（FrameCursor／FrameEditResult）清除，行號手術經錨點斷言保護。**測試**：`tests/test_blank_start.py` +3（RED 先行；空白文件結構、空段 0 頁前提、第一次插入與 undo 回空）＋smoke **C25**（未命名標題、空紙面、空白翻頁據實提示、輸入欄第一字即成頁、第二字接續、兩步 undo 回空紙面、匯入後標題跟文件名）。**R5 親 Read 兩張 offscreen grab**：空白起始（左畫布乾淨空紙面、右樣式面板、下輸入欄與引導列）與第一字後（畫布自動捲至紙面右上，「測」思源宋體渲染、紅框黃底高亮跟隨、輸入欄已清空）；grab 的 UI 文字為豆腐字＝offscreen 缺 UI 字型的驗證方法限制（畫布內容層用內建字型不受影響，真視窗 UI 中文正常有 Owner 截圖為證）。全庫 1242 → **1245 綠**、py_compile EXIT=0、smoke C1〜C25 0 退步。
 - **進度（2026-07-24 Sprint 124）**：畫布縮放與平移 [實作]（Owner 真視窗回饋開的插隊項：預覽不能放大看對齊、縮小看整頁、左右移動，操作不便）。**縮放**：`CanvasView` 加 Ctrl+滾輪游標錨縮放（每格 1.25 倍、delta/120 指數平滑、clamp 10%〜800%，100%＝底圖 150dpi 像素 1:1）＋`set_zoom`／`zoom_in`／`zoom_out`／`fit_page`／`fit_width` API，倍率變動一律經 `on_zoom` 回報（app 狀態列常駐百分比）。**平移**：Shift+滾輪水平捲動（明確實作不賴平台，滾輪向下＝往右）、素滾輪垂直照舊、中鍵拖曳與空白鍵＋左鍵拖曳手形平移（InDesign 語意；平移吃掉按下事件，不誤觸點選／選取／置圖拖曳）。**「檢視」選單**（編輯之後）：放大 `Ctrl+=`／`Ctrl++`、縮小 `Ctrl+-`、100% `Ctrl+1`、符合頁面 `Ctrl+0`、符合寬度 `Ctrl+2`（Acrobat／InDesign 慣例）。**兩個體驗補洞**：開窗 showEvent 首次顯示整頁 fit（`QTimer.singleShot(0)` 佈局落定後量視口；直排首行在紙面右緣，舊 1:1 開窗常看不到第一行）；`_rebuild` 記回視口中心（縮放屬 view transform 本就存活，中心不記＝每打一字 reflow 畫面跳回原點，放大編輯不可用）。`fit_width` 先預測縮放後溢高再預留垂直捲軸寬，避免貼齊後冒出水平捲軸。**smoke C26**（`editor/smoke_view.py` 分檔，行數紀律慣例）：整頁 fit（頁完整入視口＋倍率區間＋狀態列同步）、選單五項與快捷鍵、clamp 與互逆、真 QWheelEvent 三態（Ctrl 縮放／Shift 水平／素滾輪垂直不被吃掉）、`_rebuild` 保留縮放與中心（漂移 <6 場景 px）、真 QMouseEvent 中鍵與空白鍵平移（捲軸位移逐像素斷言、游標與選取不動）、符合寬度置中不溢出。**一手發現**：PySide6 `QAction.menu()` 回的 wrapper 指向已失效物件（shiboken `already deleted`）而選單本體存活（`findChildren(QMenu)` 可取得且五項俱在），驗證碼一律走 findChildren。R5 離屏 grab 兩張親 Read（整頁 fit 48% 頁完整可見；200% 局部放大、捲軸 thumb 縮小置中＝視口中心維持）。全庫 **1245 綠**（editor 依 Sprint 17 決議走 smoke 不入 pytest 基線）、py_compile EXIT=0、smoke C1〜C26 全過（C1〜C25 0 退步）。**未完（GAPS #79）**：縮放錨點與拖曳手感、觸控板慣性屬真視窗項，併 #19／#23 批次。
 
+#### 編輯器出版工作流補完系列（2026-07-24 盤點，Sprint 125 起）
+
+**起因（Owner 真視窗回饋）**：載入《成名之路》真稿（128 頁）後畫布只顯示第一頁。PgUp／PgDn 翻頁自 Sprint 62 存在，但介面上無任何可見入口（無頁碼指示、無選單項、無縮圖），Owner 據此判斷「翻頁未實裝」。此為可發現性缺口：功能在但看不見，等於沒有。據此以出版社從業人員日常工作流（對標 InDesign）全面盤點，缺的不只翻頁入口，開列如下。
+
+**盤點（R1 證據＝既有地基逐項 grep／Read 實查；R2 判定＝全數為既有核心的介面接線、無新外部依賴、無需新 spike；效能風險逐 Sprint 以 pre-mortem 與實測數字守門）：**
+
+| 序 | 缺口 | InDesign 對應 | 既有地基（A 級實查） | 排程 |
+| --- | --- | --- | --- | --- |
+| 甲1 | 頁碼指示器與跳頁：狀態列無「頁 N／M」常駐顯示、無跳頁輸入 | 左下頁碼框＋Ctrl+J | `_turn_page`（edit_actions.py:182）換頁邏輯已驗（smoke C4） | Sprint 125 |
+| 甲2 | 翻頁可見入口：選單與按鈕層零入口，PgUp／PgDn 不可發現 | 版面選單翻頁四式 | 同甲1 | Sprint 125 |
+| 甲3 | 頁面縮圖面板：無縮圖、無點選跳頁、無目前頁高亮（GAPS #33 乙既登記「頁面面板」） | 頁面面板 | `PageRenderer.render_page`（render.py:465）任意 DPI 逐頁渲染；背景執行緒先例（preflight_actions.py:34） | Sprint 125 |
+| 乙1 | 儲存／另存：編輯成果無法保存，選單無任何儲存入口（現況＝改完關窗即遺失） | Ctrl+S | `save_document`（document.py:378）已存在，模版另存同型已驗（Sprint 74） | Sprint 126 |
+| 乙2 | 開啟／新建：開檔僅命令列參數，選單無入口 | Ctrl+O／Ctrl+N | `load_document`＋`blank_document`（Sprint 123）皆已驗 | Sprint 126 |
+| 乙3 | 髒標記與關閉確認：未存改動關窗不提醒 | 標題 * ＋關閉詢問 | `EditSession` 歷史可判有無未存改動 | Sprint 126 |
+| 乙4 | 匯出 PDF 介面：印前成品出口只有 CLI；preflight 內部有匯出臨時檔，使用者拿不到成品 | 檔案＞轉存 | `export_pdf` 全選項已驗（X-1a／X-4、ICC、裁切標記、first_page） | Sprint 127 |
+| 丙1 | 尋找／取代：3.4 萬字真稿無檢索手段 | Ctrl+F | `doc.paragraphs` 純文字層＋`session.replace_span`（Sprint 65）已驗 | Sprint 128 |
+| 丙2 | 字數統計與文件資訊：總字數、段數、頁數、樣式用量無處可看 | 資訊面板 | doc 與 layout_result 皆在記憶體，純呈現 | Sprint 128 |
+| 甲4 | 對頁檢視：右翻書對開（偶右奇左，Sprint 22 側別）無對頁模式，跨頁節奏無法目視 | 對頁顯示 | render 側別與鏡像兩後端已驗；畫布兩頁併排＋互動層座標偏移 | Sprint 129 |
+| 丁1 | 主版指派介面：節式主版核心自 Sprint 51 在，UI 無入口，只能手寫 JSON | 頁面面板套用主版 | `page.master` 逐頁解析兩後端同源 | Sprint 130 |
+| 丁2 | 書冊管理介面：多章組裝與自動目錄只有 CLI | 書冊功能 | `assemble_book_with_toc`（Sprint 85）已驗 | Sprint 131 |
+
+**明確不做（範圍邊界）**：印刷廠打樣校色（依賴 Owner 與印廠）、認證級 preflight（#18）、內嵌 IME 即點即打（#33 乙）不在本系列；本系列只補「介面入口與工作流」，不動排版核心與輸出鏈。
+
+**排程原則**：先可發現性（甲1〜3＝Owner 當下痛點），再資料安全（乙1〜3＝成果可保存），再成品出口（乙4），再效率與檢視（丙、甲4），再進階（丁）。執行中可依 Owner 回饋插隊調整；每 Sprint 開工前逐項過 R6 pre-mortem。
+
+- **進度（2026-07-24 Sprint 125）**：頁面導航與縮圖面板 [實作]（系列首項甲1〜甲3；關可發現性缺口，開 GAPS #80）。**三件組**：狀態列常駐「頁 N／M」頁碼指示器；「版面」選單（編輯之後）上一頁 PgUp／下一頁 PgDn／第一頁 Ctrl+Home／最後一頁 Ctrl+End／跳至頁碼… Ctrl+J（InDesign 慣例；QAction 攔下快捷鍵＝輸入欄 focus 時也可翻頁，view 鍵盤路徑轉備援）；跳頁對話框限定 1〜總頁數。**頁面面板**（新模組 editor/page_panel.py＋editor/nav_actions.py，同 style_panel／style_actions 分檔慣例）：左側 dock 縮圖列表（IconMode 縮圖上頁號下；sizeHint 覆寫單欄寬 140px，一手實錘 QListView 預設 sizeHint 約 256px 會把 760px 視窗的畫布壓到 164px 不可用、C26 抓到）、點選跳頁（itemClicked 真點擊才觸發，程式面 set_current 不遞迴）、目前頁高亮跟隨 _rebuild。**背景縮圖渲染**：ThumbnailThread（QThread，preflight_actions 慣例）收 doc／template／layout 不可變快照，自建 PageRenderer（render.py 全狀態 per-instance、全庫無模組級快取＝與主執行緒並行安全，一手 grep 論證＋preflight 背景匯出先例）逐頁 18dpi 渲染、逐頁 emit QImage（QPixmap 只能 GUI 執行緒建）；世代守門（過期輪的 page_ready／all_done 一律丟棄）＋debounce 400ms（連續編輯收斂成一輪）＋單執行緒接力（輪中再改動則 cancel＋pending，finished 後補渲染）；翻頁不重排不觸發（layout_result is 同一性比對，保留引用防 id 重用）；缺圖頁無圖渲染並計數（all_done 帶計數 statusBar 據實，不炸不沉默）。**退出安全**：closeEvent 與 smoke 收尾統一 _shutdown_thumbnails（cancel＋wait；QThread 運行中被銷毀會 abort 進程）。R2 判定：無新外部依賴（復用 render 管線與 Qt 既有），無需新 spike；R1 證據＝render per-instance 結構實查（A 級）＋效能一手實測（A 級）；R6 pre-mortem 三風險（全書渲染凍 UI／執行緒共享狀態崩潰／QAction 攔鍵破壞既有鍵盤路徑）分別以背景執行緒＋實測數字、per-instance 論證＋先例、C1〜C26 全回歸解消。**smoke C27**（editor/smoke_nav.py 分檔）：指示器初值與跟隨、版面選單五項與快捷鍵（findChildren，C26 教訓）、_goto_page clamp／同頁短路／清游標、面板 itemClicked 真訊號跳頁、首輪縮圖等 all_done＋像素驗上牆（角落紙白非占位灰 #e6e6e6）、編輯後 debounce 起且世代遞增、翻頁不觸發重渲染、空白文件 0 項據實提示；smoke_check main 尾統一收攏 topLevelWidgets 縮圖執行緒。**R5 真實素材（《成名之路》128 頁，local/ 不入 repo）**：開檔 0.15s、首輪縮圖全書 1.45s（每頁 11ms、背景不凍 UI、缺圖 0 頁）、跳頁 64 高亮與指示器跟隨；offscreen grab 兩張親 Read：載入時面板首項高亮＋其餘佔位灰、完成後縮圖上牆可辨頁面紋理、畫布頁 64 書眉「成名之路」＋頁碼 64 右下（偶數頁＝右頁，Sprint 22 側別互證）；UI 豆腐字＝offscreen 缺 UI 字型的既知驗證限制（C25 記錄，真視窗正常）。全庫 1245 綠（editor 走 smoke 不入 pytest 基線）、py_compile（含 editor）EXIT_CODE=0、smoke C1〜C27 全過（C26 等寬跟隨新左 dock：視窗 760→900）。行數：app.py 649／page_panel 124／nav_actions 134／smoke_nav 95，皆規範帶。**未完（GAPS #80）**：面板進階操作（右鍵選單、主版指派、頁面排序）與對頁檢視依系列排程 Sprint 129／130；跳頁 modal 互動、縮圖辨識度、點選手感待 Owner（#19 批次）；編輯期間縮圖秒級過時窗（漸進更新設計取捨）。
+
 ## 7. Pre-mortem（機率 >30% 的最高風險與對策）
 
 | 風險 | 機率 | 早期訊號 | 對策／放棄條件 |
@@ -717,6 +744,7 @@ CJKFolio/
 | 2026-07-24（Sprint 122，執行工程師代決，非紅線） | **《成名之路》為 Owner 私人稿件，處理方式比照紅線素材：稿件與全部產物只存 `local/manual-test/`（`.gitignore` 內），repo 與 PLAN／CHANGELOG 只記統計數據（段數、頁數、耗時）與缺陷定位所需的最短引文（超容忍行行首 20 字）。**未經 Owner 明示，不將其內容任何段落收進 repo 檔案（含測試 fixture；`tests/test_launcher.py` 只驗 repo 內產物，不引稿件） |
 | 2026-07-24（Sprint 123，執行工程師代決，非紅線） | **空白起始取「編輯器層空紙面＋輸入即成頁」，不取「改排版引擎讓空段佔一行」。**一手 probe：引擎對空字串段排 0 行 0 頁，這對 txt 匯入語意是正確行為（空行切段本就不產空段），為起始體驗動核心會波及 CLI 兩鏈與所有頁數統計；編輯器層容 `page None`（空紙面）即可，undo 回空走同一路徑，成本小且核心 0 風險。連帶取捨：空白文件的「未命名」不落地成檔案，`_doc_path` 僅取 parent 當置入圖與 preflight 的相對基準 |
 | 2026-07-24（Sprint 123，執行工程師代決，非紅線） | **app.py 超行數上限的拆分取「編輯輸入回路域」整段遷出（EditActionsMixin），不取零散裁剪。**同 Sprint 78 StyleActionsMixin 慣例；該域（IME 提交、位址跟隨、undo／redo、鍵盤編輯）內聚且與本輪空白起始改動高度重疊，遷出後 app.py 571 行回到規範帶。行號手術以錨點斷言保護（錯位即炸不靜默錯刪） |
+| 2026-07-24（Sprint 125 前，執行工程師代決，非紅線） | **Owner 回饋「載入真稿只見第一頁、無縮圖無翻頁」開出版工作流補完系列（Phase 5 新小節，Sprint 125〜131）。**盤點定案三件事：(1) 範圍＝介面入口與工作流接線，不動排版核心與輸出鏈（全數復用既有已驗核心，R2 無需新 spike）；(2) 排序＝可發現性（頁碼、翻頁入口、縮圖）→ 資料安全（儲存）→ 成品出口（匯出 PDF）→ 效率（尋找取代、統計）→ 檢視與進階（對頁、主版、書冊），理由是 Owner 當下痛點在前、資料遺失風險其次、其餘依日常使用頻率；(3) 縮圖面板效能取「低 DPI＋背景執行緒逐頁渲染」（preflight 先例），不做同步全渲染（128 頁真稿會凍 UI），實測數字入 Sprint 紀錄 |
 
 ## 11. 證據附錄（關鍵引用）
 

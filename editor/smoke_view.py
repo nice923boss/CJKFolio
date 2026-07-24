@@ -16,7 +16,7 @@ from editor.canvas_view import ZOOM_MAX, ZOOM_MIN, ZOOM_STEP
 def check_view(EditorWindow, doc_path) -> None:
     app = QApplication.instance()
     win = EditorWindow(str(doc_path))
-    win.resize(760, 900)
+    win.resize(900, 900)  # Sprint 125 起左側頁面 dock（約 140px）常駐，等寬加回
     win.show()
     app.processEvents()  # 佈局落定＋showEvent 排入的初始整頁 fit 於此執行
     view = win.view
