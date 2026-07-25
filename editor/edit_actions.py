@@ -133,12 +133,23 @@ class EditActionsMixin:
             self._draw_highlight(self._item_by_key[self.cursor].rect())
 
     def _on_undo(self) -> None:
-        self._apply_history(self.session.undo(), "復原")
+        probe = self._history_probe()  # 先取樣：undo() 一跑 self.doc 就換人了
+        self._apply_history(self.session.undo(), "復原", probe)
 
     def _on_redo(self) -> None:
-        self._apply_history(self.session.redo(), "重做")
+        probe = self._history_probe()
+        self._apply_history(self.session.redo(), "重做", probe)
 
-    def _apply_history(self, res, verb: str) -> None:
+    def _history_probe(self) -> tuple:
+        """undo／redo 之前的三個文件切片，用來判斷這一步動的是內文還是框／圖。
+
+        比的是身分（is）不是內容：編輯層一律以 replace() 產生新文件，沒動到的欄位
+        會沿用同一個 tuple 物件，故身分不變＝這一步確實沒碰它，也不會把「兩次編輯
+        剛好排出相同內容」誤判成沒動。
+        """
+        return (self.doc.paragraphs, self.doc.text_frames, self.doc.images)
+
+    def _apply_history(self, res, verb: str, probe=None) -> None:
         """undo／redo 共用：依還原態型別（body／框）跟隨游標並重繪（Sprint 61）。"""
         if res is None:
             self.statusBar().showMessage(f"無可{verb}")
@@ -147,6 +158,16 @@ class EditActionsMixin:
             self._follow_frame_address(res)
             self.statusBar().showMessage(
                 f"已{verb} → 框{res.cursor.source_idx} 字位{res.cursor.caret}")
+            return
+        paras, frames, images = probe or (None, None, None)
+        if paras is self.doc.paragraphs and (frames is not self.doc.text_frames
+                                             or images is not self.doc.images):
+            # 整框或置入圖的移動／縮放／增刪（Sprint 136）：body 游標並未參與這一步，
+            # 跟著它的落點跳頁會把正在排封面的人丟到內文頁、框選取也一併失蹤。
+            self.cursor = None       # 版面可能因繞排重排，舊字格座標不再可信
+            self.frame_cursor = None
+            self._rebuild()          # 停在本頁重畫（框選取由 _rebuild 夾界後復原）
+            self.statusBar().showMessage(f"已{verb}（這一步動的是框或圖，停在本頁）")
             return
         self._follow_body_address(res)
         self.statusBar().showMessage(
@@ -165,6 +186,9 @@ class EditActionsMixin:
         if (self._image_idx is not None
                 and key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)):
             return self._remove_selected_image()  # 選取圖片時刪除吃圖不吃字
+        if (self._frame_box_idx is not None
+                and key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete)):
+            return self._remove_selected_frame_box()  # 選取整框時刪除吃框（Sprint 136）
         if self.selection is not None:  # 選取中（Sprint 65）：刪除吃整段選取、不分段
             if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
                 return self._delete_selection()
@@ -208,11 +232,15 @@ class EditActionsMixin:
             if start >= end:
                 self.statusBar().showMessage("已在框文末，無後一字可刪")
                 return True
-            try:
-                res = self.session.delete_frame(hit.source_idx, start, end)
-            except ValueError as err:  # 框不可刪空（document@2 不變式）
-                self.statusBar().showMessage(f"無法刪除：{err}")
+            if end - start >= src_len:  # 刪掉的就是全部：整個框一併移除（Sprint 136）
+                # document@2 不留空框，故「刪最後一字」的正解是刪框而非拒絕刪除。
+                # Owner 真視窗回饋：原先在此丟不變式錯誤，封面書名框成了死結。
+                self._remove_text_frame_at(hit.source_idx)
+                self.statusBar().showMessage(
+                    f"已刪框{hit.source_idx}最後一字，整個文字框一併移除"
+                    "（Ctrl+Z 一步回原）")
                 return True
+            res = self.session.delete_frame(hit.source_idx, start, end)
             self._follow_frame_address(res)
             self.statusBar().showMessage(
                 f"已刪框{hit.source_idx} 字位 [{start}, {end})")

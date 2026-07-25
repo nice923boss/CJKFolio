@@ -20,6 +20,9 @@
      （Sprint 87〜112，實作抽於 editor/smoke_preflight.py：本檔逾 800 行上限）
   C19 畫布置圖 UI（Sprint 102，實作抽於 editor/smoke_images.py）：拖放置入、
      拖曳移動、拖角等比縮放、Delete 移除，各一步 undo；缺圖不炸
+  C38 文字框整框增刪移（Sprint 136，實作抽於 editor/smoke_frame_box.py）：框空白
+     處選整框、拖框邊移動與拖角改大小、Delete 與「刪到最後一字」移除整框、新增
+     文字框、滿版圖蓋住書名框時的選單入口與邊帶疊序
   C26 畫布縮放平移（Sprint 124，實作抽於 editor/smoke_view.py）：檢視選單與
      快捷鍵、Ctrl+滾輪／Shift+滾輪、開窗整頁 fit、重繪保留視角、拖曳平移
   C27 頁面導航與縮圖面板（Sprint 125，實作抽於 editor/smoke_nav.py）：頁碼
@@ -54,7 +57,7 @@ from cjkfolio.document import document_from_dict, load_document  # noqa: E402
 from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
-from editor.smoke_ai import check_ai_assign  # noqa: E402
+from editor.smoke_ai import check_ai_assign, check_ai_toc  # noqa: E402
 from editor.smoke_book import check_book
 from editor.smoke_cover import check_cover
 from editor.smoke_quality import check_quality  # noqa: E402
@@ -63,6 +66,7 @@ from editor.smoke_import import check_import  # noqa: E402
 from editor.smoke_file import check_file  # noqa: E402
 from editor.smoke_export import check_export  # noqa: E402
 from editor.smoke_find import check_find  # noqa: E402
+from editor.smoke_frame_box import check_frame_box  # noqa: E402
 from editor.smoke_info import check_info  # noqa: E402
 from editor.smoke_master import check_master  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
@@ -240,7 +244,8 @@ def main() -> int:
         assert fwin.doc.text_frames[0].text == orig_head, "Ctrl+Z 未回退框編輯"
         fwin._on_redo()
         assert fwin.doc.text_frames[0].text == edited_head, "Ctrl+Y 未重做框編輯"
-        body_key = next(k for k in fwin._item_by_key if k and k[0] != "frame")
+        body_key = next(k for k in fwin._item_by_key      # int 首位＝body 字格鍵
+                        if k and isinstance(k[0], int))  # 框類鍵首位一律是字串
         fwin._on_pick(fwin._item_by_key[body_key])
         assert fwin.cursor is not None and fwin.frame_cursor is None, \
             "點 body 字格未互斥清除框游標"
@@ -262,8 +267,7 @@ def main() -> int:
             return QKeyEvent(QEvent.Type.KeyPress, k, Qt.KeyboardModifier.NoModifier)
 
         body_key2 = next(
-            k for k in fwin._item_by_key
-            if k and k[0] != "frame"
+            k for k in fwin._item_by_key if k and isinstance(k[0], int)
             and fwin.page.placed[k[0]].line.cells[k[1]].kind == "cjk")
         fwin._on_pick(fwin._item_by_key[body_key2])
         hit8 = resolve_hit(fwin.doc, fwin.page, *body_key2)
@@ -635,8 +639,9 @@ def main() -> int:
     check_images(EditorWindow, DOC, ROOT)
     check_wrap_ui(EditorWindow, ROOT)
 
-    # C21 AI 指派背景執行緒（抽於 editor/smoke_ai.py，同上）
+    # C21 AI 指派背景執行緒、C37 AI 指派整理目次（抽於 editor/smoke_ai.py，同上）
     check_ai_assign(EditorWindow, DOC)
+    check_ai_toc(EditorWindow, DOC)
 
     # C22 稿件匯入（抽於 editor/smoke_import.py，同上）
     check_import(EditorWindow, DOC, ROOT)
@@ -745,6 +750,9 @@ def main() -> int:
     # C36 預覽畫質（Sprint 133，抽於 editor/smoke_quality.py）
     check_quality(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
 
+    # C38 文字框整框增刪移（Sprint 136，抽於 editor/smoke_frame_box.py）
+    check_frame_box(EditorWindow, ROOT)
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -758,6 +766,7 @@ def main() -> int:
         "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
         "＋preflight 面板＋背景執行緒與快取＋X-4 與 ICC 選取＋字型授權分區＋畫布置圖 UI"
         "＋文繞圖參數 UI（畫布所見即繞排所得）＋AI 指派背景執行緒（段序失效守門）"
+        "＋AI 指派整理目次（條目三欄人工校正／書首生成目次節／頁數等於獨立重算／一步回退）"
         "＋稿件匯入（txt／md／docx 落到現行模版樣式，壞稿不進畫布）"
         "＋行首擠壓互動層字格（首格上緣跟著字形位移、字格相連無死區）"
         "＋空白起始（未命名空紙面、輸入欄第一字即成頁、undo 回空、標題跟文件名）"
@@ -779,6 +788,9 @@ def main() -> int:
         "與內文頁 1 起／封面走右頁而內文側別不翻轉／對頁檢視封面單邊／建與移除可逆）"
         "＋預覽畫質（縮放後背景以足夠解析度重渲染底圖／scene 與互動層幾何零改動／"
         "hit-test 不退步／回 100% 不重渲染／reflow 漸進式細化／對頁兩頁皆升級）"
+        "＋文字框整框增刪移（框空白處選整框而框內仍點得到字／拖框邊移動與拖角改"
+        "大小各一步 undo／Delete 與刪到最後一字皆移除整框／選單新增置於頁面中央／"
+        "滿版圖蓋住書名框時選單選得到且邊帶疊在圖上仍可搬）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

@@ -149,6 +149,99 @@ def _build(book: Book, template, base: Path, first_page: int):
     return final, tuple(items)
 
 
+class TocError(ValueError):
+    """單文件自動目錄生成失敗（Sprint 135）。"""
+
+
+def _body_of(doc: Document, spec):
+    """拆掉文件開頭的既有自動目錄節，回傳 (內文段落列, 內文首節主版)。
+
+    判準：文件首節主版＝spec.master 即視為自動目錄節（本模組生成的節恆如此），
+    整節換掉使「AI 指派 → 生成目錄」可重複執行而不疊加。使用者自己以目錄主版
+    起頭的手寫目錄同樣會被換掉，這是本判準的已知代價（首節主版即為節的身分，
+    不另加「這是系統生成的」旗標去污染 document@2 schema）。
+    """
+    paras = doc.paragraphs
+    if doc.master != spec.master or not paras:
+        return paras, doc.master
+    if paras[0].master not in (None, spec.master):
+        return paras, doc.master
+    for i in range(1, len(paras)):
+        if paras[i].master is not None:
+            return paras[i:], paras[i].master
+    return (), doc.master
+
+
+def document_with_toc(doc: Document, template, *, first_page: int = 1,
+                      spec=None) -> Document:
+    """單份稿件於書首生成自動目錄節，回傳可直接 render／export 的 Document。
+
+    條目來源＝段落自身宣告的 toc_title／toc_level（未宣告層級者視為第 1 層）；
+    層級一律顯式，引擎不從樣式名或字級反推階層（同 book 路徑的紀律）。
+
+    兩趟穩定分頁（無 fixpoint，同 _build）：目錄條目數為先驗定值，且 page_no 是
+    非流排載體（掛段末行、不影響斷行），故 Pass 1 以 page_no=None 的條目占位排一次
+    即定分頁，Pass 2 填書頁號不再動分頁。spec.no_page_levels 宣告的層級不填頁碼
+    （參考書 p002／p003 的部名條目即如此）。
+
+    first_page 須與最終 render／export 的 --first-page 一致，頁碼才對得上。
+    """
+    spec = spec if spec is not None else getattr(template, "auto_toc", None)
+    if spec is None:
+        raise TocError(
+            "模版未宣告 auto_toc，無法生成自動目錄"
+            "（模版需宣告目錄主版與各層條目樣式）")
+    # 置入圖與獨立文字框皆以版面頁號錨定，插入目錄節會把內文流整體往後推而使其
+    # 錯頁，故擋下不沉默產出圖文錯頁的稿件。但封面（版面頁 1，layout 不吃內文流）
+    # 在流之前，目錄節插在流首不動它，故封面上的書名框與置圖放行：編輯器匯入預設
+    # 就建封面（import_actions cover=default_cover），一律擋等於 Owner 的
+    # 「匯入 → AI 指派 → 生成目次」整條路徑撞牆。
+    cover_pages = 1 if doc.cover is not None else 0
+    on_flow = ([f"置入圖 p.{im.page}" for im in doc.images if im.page > cover_pages]
+               + [f"文字框 p.{f.page}" for f in doc.text_frames
+                  if f.page > cover_pages])
+    if on_flow:
+        raise TocError(
+            f"文件有 {len(on_flow)} 個以內文頁號錨定的置入圖或獨立文字框"
+            f"（{'、'.join(on_flow[:3])}{'…' if len(on_flow) > 3 else ''}），"
+            "插入目錄節會使其錯頁；請先移除，或改走書冊自動目錄"
+            "（assemble_book_with_toc）")
+    body, body_master = _body_of(doc, spec)
+    if not body:
+        raise TocError("文件無內文段落，無法生成目錄")
+    entries = [(i, p.toc_title, 1 if p.toc_level is None else p.toc_level)
+               for i, p in enumerate(body) if p.toc_title]
+    if not entries:
+        raise TocError(
+            "沒有任何段落宣告目錄條目（toc_title），無條目可生成目錄")
+
+    toc_paras: list = []
+    if spec.heading:
+        toc_paras.append(Paragraph(text=spec.heading, style=spec.heading_style,
+                                   master=spec.master))
+    for _, title, level in entries:
+        # 無 heading 時首條目承節首標記，其餘承前段（同 _assemble_pass1）
+        head = spec.master if not toc_paras else None
+        toc_paras.append(Paragraph(text=title, style=spec.style_for_level(level),
+                                   master=head, page_no=None))
+    # 內文首段顯式承接原首節主版：目錄節插到它前面後，原本靠 doc.master 隱含
+    # 繼承的段落會改繼承目錄主版（節式主版規則），不明寫即整份內文掛錯主版。
+    body = (replace(body[0], master=body_master), *body[1:])
+
+    pass1 = replace(doc, master=spec.master, paragraphs=(*toc_paras, *body))
+    result = layout_with_wrap(pass1, template, first_page=first_page)
+    offset = len(toc_paras)
+    entry_pos = 1 if spec.heading else 0
+    paras = list(pass1.paragraphs)
+    for k, (body_idx, _title, level) in enumerate(entries):
+        if not spec.wants_page_no(level):
+            continue
+        page = book_number_for(_first_page_of(result, offset + body_idx),
+                               first_page, result.cover_pages)
+        paras[entry_pos + k] = replace(paras[entry_pos + k], page_no=str(page))
+    return replace(pass1, paragraphs=tuple(paras))
+
+
 def assemble_book_with_toc(book: Book, template, base_dir=None, first_page: int = 1) -> Document:
     """組裝書冊並自動填入目錄頁碼，回傳可直接 render／export 的 document@2 Document。
 

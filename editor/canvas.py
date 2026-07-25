@@ -206,6 +206,8 @@ def build_page_scene(
     文字框字格＝("frame", frame_idx, line_idx, cell_idx) → resolve_frame_hit（Sprint 58）；
     置入圖框＝("image", image_idx) z=2、角控制點＝("image-handle", image_idx, 角名)
     z=5（Sprint 102）。圖層 z 高於字格，故圖上按下取到的是圖不是其下的字。
+    整框拖曳區＝("frame-box", frame_idx) z=0.5（Sprint 136），低於字格：框內點在
+    字上得字游標，點在空白處才搬整個框；框的角控制點由選取後的 UI 層另加（z=5）。
 
     images＝該頁已解析的置入圖（page_images 產出），底圖據此繪製；呼叫端自行解析
     是為了讓「圖檔讀不到」的提示留在 UI 層（畫布不代為決定要不要吞錯）。
@@ -259,6 +261,12 @@ def build_page_scene(
         for name, (hx0, hy0, hx1, hy1) in handle_rects(rect).items():
             add_item(hx0 * scale, hy0 * scale, (hx1 - hx0) * scale,
                      (hy1 - hy0) * scale, ("image-handle", idx, name), z=5)
+    # 整框拖曳的命中區（Sprint 136）：**z=0.5 刻意低於字格**，故框內點在字上仍
+    # 得字游標（打字為主要操作，不可被搬框攔胡），點在框內空白處才選中整個框。
+    for placement in frames:
+        fx0, fy0, fx1, fy1 = doc.text_frames[placement.frame_idx].rect
+        add_item(fx0 * scale, fy0 * scale, (fx1 - fx0) * scale,
+                 (fy1 - fy0) * scale, ("frame-box", placement.frame_idx), z=0.5)
     if not vertical:
         # 橫排頁字格互動層未建（iter_cell_rects 為直排 body 幾何）：GAPS #30 (b) 註記
         return items

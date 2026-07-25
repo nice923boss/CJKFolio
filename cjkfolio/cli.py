@@ -157,19 +157,23 @@ def cmd_assign_styles(args) -> int:
         return 2
     candidates = tuple(template.paragraph_styles)
     default_style = template.md_mapping.get("paragraph", next(iter(candidates)))
+    spec = template.auto_toc
     result = suggest_styles(
         [p.text for p in doc.paragraphs], candidates, config,
         default_style=default_style, batch_char_limit=args.batch_chars,
+        toc_levels=spec.level_hints() if spec is not None else (),
     )
     for warning in result.warnings:
         print(f"警告：{warning}")
-    out_doc = apply_suggestions(doc, result.assignments)
+    out_doc = apply_suggestions(doc, result.assignments, result.toc_entries)
     changed = sum(1 for a, b in zip(doc.paragraphs, out_doc.paragraphs) if a.style != b.style)
+    entries = sum(1 for p in out_doc.paragraphs if p.toc_title)
     save_document(out_doc, args.output)
     counts = {}
     for p in out_doc.paragraphs:
         counts[p.style] = counts.get(p.style, 0) + 1
-    print(f"指派完成：{len(doc.paragraphs)} 段（{result.batches} 批）、改派 {changed} 段 → {args.output}")
+    print(f"指派完成：{len(doc.paragraphs)} 段（{result.batches} 批）、改派 {changed} 段、"
+          f"目次條目 {entries} 段 → {args.output}")
     print("樣式分布：" + "、".join(f"{k}×{v}" for k, v in sorted(counts.items())))
     print("定位提醒：AI 建議為初稿，請以編輯器逐段確認與批次改派（§4.4）。")
     return 0

@@ -38,6 +38,7 @@ from .editing import (
     apply_style,
     apply_style_span,
     change_paragraph_styles,
+    change_paragraph_toc_entries,
     locate_cell,
     rename_char_style_refs,
     rename_paragraph_style_refs,
@@ -50,6 +51,12 @@ from .frame_editing import (
     apply_frame_insert,
     locate_frame_cell,
 )
+from .frame_box_editing import (
+    add_text_frame,
+    move_text_frame,
+    remove_text_frame,
+    resize_text_frame,
+)
 from .frames import masters_for_layout, resolve_text_frames
 from .image_editing import (
     move_image,
@@ -59,6 +66,7 @@ from .image_editing import (
     set_image_wrap,
 )
 from .layout import LayoutResult
+from .toc import document_with_toc
 from .wrap import layout_with_wrap
 from .style_editing import (
     add_character_style,
@@ -226,12 +234,27 @@ class EditSession:
             apply_para_style(self._document, self._template, cursor, style)
         )
 
-    def apply_para_styles(self, assignments):
+    def apply_para_styles(self, assignments, toc_entries=None, *,
+                          generate_toc: bool = False):
         """多段批次改派段落樣式入**單一 undo 步**（Sprint 79，§4.4 逐段校正批次
         改派＝AI 建議採用與跨段套段落樣式的共同地基；復用 _commit_pair＝文件變
-        模版不變）。未知樣式名全文重排 KeyError 快速失敗；全數等值 no-op 回 None。"""
-        return self._commit_pair(
-            change_paragraph_styles(self._document, assignments), self._template)
+        模版不變）。未知樣式名全文重排 KeyError 快速失敗；全數等值 no-op 回 None。
+
+        toc_entries／generate_toc（Sprint 135）刻意併在同一個方法裡：AI 指派一次
+        送出的三件事（樣式、目錄條目宣告、生成目錄節）若分三次 session 呼叫就變成
+        三步 undo，違反本方法「單一 undo 步」的對外承諾。三者依序作用於同一份中介
+        文件，最後只 commit 一次。生成失敗（如無條目、模版未宣告 auto_toc）拋
+        TocError（ValueError 子類），此時狀態完全不變、不入歷史。"""
+        document = change_paragraph_styles(self._document, assignments)
+        if toc_entries:
+            document = change_paragraph_toc_entries(document, toc_entries)
+        if generate_toc:
+            document = document_with_toc(document, self._template)
+            if document == self._document:
+                # 目錄重生成恆造新物件（replace），內容相同時還原同一性，
+                # 讓 _commit_pair 的 no-op 判定成立＝不推一步「看不出差別」的 undo
+                document = self._document
+        return self._commit_pair(document, self._template)
 
     def set_section_master(self, para_idx: int, master: Optional[str]):
         """指派節式主版入**單一 undo 步**（Sprint 130 主版指派介面的核心半邊；
@@ -293,6 +316,37 @@ class EditSession:
         return self._commit_pair(
             set_image_wrap(self._document, idx, wrap=wrap, margin_mm=margin_mm),
             self._template)
+
+    def add_text_frame(self, text: str, style: str, page: int, rect):
+        """新增一個獨立文字框（Sprint 136）：與圖片、文字共用同一條 undo 歷史。"""
+        return self._commit_pair(
+            add_text_frame(self._document, self._template, text, style, page, rect),
+            self._template)
+
+    def move_text_frame(self, idx: int, dx_pt: float, dy_pt: float):
+        """平移整個文字框（拖曳放開時提交一步，拖曳途中的預覽不入歷史）。"""
+        return self._commit_pair(
+            move_text_frame(self._document, idx, dx_pt, dy_pt), self._template)
+
+    def resize_text_frame(self, idx: int, rect):
+        """縮放整個文字框（同 move_text_frame，放開才提交）。"""
+        return self._commit_pair(
+            resize_text_frame(self._document, idx, rect), self._template)
+
+    def remove_text_frame(self, idx: int):
+        """移除整個文字框（框內文字一併移除；Ctrl+Z 一步回原）。
+
+        框游標指向被移除框或其右側時一併歸零：移除後右側框全體左移一位，留著舊
+        source_idx 會靜默指到「別的框的同位置字」，使用者看到游標跳到沒點過的地方
+        卻無從得知為何。歸零成內文游標是可解釋的行為，靜默錯位不是。
+        """
+        result = self._commit_pair(
+            remove_text_frame(self._document, idx), self._template)
+        if result is not None and isinstance(self._cursor, FrameCursor) \
+                and self._cursor.source_idx >= idx:
+            self._cursor = DocCursor(0, 0)
+            return self._state_result()
+        return result
 
     def update_para_style(self, name: str, changes: Mapping):
         """改段落樣式定義（§4.3「改樣式即全書套用」，Sprint 67）：全書重排入統一歷史。

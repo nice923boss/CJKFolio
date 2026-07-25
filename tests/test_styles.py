@@ -22,8 +22,8 @@ def template():
 
 
 def test_template_three_layers_complete(template):
-    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＋個案扉頁大標（Sprint 33 拆分）＋個案欄標-黑W7（Sprint 37，slot 0 建模）＋封面書名-明體W9（Sprint 132）＝19、9 字元樣式、8 主版（A〜G＋H-封面）
-    assert len(template.paragraph_styles) == 19
+    # §4.2：15 段落樣式＋圖說-辰宇落雁（Sprint 27，G 圖文版）＋個案扉頁大標（Sprint 33 拆分）＋個案欄標-黑W7（Sprint 37，slot 0 建模）＋封面書名-明體W9（Sprint 132）＋目錄-目次標題（Sprint 135，p002 一手量測）＝20、9 字元樣式、8 主版（A〜G＋H-封面）
+    assert len(template.paragraph_styles) == 20
     assert len(template.character_styles) == 9
     assert len(template.masters) == 8
     assert template.default_cover == "H-封面"  # 封面主版由模版宣告（同 default_master）

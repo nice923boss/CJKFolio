@@ -13,6 +13,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Mapping, Optional
 
+from .auto_toc import AutoTocSpec, auto_toc_from_dict, check_auto_toc
+
 SCHEMA_ID = "cjkfolio/template@1"
 
 # 文字預設填色：暖黑單 K92（§9 內文 K90〜92 區間取 92，§10 Sprint 8 決議）
@@ -320,6 +322,9 @@ class Template:
     # 封面主版名逐模版而異（第一本 H-封面、第二本 丁-封面），寫死於匯入層即為
     # 對另一本書錯的名字（Sprint 107 已修過的同型缺陷）。""＝該模版不提供封面。
     default_cover: str = ""
+    # 自動目錄生成規格（Sprint 135）；None＝該模版不支援自動目錄（AI 指派仍可標
+    # 目錄條目，只是沒有可生成的目錄節，此時據實提示而非沉默略過）。
+    auto_toc: Optional[AutoTocSpec] = None
 
 
 def _require(data: dict, key: str, context: str):
@@ -540,6 +545,21 @@ def _color_swatch(name: str, value) -> ColorSwatch:
     )
 
 
+def _parse_auto_toc(data) -> Optional[AutoTocSpec]:
+    """auto_toc 區塊解析（缺即 None）；葉模組拋的 ValueError 改包成 TemplateError。"""
+    return None if data is None else _check(auto_toc_from_dict, data)
+
+
+def _check(fn, arg):
+    """跑葉模組的守門，把其 ValueError 統一成模版錯誤型別（對外錯誤型別不變）。"""
+    try:
+        return fn(arg)
+    except TemplateError:
+        raise
+    except ValueError as e:
+        raise TemplateError(str(e)) from e
+
+
 def template_from_dict(data) -> Template:
     if not isinstance(data, dict):
         raise TemplateError("模版必須是 JSON 物件")
@@ -566,7 +586,9 @@ def template_from_dict(data) -> Template:
         md_inline_mapping=dict(data.get("md_inline_mapping", {})),
         default_master=str(data.get("default_master", "")),
         default_cover=str(data.get("default_cover", "")),
+        auto_toc=_parse_auto_toc(data.get("auto_toc")),
     )
+    _check(check_auto_toc, template)
     if template.default_master and template.default_master not in template.masters:
         raise TemplateError(
             f"default_master「{template.default_master}」不存在於 masters")
@@ -711,6 +733,20 @@ def template_to_dict(template: Template) -> dict:
         out["default_master"] = template.default_master
     if template.default_cover:
         out["default_cover"] = template.default_cover
+    if template.auto_toc:
+        out["auto_toc"] = _auto_toc_to_dict(template.auto_toc)
+    return out
+
+
+def _auto_toc_to_dict(spec) -> dict:
+    """AutoTocSpec → JSON dict（層級鍵轉回字串；選配欄位空值不寫出）。"""
+    out = {"master": spec.master,
+           "entry_styles": {str(k): v for k, v in sorted(spec.entry_styles.items())}}
+    if spec.heading:
+        out["heading"] = spec.heading
+        out["heading_style"] = spec.heading_style
+    if spec.no_page_levels:
+        out["no_page_levels"] = list(spec.no_page_levels)
     return out
 
 

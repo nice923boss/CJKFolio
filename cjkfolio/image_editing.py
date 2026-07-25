@@ -20,13 +20,17 @@ HANDLE_SIZE_PT = 8.0      # 角控制點邊長（畫布以此邊長的方塊呈�
 CORNERS = ("nw", "ne", "sw", "se")
 
 
-def normalize_rect(rect) -> tuple:
-    """把 (x0, y0, x1, y1) 排成左上、右下序；退化（零寬或零高）快速失敗。"""
+def normalize_rect(rect, label: str = "圖框") -> tuple:
+    """把 (x0, y0, x1, y1) 排成左上、右下序；退化（零寬或零高）快速失敗。
+
+    label 讓文字框（frame_box_editing）共用同一份矩形數學時錯誤訊息仍講對東西
+    （矩形正規化與框裡裝的是圖還是字無關，不為此另立第二套幾何）。
+    """
     x0, y0, x1, y1 = (float(v) for v in rect)
     lo_x, hi_x = (x0, x1) if x0 <= x1 else (x1, x0)
     lo_y, hi_y = (y0, y1) if y0 <= y1 else (y1, y0)
     if hi_x - lo_x <= 0 or hi_y - lo_y <= 0:
-        raise ValueError(f"圖框須有正的寬與高，得到 {rect}")
+        raise ValueError(f"{label}須有正的寬與高，得到 {rect}")
     return (lo_x, lo_y, hi_x, hi_y)
 
 

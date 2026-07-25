@@ -34,10 +34,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from PySide6.QtCore import Qt, QTimer  # noqa: E402
-from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPen  # noqa: E402
+from PySide6.QtGui import QBrush, QColor, QPen  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
-    QDockWidget,
     QGraphicsRectItem,
     QGraphicsScene,
     QLabel,
@@ -74,15 +73,15 @@ from editor.canvas_quality import (  # noqa: E402
 )
 from editor.canvas_view import CanvasView  # noqa: E402
 from editor.file_actions import FileActionsMixin  # noqa: E402
+from editor.frame_box_actions import FrameBoxActionsMixin  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.import_actions import ImportActionsMixin  # noqa: E402
 from editor.info_actions import InfoActionsMixin  # noqa: E402
 from editor.master_actions import MasterActionsMixin  # noqa: E402
 from editor.nav_actions import NavActionsMixin  # noqa: E402
-from editor.page_panel import PagePanel  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
-from editor.style_panel import StylePanel  # noqa: E402
+from editor.window_chrome import WindowChromeMixin  # noqa: E402
 
 DEFAULT_DOC = ROOT / "samples" / "case-divider.doc.json"
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
@@ -90,9 +89,10 @@ DPI = 150
 AUTHOR = "製作者：黃政文"
 
 
-class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
-                   PreflightActionsMixin,
-                   ExportActionsMixin, ImageActionsMixin, ImportActionsMixin,
+class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
+                   AiActionsMixin, PreflightActionsMixin,
+                   ExportActionsMixin, ImageActionsMixin, FrameBoxActionsMixin,
+                   ImportActionsMixin,
                    EditActionsMixin, FindActionsMixin, InfoActionsMixin,
                    NavActionsMixin, MasterActionsMixin, BookActionsMixin,
                    FileActionsMixin, QMainWindow):
@@ -132,8 +132,8 @@ class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
             )
         self.scene, self._item_by_key = self._make_scene()
         self.view = CanvasView(self.scene, self._on_pick, self._on_key, self._on_drag,
-                               on_move=self._on_image_move,
-                               on_release=self._on_image_release,
+                               on_move=self._on_canvas_move,
+                               on_release=self._on_canvas_release,
                                on_drop=self._on_image_drop,
                                on_zoom=self._on_zoom_changed)
 
@@ -163,160 +163,7 @@ class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
         credit.setStyleSheet("color:#999; font-size:11px; padding:0 8px;")
         self.statusBar().addPermanentWidget(credit)
 
-        file_menu = self.menuBar().addMenu("檔案")
-        for label, key, handler in (  # 檔案生命週期（Sprint 126）
-            ("新建", "Ctrl+N", self._new_document),
-            ("開啟…", "Ctrl+O", self._open_document_dialog),
-            (None, None, None),
-            ("儲存", "Ctrl+S", lambda: self._save_document()),
-            ("另存新檔…", "Ctrl+Shift+S", lambda: self._save_document_as()),
-            (None, None, None),
-        ):
-            if label is None:
-                file_menu.addSeparator()
-                continue
-            action = QAction(label, self)
-            action.setShortcut(QKeySequence(key))
-            action.triggered.connect(handler)
-            file_menu.addAction(action)
-        import_action = QAction("匯入稿件…（txt／md／docx）", self)
-        import_action.triggered.connect(lambda: self._import_manuscript_dialog())
-        file_menu.addAction(import_action)
-        book_action = QAction("組裝書冊…", self)  # 多章組裝＋自動目錄（Sprint 131 丁2）
-        book_action.triggered.connect(lambda: self._assemble_book_dialog())
-        file_menu.addAction(book_action)
-        file_menu.addSeparator()
-        export_action = QAction("轉存為 PDF…", self)  # 印前成品出口（Sprint 127）
-        export_action.setShortcut(QKeySequence("Ctrl+E"))  # InDesign 轉存慣例
-        export_action.triggered.connect(lambda: self._export_pdf_dialog())
-        file_menu.addAction(export_action)
-
-        edit_menu = self.menuBar().addMenu("編輯")
-        undo_action = QAction("復原", self)
-        undo_action.setShortcut(QKeySequence.StandardKey.Undo)  # Ctrl+Z
-        undo_action.triggered.connect(self._on_undo)
-        redo_action = QAction("重做", self)
-        redo_action.setShortcut(QKeySequence.StandardKey.Redo)  # Ctrl+Y／Ctrl+Shift+Z
-        redo_action.triggered.connect(self._on_redo)
-        edit_menu.addAction(undo_action)
-        edit_menu.addAction(redo_action)
-        edit_menu.addSeparator()
-        find_action = QAction("尋找…", self)  # 全文檢索（Sprint 128 丙1）
-        find_action.setShortcut(QKeySequence("Ctrl+F"))
-        find_action.triggered.connect(lambda: self._open_find_dialog())
-        edit_menu.addAction(find_action)
-        replace_action = QAction("取代…", self)
-        replace_action.setShortcut(QKeySequence("Ctrl+H"))
-        replace_action.triggered.connect(lambda: self._open_find_dialog(replace=True))
-        edit_menu.addAction(replace_action)
-
-        layout_menu = self.menuBar().addMenu("版面")  # 翻頁可見入口（Sprint 125）
-        for label, keys, handler in (
-            ("上一頁", ("PgUp",), lambda: self._turn_page(-1)),
-            ("下一頁", ("PgDown",), lambda: self._turn_page(1)),
-            ("第一頁", ("Ctrl+Home",), lambda: self._goto_page(1)),
-            ("最後一頁", ("Ctrl+End",),
-             lambda: self._goto_page(len(self.layout_result.pages))),
-        ):  # QAction 攔下快捷鍵＝輸入欄 focus 時也可翻頁（view 鍵盤路徑為備援）
-            action = QAction(label, self)
-            action.setShortcuts([QKeySequence(k) for k in keys])
-            action.triggered.connect(handler)
-            layout_menu.addAction(action)
-        layout_menu.addSeparator()
-        goto_action = QAction("跳至頁碼…", self)
-        goto_action.setShortcut(QKeySequence("Ctrl+J"))  # InDesign 慣例
-        goto_action.triggered.connect(self._prompt_goto_page)
-        layout_menu.addAction(goto_action)
-
-        view_menu = self.menuBar().addMenu("檢視")
-        for label, keys, handler in (
-            ("放大", ("Ctrl+=", "Ctrl++"), self.view.zoom_in),
-            ("縮小", ("Ctrl+-",), self.view.zoom_out),
-            ("實際大小（100%）", ("Ctrl+1",), lambda: self.view.set_zoom(1.0)),
-            ("符合頁面", ("Ctrl+0",), self.view.fit_page),
-            ("符合寬度", ("Ctrl+2",), self.view.fit_width),
-        ):  # 快捷鍵取 Acrobat／InDesign 慣例（Ctrl+0 整頁、Ctrl+1 實際大小）
-            action = QAction(label, self)
-            action.setShortcuts([QKeySequence(k) for k in keys])
-            action.triggered.connect(handler)
-            view_menu.addAction(action)
-        view_menu.addSeparator()  # 對頁檢視（雙頁併排，Sprint 129）：純檢視，不影響匯出
-        self._facing_action = QAction("對頁檢視（雙頁併排）", self)
-        self._facing_action.setCheckable(True)
-        self._facing_action.setShortcut(QKeySequence("Ctrl+3"))
-        self._facing_action.triggered.connect(self._toggle_facing)
-        view_menu.addAction(self._facing_action)
-
-        tools_menu = self.menuBar().addMenu("工具")  # 字數統計與文件資訊（Sprint 128 丙2）
-        info_action = QAction("文件資訊…", self)
-        info_action.triggered.connect(lambda: self._show_document_info())
-        tools_menu.addAction(info_action)
-
-        page_dock = QDockWidget("頁面", self)  # 縮圖面板（Sprint 125）
-        self._page_panel = PagePanel(
-            self._goto_page, on_context_menu=self._page_context_menu)
-        page_dock.setWidget(self._page_panel)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, page_dock)
-
-        dock = QDockWidget("樣式", self)
-        self._style_panel = StylePanel(
-            self.template, self._apply_para_style_at_cursor,
-            self._apply_char_style_at_cursor, on_edit_style=self._edit_style,
-            on_edit_swatch=self._edit_swatch)
-        dock.setWidget(self._style_panel)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
-
-        style_menu = self.menuBar().addMenu("樣式")
-        for label, handler in (
-            ("新增段落樣式（基於選取）…", lambda: self._create_style("para")),
-            ("新增字元樣式（基於選取）…", lambda: self._create_style("char")),
-            ("重新命名選取的段落樣式…", lambda: self._rename_selected_style("para")),
-            ("重新命名選取的字元樣式…", lambda: self._rename_selected_style("char")),
-            ("刪除選取的段落樣式", lambda: self._remove_selected_style("para")),
-            ("刪除選取的字元樣式", lambda: self._remove_selected_style("char")),
-            ("新增色票…", self._create_swatch),
-            ("刪除選取的色票", self._remove_selected_swatch),
-            ("AI 樣式指派（初稿，逐段校正）…", lambda: self._run_ai_assign()),
-            ("另存模版…", self._save_template_dialog),
-        ):
-            action = QAction(label, self)
-            action.triggered.connect(handler)
-            style_menu.addAction(action)
-
-        library_menu = self.menuBar().addMenu("模版")
-        for label, handler in (
-            ("模版庫（套用整份模版）…", lambda: self._open_library()),
-            ("併入萃取草稿…", lambda: self._merge_draft_dialog()),
-        ):
-            action = QAction(label, self)
-            action.triggered.connect(handler)
-            library_menu.addAction(action)
-
-        image_menu = self.menuBar().addMenu("圖片")
-        for label, handler in (
-            ("置入圖片（放在頁面中央）…", lambda: self._place_image_dialog()),
-            ("選取圖片的文繞圖設定…", lambda: self._edit_image_wrap()),
-            ("移除選取的圖片", self._remove_selected_image),
-        ):
-            action = QAction(label, self)
-            action.triggered.connect(handler)
-            image_menu.addAction(action)
-
-        check_menu = self.menuBar().addMenu("檢查")
-        check_action = QAction("PDF/X-1a preflight（機械檢查）…", self)
-        check_action.triggered.connect(lambda: self._run_preflight())
-        check_menu.addAction(check_action)
-        check_x4_action = QAction("PDF/X-4 preflight（需輸出 ICC）…", self)
-        check_x4_action.triggered.connect(lambda: self._run_preflight("x-4"))
-        check_menu.addAction(check_x4_action)
-
-        ai_action = QAction("AI 設定…", self)
-        ai_action.triggered.connect(self._show_ai_config)
-        self.menuBar().addMenu("設定").addAction(ai_action)
-
-        help_action = QAction("Owner IME 實測說明", self)
-        help_action.triggered.connect(self._show_help)
-        self.menuBar().addMenu("說明").addAction(help_action)
+        self._build_chrome()  # 選單列與側邊面板（Sprint 136 抽出，控管行數）
 
         self._init_nav()  # 頁面面板首輪同步＋縮圖 debounce 計時器（Sprint 125）
         self._init_quality()  # 底圖畫質 debounce 計時器（Sprint 133）
@@ -474,6 +321,13 @@ class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
         if self._image_idx is not None:
             self._select_image(min(self._image_idx, len(self.doc.images) - 1)
                                if self.doc.images else None)
+        self._frame_box_outline = None  # 同上（Sprint 136）：外框、拖曳帶、控制點重畫
+        self._frame_box_preview = None
+        self._frame_box_handles = ()
+        if self._frame_box_idx is not None:
+            self._select_frame_box(
+                min(self._frame_box_idx, len(self.doc.text_frames) - 1)
+                if self.doc.text_frames else None)
         if hasattr(self, "_style_panel"):  # 面板清單同步現行模版（Sprint 71）
             self._style_panel.refresh(self.session.template)
         self._update_window_title()  # 匯入／復原後標題跟隨現行文件名（Sprint 123）
@@ -522,9 +376,15 @@ class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
         self._set_selection(None)   # 重新按下＝清既有選取；拖曳起點隨本次點選重設
         self._drag_anchor = None    # 框字格不設拖曳起點（框選取 v1 不支援）
         if key and key[0] in ("image", "image-handle"):  # 置入圖框（Sprint 102）
+            self._select_frame_box(None)  # 圖與框選取互斥
             self._on_image_press(key, scene_pos)
             return
+        if key and key[0] in ("frame-box", "frame-handle"):  # 整框拖曳（Sprint 136）
+            self._select_image(None)
+            self._on_frame_box_press(key, scene_pos)
+            return
         self._select_image(None)    # 點到文字＝取消圖片選取（兩者互斥）
+        self._select_frame_box(None)  # 點到別處＝放開整框選取，框內照常點字
         if key and key[0] == "frame":  # 文字框字格（Sprint 58）：顯示框游標，不設插入游標
             self._on_pick_frame(item, *key[1:])
             return
@@ -610,6 +470,20 @@ class EditorWindow(CanvasQualityMixin, StyleActionsMixin, AiActionsMixin,
             f"（{self._selection_char_count()} 字）｜"
             "Backspace 刪除選取、點字元樣式套用至選取、組字 Enter 替換選取"
         )
+
+    def _on_canvas_move(self, scene_pos) -> None:
+        """滑鼠拖曳途中的總機（Sprint 136）：分給圖片與文字框兩套拖曳。
+
+        兩者選取互斥（見 _on_pick），故同一時刻至多一邊有 drag 狀態；另一邊會在
+        自己的 handler 開頭因 drag is None 立刻返回。放在 app.py 而非任一 mixin，
+        是因為 CanvasView 只收一個 on_move，分流責任屬視窗而非某一種物件。"""
+        self._on_image_move(scene_pos)
+        self._on_frame_box_move(scene_pos)
+
+    def _on_canvas_release(self) -> None:
+        """放開左鍵的總機（Sprint 136）：分給圖片與文字框兩套提交。"""
+        self._on_image_release()
+        self._on_frame_box_release()
 
     def _set_selection(self, span) -> None:
         """設定／清除拖曳範圍選取並重畫選取 shading（僅 body 字格）。"""

@@ -183,3 +183,95 @@ def test_cli_assign_styles_no_config_fast_fail(tmp_path):
     missing = tmp_path / "none.json"
     assert main(["assign-styles", str(src), "-o", str(tmp_path / "o.json"),
                  "--config", str(missing)]) == 2
+
+
+# ── 目錄條目建議（Sprint 135）：AI 只認結構，一個頁碼數字都不出 ──────────────
+
+def test_toc_entry_parsed_with_level():
+    t = transport_returning(json.dumps([
+        {"index": 0, "style": "章名大標-明體W7", "toc_title": "第一章　留白",
+         "toc_level": 2},
+        {"index": 1, "style": "內文-明體直排"},
+    ]))
+    result = suggest_styles(["第一章　留白", "內文段。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (("第一章　留白", 2), None)
+
+
+def test_toc_level_defaults_to_one():
+    t = transport_returning(json.dumps([{"index": 0, "toc_title": " 序 "}]))
+    result = suggest_styles(["序"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (("序", 1),)  # 標題前後空白剝掉
+
+
+@pytest.mark.parametrize("item,keyword", [
+    ({"toc_level": 2}, "toc_level"),                 # 只給層級沒給標題
+    ({"toc_title": "  "}, "空"),                      # 全空白標題
+    ({"toc_title": "甲", "toc_level": True}, "層級"),  # 真布林是 int 子類，須擋
+    ({"toc_title": "甲", "toc_level": 0}, "層級"),
+    ({"toc_title": "甲", "toc_level": "2"}, "層級"),
+])
+def test_bad_toc_entry_degrades_with_warning(item, keyword):
+    t = transport_returning(json.dumps([{"index": 0, **item}]))
+    result = suggest_styles(["甲。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (None,)
+    assert any(keyword in w for w in result.warnings), result.warnings
+
+
+def test_toc_entry_survives_unknown_style_and_vice_versa():
+    """樣式與目錄條目各自成立：一邊被否掉不連坐另一邊。"""
+    t = transport_returning(json.dumps([
+        {"index": 0, "style": "幻覺樣式", "toc_title": "後記", "toc_level": 1},
+        {"index": 1, "style": "章節小標-黑體", "toc_title": "", "toc_level": 1},
+    ]))
+    result = suggest_styles(["後記", "小標"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.assignments == (None, "章節小標-黑體")
+    assert result.toc_entries == (("後記", 1), None)
+
+
+def test_batch_degrade_drops_style_and_toc_together():
+    t = transport_returning("不是 JSON")
+    result = suggest_styles(["甲。", "乙。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.assignments == (None, None)
+    assert result.toc_entries == (None, None)
+
+
+def test_prompt_asks_for_toc_fields_and_forbids_page_numbers():
+    t = transport_returning(json.dumps([{"index": 0, "style": "內文-明體直排"}]))
+    suggest_styles(["段。"], CANDIDATES, CONFIG, default_style=DEFAULT, transport=t)
+    system = t.calls[0][2]["messages"][0]["content"]
+    assert "toc_title" in system and "toc_level" in system
+    assert "頁碼" in system  # 明寫頁碼由排版程式算，AI 不得輸出
+
+
+def test_apply_suggestions_writes_toc_entries_and_keeps_none():
+    doc = Document(title="t", template="neizai-zhengli", master="A-內文版", paragraphs=(
+        Paragraph(text="第一章", style="內文-明體直排"),
+        Paragraph(text="舊條目", style="內文-明體直排", toc_title="舊標", toc_level=3),
+    ))
+    out = apply_suggestions(doc, (None, None), (("第一章", 1), None))
+    assert (out.paragraphs[0].toc_title, out.paragraphs[0].toc_level) == ("第一章", 1)
+    # None＝維持原條目宣告（不是清除）
+    assert (out.paragraphs[1].toc_title, out.paragraphs[1].toc_level) == ("舊標", 3)
+    assert doc.paragraphs[0].toc_title is None  # 原件不變
+
+
+def test_prompt_carries_template_declared_toc_levels():
+    """模版宣告的層級語意要進 prompt：否則章名會全押第 1 層（該層不標頁碼）。"""
+    from cjkfolio.styles import load_template
+
+    template = load_template(
+        Path(__file__).resolve().parents[1] / "templates" / "neizai-zhengli.json")
+    hints = template.auto_toc.level_hints()
+    assert hints == ((1, "目錄-部名", False), (2, "目錄-篇章條目", True))
+    t = transport_returning(json.dumps([{"index": 0, "style": "內文-明體直排"}]))
+    suggest_styles(["段。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                   transport=t, toc_levels=hints)
+    system = t.calls[0][2]["messages"][0]["content"]
+    assert "第 1 層＝目錄-部名（不標頁碼）" in system
+    assert "第 2 層＝目錄-篇章條目（標頁碼）" in system
+    assert "章名一律用第 2 層" in system

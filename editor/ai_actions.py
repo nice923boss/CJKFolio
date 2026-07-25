@@ -80,9 +80,13 @@ class AiActionsMixin:
                     "尚未設定 AI（「設定」選單填 Base URL 與 Model；AI 為選配增強）")
                 return
 
+            spec = self.template.auto_toc
+            levels = spec.level_hints() if spec is not None else ()
+
             def work():
                 return suggest_styles(texts, candidates, config,
-                                      default_style=default_style)
+                                      default_style=default_style,
+                                      toc_levels=levels)
         else:
             def work():
                 return suggest(texts, candidates)
@@ -115,7 +119,9 @@ class AiActionsMixin:
             return
         dlg = AssignReviewDialog(self.doc, self.template, result.assignments,
                                  self._apply_assignments,
-                                 warnings=result.warnings, parent=self)
+                                 warnings=result.warnings,
+                                 toc_entries=getattr(result, "toc_entries", ()),
+                                 parent=self)
         dlg.exec()
 
     def _on_ai_assign_failed(self, message: str) -> None:
@@ -130,17 +136,35 @@ class AiActionsMixin:
             thread.wait()
             thread.deleteLater()
 
-    def _apply_assignments(self, assignments):
-        """批次改派套用（session.apply_para_styles 單一 undo 步）；回錯誤訊息或 None。"""
-        if not assignments:
+    def _apply_assignments(self, assignments, toc_entries=None,
+                           generate_toc: bool = False):
+        """批次改派套用（session.apply_para_styles 單一 undo 步）；回錯誤訊息或 None。
+
+        樣式、目次條目宣告、生成目次頁三件事一次送進 session（Sprint 135）：分開送
+        會變三步 undo，違反對話框頂部「單一 undo 步可整批回退」的承諾。
+        """
+        if not assignments and not toc_entries and not generate_toc:
             self.statusBar().showMessage("未採用任何建議（文件未變更）")
             return None
         try:
-            res = self.session.apply_para_styles(assignments)
+            res = self.session.apply_para_styles(
+                assignments, toc_entries, generate_toc=generate_toc)
         except (KeyError, ValueError, IndexError) as err:
             return f"無法套用：{err}"
+        parts = [f"AI 批次改派 {len(assignments)} 段"]
+        if toc_entries:
+            parts.append(f"目次條目 {len(toc_entries)} 段")
+        if generate_toc:
+            entries = sum(1 for p in self.doc.paragraphs if p.toc_title)
+            # 標頁碼的條目數要列出來：模版可宣告某層不標頁碼（如部名），
+            # 全部條目都落在該層時會生出「一個頁碼都沒有」的目次，這裡不讓它沉默
+            styles = set(self.template.auto_toc.entry_styles.values())
+            numbered = sum(1 for p in self.doc.paragraphs
+                           if p.style in styles and p.page_no)
+            parts.append(f"生成目次 {entries} 條（{numbered} 條標頁碼），"
+                         f"全書 {len(self.session.layout.pages)} 頁")
         self._after_template_change(
-            res, f"AI 批次改派 {len(assignments)} 段（單一 undo 步可整批回退）")
+            res, "、".join(parts) + "（單一 undo 步可整批回退）")
         return None
 
     def closeEvent(self, event) -> None:

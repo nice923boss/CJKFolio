@@ -11,14 +11,21 @@
   (5) 不注入替身的真路徑確實讀得到本機設定（Sprint 104 修 load_ai_config 漏傳
       path 的既有缺陷；以間諜攔在送出前，不外連任何 endpoint、不輸出欄位值）
 
+C37（Sprint 135）驗 AI 指派把目次整理出來並標註頁數的整條路徑：對話框目次三欄
+帶回建議、人工否決一條、確定後生成目次節、頁碼與獨立重算的內文起始頁相符
+（Gate 4：不採信 toc.py 自己填的值）、且整批一步 Ctrl+Z 回原稿。
+
 由 smoke_check.main() 呼叫，需求的離屏環境（QT_QPA_PLATFORM＝offscreen、
 QApplication 已建）由呼叫端備妥。
 """
 import threading
 
+from PySide6.QtCore import Qt
+
 from cjkfolio.ai_config import AiConfig
 from cjkfolio.ai_style import SuggestResult
 from cjkfolio.editing import DocCursor
+from cjkfolio.primitives import book_number_for
 from editor import ai_actions
 from editor.ai_assign import AssignReviewDialog
 
@@ -107,4 +114,91 @@ def check_ai_assign(EditorWindow, DOC) -> None:
         "C21 AI 指派背景執行緒：呼叫跑於非 GUI 執行緒（tid 相異）＋執行中不重入＋"
         "等待期間主執行緒可編輯 → 段序失效不開對話框、不改樣式並據實聲明 → "
         f"文件未變照常開且帶回建議 → 連線失敗 statusBar 提示不 crash；{note}"
+    )
+
+
+def _first_page_of(layout, para_idx: int):
+    """獨立重算：段 para_idx 首次落在哪一版面頁（不看 toc.py 填進去的值）。"""
+    for page in layout.pages:
+        for pl in page.placed:
+            if pl.para_idx == para_idx:
+                return page.number
+    return None
+
+
+def check_ai_toc(EditorWindow, DOC) -> None:
+    """跑 C37 並 print（斷言失敗即 AssertionError 中止整份 smoke）。"""
+    captured = {}
+
+    def toc_suggest(texts, candidates):
+        """建議 3 條目次條目（層 1 一條＋層 2 兩條）；樣式只動一段以驗兩組採用語意各自獨立。"""
+        assign = [None] * len(texts)
+        assign[0] = "章節小標-黑體"
+        toc = [None] * len(texts)
+        toc[1] = (texts[1], 1)
+        toc[2] = (texts[2], 2)
+        toc[4] = (texts[4], 2)
+        return SuggestResult(assignments=tuple(assign), warnings=(), batches=1,
+                             toc_entries=tuple(toc))
+
+    orig_exec = AssignReviewDialog.exec
+    AssignReviewDialog.exec = lambda dlg: captured.setdefault("dlg", dlg) or 0
+    try:
+        win = EditorWindow(str(DOC))
+        src_paras = win.doc.paragraphs
+        n = len(src_paras)
+        win._run_ai_assign(suggest=toc_suggest)
+        win._ai_assign_wait()
+        dlg = captured["dlg"]
+    finally:
+        AssignReviewDialog.exec = orig_exec
+
+    # (1) 目次三欄帶回建議：標題落格、層級落下拉、採用勾選只勾有建議者
+    assert dlg.table.columnCount() == 7, "目次三欄未加上"
+    assert dlg.table.item(1, 5).text() == src_paras[1].text, "建議標題未帶進目次欄"
+    assert [dlg._levels[i].currentText() for i in (1, 2, 4)] == ["1", "2", "2"], \
+        "建議層級未帶進下拉"
+    toc_checked = [i for i in range(n)
+                   if dlg.table.item(i, 4).checkState() == Qt.CheckState.Checked]
+    assert toc_checked == [1, 2, 4], f"目次採用預設勾選不符，得到 {toc_checked}"
+    style_checked = [i for i in range(n)
+                     if dlg.table.item(i, 0).checkState() == Qt.CheckState.Checked]
+    assert style_checked == [0], f"樣式採用與目次採用未各自獨立，得到 {style_checked}"
+    assert dlg._generate.isEnabled() and dlg._generate.isChecked(), \
+        "模版已宣告 auto_toc 且有條目，生成目次未預設開啟"
+
+    # (2) 人工否決一條後才確定（§4.4 初稿＋人工校正）
+    dlg.table.item(4, 4).setCheckState(Qt.CheckState.Unchecked)
+    assert set(dlg._toc_entries()) == {1, 2}, "否決後的目次載荷不符"
+    dlg._on_confirm()
+
+    # (3) 目次節生成於書首：標題段＋2 條目，內文原樣接在後面
+    doc = win.doc
+    assert len(doc.paragraphs) == n + 3, f"目次節段數不符（{len(doc.paragraphs)}）"
+    assert doc.master == "D-目錄" and doc.paragraphs[0].master == "D-目錄", \
+        "目次節未成為書首節"
+    assert doc.paragraphs[0].text == "目次", "目次標題段未生成"
+    assert [p.text for p in doc.paragraphs[1:3]] == \
+        [src_paras[1].text, src_paras[2].text], "目次條目序不符宣告序"
+    assert doc.paragraphs[1].page_no is None, \
+        "層 1 條目（no_page_levels）被填了頁碼"
+    assert doc.paragraphs[3].style == "章節小標-黑體", "樣式改派未同批落地"
+
+    # (4) Gate 4：頁碼與獨立重算的內文起始頁相符（不採信 toc.py 自己填的值）
+    layout = win.session.layout
+    printed = doc.paragraphs[2].page_no
+    expect = book_number_for(_first_page_of(layout, 3 + 2), 1, layout.cover_pages)
+    assert printed == str(expect), f"標註頁數 {printed} 不等於獨立重算 {expect}"
+    assert "生成目次 2 條" in win.statusBar().currentMessage(), \
+        f"狀態列未據實列報生成結果：{win.statusBar().currentMessage()}"
+
+    # (5) 一步 Ctrl+Z 整批回原稿（樣式＋條目宣告＋目次節同屬一步）
+    win._on_undo()
+    assert win.doc.paragraphs == src_paras, "一步 undo 未整批回原稿"
+
+    print(
+        "C37 AI 指派整理目次：建議 3 條帶進目次三欄（標題／層級／採用各自獨立於樣式欄）"
+        "→ 人工否決 1 條 → 確定後書首生成目次節（標題段＋2 條目，層 1 依模版不標頁碼）"
+        f"＋樣式改派同批落地 → 條目頁數 {printed} 等於獨立重算的內文起始頁 → "
+        "一步 Ctrl+Z 整批回原稿"
     )

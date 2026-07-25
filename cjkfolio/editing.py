@@ -468,6 +468,39 @@ def change_paragraph_styles(doc: Document, assignments) -> Document:
     return out
 
 
+def change_paragraph_toc_entries(doc: Document, entries) -> Document:
+    """多段批次改派目錄條目宣告（Sprint 135，§4.4 逐段校正的目錄半邊）。
+
+    entries＝{para_idx: (顯示標題, 層級) 或 None}；None＝取消該段的目錄條目
+    宣告（toc_title／toc_level 一併清成 None，因 toc_level 不得單獨存在，
+    見 document._paragraph_toc_from_dict）。越界 IndexError、標題空字串或
+    層級 <1 即 ValueError 快速失敗；全數等值 no-op 回原物件。
+
+    層級是使用者的語意宣告，本函式只忠實寫入，不從樣式名或字級反推。
+    """
+    paras = list(doc.paragraphs)
+    changed = False
+    for para_idx in sorted(entries):
+        if not 0 <= para_idx < len(paras):
+            raise IndexError(f"段索引越界：{para_idx}（共 {len(paras)} 段）")
+        entry = entries[para_idx]
+        if entry is None:
+            title, level = None, None
+        else:
+            title, level = entry
+            if not (isinstance(title, str) and title.strip()):
+                raise ValueError(f"目錄條目標題不得為空（段 {para_idx}）")
+            if isinstance(level, bool) or not isinstance(level, int) or level < 1:
+                raise ValueError(f"目錄條目層級需為 ≥1 整數，得到 {level!r}（段 {para_idx}）")
+            title = title.strip()
+        para = paras[para_idx]
+        if (para.toc_title, para.toc_level) == (title, level):
+            continue  # 等值 no-op
+        paras[para_idx] = replace(para, toc_title=title, toc_level=level)
+        changed = True
+    return replace(doc, paragraphs=tuple(paras)) if changed else doc
+
+
 def set_section_master(
     document: Document, para_idx: int, master: Optional[str]
 ) -> Document:

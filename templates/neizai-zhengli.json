@@ -9,6 +9,19 @@
  },
  "default_master": "A-內文版",
  "default_cover": "H-封面",
+ "auto_toc": {
+  "master": "D-目錄",
+  "heading": "目次",
+  "heading_style": "目錄-目次標題",
+  "entry_styles": {
+   "1": "目錄-部名",
+   "2": "目錄-篇章條目"
+  },
+  "no_page_levels": [
+   1
+  ]
+ },
+ "auto_toc_note": "自動目錄生成規格（Sprint 135）：層 1＝部名（p002／p003 真書即不標頁碼，故列入 no_page_levels）、層 2＝帶頁碼章名條目。條目縮排由各層樣式自身的 head_offset_chars 表達，本區塊不帶幾何。真書目次的條目摘要層（楷 W3 9.5pt）、【結語】黑 W5 10pt 變體、前置條目三層堆疊（標籤 W3／標題 W5／作者明 W9 同欄）、傾斜 Case 編號與多層列距（20／16.5／33.1pt）v1 不建模，見 GAPS #13。",
  "colors": {
   "暖黑": {
    "cmyk": [
@@ -180,6 +193,15 @@
    "para_gap_slots": 0,
    "source_font": "DFMingStd-W7",
    "note": "部扉「第X篇」標籤；段後不空槽（Sprint 20 量測：與大標間距已含於 B 行距 34.37pt）"
+  },
+  "目錄-目次標題": {
+   "font_family": "思源黑體 TC",
+   "font_weight": "bold",
+   "size_pt": 16.0,
+   "indent_chars": 0,
+   "para_gap_slots": 1,
+   "source_font": "DFHeiStd-W9",
+   "note": "目次首頁「目次」標題（p002 一手量測，Sprint 135）：DFHeiStd-W9 16.0pt、與篇名同天頭起（墨頂 106.6pt，篇名 11pt 墨頂 108.0＝天頭 107.96，16pt 字框較大故墨頂略高）；黑 W9 無對應開源字重，依 fonts.WEIGHT_ALIASES 落思源黑體 TC Bold（同「章節小標-黑體」W7 的處置）"
   },
   "目錄-部名": {
    "font_family": "思源宋體 TC",
