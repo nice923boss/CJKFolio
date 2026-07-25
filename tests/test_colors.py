@@ -361,8 +361,9 @@ def test_png_text_ink_levels(template, tmp_path):
         x0 = round((axis - 5.0) * scale)
         x1 = round((axis + 5.0) * scale)
         band = img.crop((x0, 0, x1, img.height))
-        return band.getextrema()[0]  # 帶內最深墨值
+        return tuple(lo for lo, _ in band.getextrema())  # 帶內各分量最深墨值
 
+    # 畫布自 Sprint 137 為 RGB：單 K 著色三分量同值（＝維持中性灰，不偏色）
     body_line, note_line = layout.pages[0].placed[0], layout.pages[0].placed[1]
-    assert deepest_ink(body_line) == round(255 * (1 - 0.92))  # 預設 K92 → 20
-    assert deepest_ink(note_line) == round(255 * (1 - 0.57))  # 淡墨 K57 → 110
+    assert deepest_ink(body_line) == (round(255 * (1 - 0.92)),) * 3  # 預設 K92 → 20
+    assert deepest_ink(note_line) == (round(255 * (1 - 0.57)),) * 3  # 淡墨 K57 → 110

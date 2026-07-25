@@ -27,7 +27,7 @@ from cjkfolio.primitives import book_number_for
 from cjkfolio.render import PageRenderer
 from editor.canvas import page_frame_placements, page_images, pil_to_qimage
 
-THUMB_DPI = 18          # A5 148×210mm → 約 105×149px（灰階，128 頁約 8MB 級）
+THUMB_DPI = 18          # A5 148×210mm → 約 105×149px（RGB，128 頁約 8MB 級）
 THUMB_W = 106           # 占位圖尺寸取 A5 @18dpi 整數化；實際 icon 依渲染像素
 THUMB_H = 149
 

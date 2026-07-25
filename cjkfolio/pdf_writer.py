@@ -16,6 +16,8 @@
 - 圖片置入（Sprint 50）：影像 XObject 置入主版 figure 保留區、contain 等比置中，
   幾何與 render 同源（figure_slot_rect＋fit_image_rect）。色彩空間依來源分流
   （Sprint 92）：灰階單 K 走 DeviceGray、CMYK 來源走 DeviceCMYK（§9 兩者皆合法）。
+  RGB 來源（Sprint 137）只在 pdfx="none"（非 PDF/X 的一般 PDF）留得住；PDF/X 形態
+  一律轉灰嵌入並記 PdfResult.image_color_warnings，不沉默也不擋流程。
 """
 import collections
 from dataclasses import dataclass, field
@@ -25,6 +27,7 @@ from pathlib import Path
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
 from .frames import resolve_text_frames
 from .images import (
+    PRINT_IMAGE_MODES,
     EmbeddedImage,
     ImageResolution,
     resolution_warnings,
@@ -33,7 +36,16 @@ from .images import (
 from .ink import InkUse, image_max_tac, tac_percent, tac_warnings
 from .pdf_fonts import EmbeddedFont
 from .pdf_objects import PdfBuilder
-from .pdfx_meta import xmp_packet
+from .pdfx_meta import (  # re-export：既有 import 路徑（preflight／editor）不變
+    KNOWN_PRINT_CONDITIONS,
+    PDFX_CONFORMANCE,
+    PDFX_PROFILES,
+    PDFX_VERSION,
+    REGISTRY_URL,
+    PdfxProfile,
+    validate_output_profile,
+    xmp_packet,
+)
 from .layout import (
     line_justified_advance,
     ruby_group_height,
@@ -84,43 +96,9 @@ BLEED_MM = 3.0
 TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區間取 92；styles 單一來源）
 
 # 標記（裁切角標 Sprint 83、印前標記 Sprint 109）的參數、盒框推導與繪製同住
-# press_marks 模組；本檔 re-export 以維持既有 import 路徑。
-
-
-@dataclass(frozen=True)
-class PdfxProfile:
-    """一種 PDF/X 一致性形態（§9：X-1a 預設、X-4 選項）。"""
-    key: str                    # CLI 選值："x-1a" | "x-4"
-    version: str                # Info／XMP GTS_PDFXVersion
-    conformance: str | None     # Info／XMP GTS_PDFXConformance（X-4 無此鍵＝None）
-    header: str                 # PDF header 版本（X-1a:2001＝1.3；X-4:2010＝1.6）
-    require_embedded_icc: bool  # X-4 強制嵌 DestOutputProfile（registry 免嵌不足）
-    allow_transparency: bool    # X-4 允許實時透明（X-1a 禁止）
-    label: str                  # 人讀一致性標籤（CLI 與 PdfResult）
-
-
-PDFX_PROFILES = {
-    "x-1a": PdfxProfile(
-        "x-1a", "PDF/X-1:2001", "PDF/X-1a:2001", "1.3",
-        require_embedded_icc=False, allow_transparency=False,
-        label="PDF/X-1a:2001"),
-    "x-4": PdfxProfile(
-        "x-4", "PDF/X-4", None, "1.6",
-        require_embedded_icc=True, allow_transparency=True,
-        label="PDF/X-4"),
-}
-
-PDFX_VERSION = PDFX_PROFILES["x-1a"].version       # Info /GTS_PDFXVersion（ISO 15930-1）
-PDFX_CONFORMANCE = PDFX_PROFILES["x-1a"].conformance  # Info /GTS_PDFXConformance
-REGISTRY_URL = "http://www.color.org"
-# ICC 特性化資料登錄名（www.color.org/chardata）常用子集；命中者依 ISO 15930-1
-# 可免嵌 DestOutputProfile。未列名（印廠自訂條件）須以 icc_profile 補描述檔。
-KNOWN_PRINT_CONDITIONS = frozenset({
-    "CGATS TR 001",
-    "FOGRA27", "FOGRA39", "FOGRA51", "FOGRA52",
-    "IFRA26",
-    "JC200103", "JC200104", "JCN2002", "JCW2003",
-})
+# press_marks 模組；一致性形態（PdfxProfile／PDFX_PROFILES）、ICC registry 名單與
+# 輸出描述檔驗證同住 pdfx_meta 模組（Sprint 137 行數上限管理）；本檔 re-export
+# 兩者以維持既有 import 路徑。
 
 
 def _fmt(v: float) -> str:
@@ -149,22 +127,6 @@ def _pdf_string(s: str) -> str:
 def _pdf_date(dt: datetime) -> str:
     off = dt.strftime("%z")  # astimezone() 保證帶時區，如 +0800
     return f"D:{dt.strftime('%Y%m%d%H%M%S')}{off[:3]}'{off[3:]}'"
-
-
-def _validate_output_profile(data: bytes, source) -> None:
-    """X-1a DestOutputProfile 須為 CMYK 輸出裝置（prtr）ICC。"""
-    name = Path(source).name
-    if len(data) < 132:
-        raise ValueError(f"ICC 描述檔 {name} 過短（{len(data)} bytes），非有效 ICC")
-    if data[12:16] != b"prtr":
-        raise ValueError(
-            f"ICC 描述檔 {name} 裝置類別 {data[12:16]!r} 非輸出裝置 prtr，"
-            "X-1a 的 DestOutputProfile 須為印刷輸出描述檔"
-        )
-    if data[16:20] != b"CMYK":
-        raise ValueError(
-            f"ICC 描述檔 {name} 色彩空間 {data[16:20]!r} 非 CMYK（PLAN §9：全文 CMYK）"
-        )
 
 
 # ---------- 內容流 ----------
@@ -281,8 +243,12 @@ class _PdfPageWriter:
     """把 LayoutPage 轉為內容流；幾何與 render.PageRenderer 同源（placement 層）。"""
 
     def __init__(self, template, master_name: str, font_dir=None,
-                 mark_margin_pt: float = 0.0, reg_cmyk=REG_CMYK):
+                 mark_margin_pt: float = 0.0, reg_cmyk=REG_CMYK,
+                 allow_rgb_images: bool = False):
         self.template = template
+        # 非 PDF/X 輸出才留 RGB 影像；送印形態轉灰並記 image_color_warnings
+        self.allow_rgb_images = allow_rgb_images
+        self.image_color_warnings: list = []
         self.master = template.masters[master_name]
         self.registry = FontRegistry(font_dir or DEFAULT_FONT_DIR)
         self._shapers: dict = {}
@@ -471,14 +437,26 @@ class _PdfPageWriter:
         """置入圖：等比縮放置中（contain），與 render._draw_image 幾何同源
         （fit_image_rect）；top-down 下緣 → y-up 左下角。
         entry＝(解析後路徑, PIL 影像, rect|None)；影像色彩空間依來源分流
-        （"L"→DeviceGray 單 K、"CMYK"→DeviceCMYK，images.open_placed）；
-        rect＝任意圖框（trim pt、top-down，Sprint 54，可溢出版心入出血）、
-        None＝主版 figure 保留區；同路徑跨頁共用單一 XObject。"""
+        （"L"→DeviceGray 單 K、"CMYK"→DeviceCMYK、"RGB"→DeviceRGB，
+        images.open_placed）；rect＝任意圖框（trim pt、top-down，Sprint 54，
+        可溢出版心入出血）、None＝主版 figure 保留區；同路徑跨頁共用單一 XObject。
+
+        RGB 只在非 PDF/X 輸出留得住（Sprint 137）：送印形態於此轉灰階並記一筆
+        image_color_warnings。轉灰不擋流程（同 PPI／TAC／字型授權慣例：據實說，
+        由人決定換圖或改形態），但一定要說，因為螢幕上看到的是彩色。"""
         path, pil, rect = entry
         if path not in self._images:
+            if pil.mode not in PRINT_IMAGE_MODES and not self.allow_rgb_images:
+                self.image_color_warnings.append(
+                    f"{Path(path).name}：{pil.mode} 影像已轉灰階嵌入"
+                    f"（PDF/X 只收 CMYK 或 Grayscale；要保留彩色請選一般 PDF 輸出，"
+                    f"或先於影像軟體轉 CMYK 後置入）")
+                pil = pil.convert("L")
             self._images[path] = EmbeddedImage(pil, f"Im{len(self._images) + 1}")
-            # 最高單點墨量（TAC 檢核產出側）：同圖多次置入墨量相同，隨去重只算一次
-            self._image_inks[Path(path).name] = image_max_tac(pil)
+            # 最高單點墨量（TAC 檢核產出側）：同圖多次置入墨量相同，隨去重只算一次。
+            # RGB 不記：墨量是印刷色彩空間才有的量（ink.image_max_tac 亦快速失敗）。
+            if pil.mode in PRINT_IMAGE_MODES:
+                self._image_inks[Path(path).name] = image_max_tac(pil)
         emb = self._images[path]
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
@@ -594,7 +572,7 @@ class PdfResult:
     fonts_used: list
     font_warnings: list
     embedded_fonts: list  # [{base, file, glyphs, bytes}]
-    output_condition_identifier: str
+    output_condition_identifier: str  # 寫進 OutputIntent 的識別；一般 PDF 無此鍵＝""
     icc_embedded: bool
     justify_stats: dict
     images_placed: int = 0  # 嵌入的影像 XObject 數（同路徑去重）
@@ -608,6 +586,7 @@ class PdfResult:
     ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
     ink_uses: tuple = ()           # 著色與影像的最高墨量 InkUse（依 TAC 降序）
     tac_warnings: tuple = ()       # 總墨量超 §9 320% 上限的警告（不擋流程）
+    image_color_warnings: tuple = ()  # 送印形態下 RGB 影像已轉灰階的告知（不擋流程）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -621,6 +600,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                license_policy: str = "warn") -> PdfResult:
     """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
+    pdfx="none"（Sprint 137）輸出**非 PDF/X** 的一般 PDF：不寫 X 識別鍵與
+    OutputIntent、header 1.4，RGB 置入圖原樣以 DeviceRGB 嵌入（其餘形態一律轉灰並
+    記 image_color_warnings）。這是螢幕用途的彩色檔，不是送印稿。
     pages=None 全頁；否則為版面頁號清單（1 起算）。
     X-1a：output_condition_identifier 命中 KNOWN_PRINT_CONDITIONS（ICC registry 名）
     時免嵌描述檔；自訂識別須以 icc_profile 提供 CMYK 輸出 ICC。
@@ -638,13 +620,19 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         raise ValueError(
             f"未知 pdfx 形態 {pdfx!r}，可選 {sorted(PDFX_PROFILES)}")
     profile = PDFX_PROFILES[pdfx]
-    if not doc.title:
+    if not doc.title and profile.is_pdfx:
         raise ValueError(
             f"{profile.label} 要求 Info /Title：文件 meta.title 不可為空")
     icc_bytes = None
-    if icc_profile is not None:
+    if not profile.is_pdfx:
+        # 一般 PDF 無 OutputIntent，ICC 沒有地方放。收下卻不寫＝沉默丟棄，故快速失敗
+        if icc_profile is not None:
+            raise ValueError(
+                f"{profile.label} 不寫 OutputIntent，icc_profile 無處可嵌："
+                "要嵌輸出描述檔請選 PDF/X-1a 或 PDF/X-4")
+    elif icc_profile is not None:
         icc_bytes = Path(icc_profile).read_bytes()
-        _validate_output_profile(icc_bytes, icc_profile)
+        validate_output_profile(icc_bytes, icc_profile)
     elif profile.require_embedded_icc:
         raise ValueError(
             f"{profile.label} 要求嵌入 DestOutputProfile（registry 識別不足）："
@@ -664,7 +652,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir,
                             mark_margin_pt=mm_to_pt(mark_margin_mm),
                             reg_cmyk=REG_SINGLE_K_CMYK if registration_single_k
-                            else REG_CMYK)
+                            else REG_CMYK,
+                            allow_rgb_images=not profile.is_pdfx)
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
@@ -723,18 +712,22 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     pdf.set(pages_num,
             f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>")
     # --- PDF/X 識別（§9 預設 X-1a:2001／ISO 15930-1；X-4:2010／ISO 15930-7 選項）---
-    oi_parts = [
-        "/Type /OutputIntent", "/S /GTS_PDFX",
-        f"/OutputConditionIdentifier {_pdf_string(output_condition_identifier)}",
-        f"/OutputCondition {_pdf_string(output_condition)}",
-        f"/Info {_pdf_string(output_condition)}",
-    ]
-    if output_condition_identifier in KNOWN_PRINT_CONDITIONS:
-        oi_parts.append(f"/RegistryName {_pdf_string(REGISTRY_URL)}")
-    if icc_bytes is not None:
-        icc_num = pdf.stream(" /N 4", icc_bytes)
-        oi_parts.append(f"/DestOutputProfile {icc_num} 0 R")
-    oi_num = pdf.add(f"<< {' '.join(oi_parts)} >>")
+    # 一般 PDF（pdfx="none"）跳過整段：OutputIntent 是 PDF/X 的宣告，不是通用鍵。
+    oi_num, oi_id = None, ""   # 識別回報空字串：檔案裡沒有的鍵不對外宣稱
+    if profile.is_pdfx:
+        oi_id = output_condition_identifier
+        oi_parts = [
+            "/Type /OutputIntent", "/S /GTS_PDFX",
+            f"/OutputConditionIdentifier {_pdf_string(output_condition_identifier)}",
+            f"/OutputCondition {_pdf_string(output_condition)}",
+            f"/Info {_pdf_string(output_condition)}",
+        ]
+        if output_condition_identifier in KNOWN_PRINT_CONDITIONS:
+            oi_parts.append(f"/RegistryName {_pdf_string(REGISTRY_URL)}")
+        if icc_bytes is not None:
+            icc_num = pdf.stream(" /N 4", icc_bytes)
+            oi_parts.append(f"/DestOutputProfile {icc_num} 0 R")
+        oi_num = pdf.add(f"<< {' '.join(oi_parts)} >>")
 
     now = datetime.now().astimezone()
     xmp_num = pdf.stream(
@@ -743,19 +736,22 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                    profile.version, profile.conformance),
         compress=False,  # metadata stream 不壓縮，外部工具可直讀
     )
+    oi_entry = f"/OutputIntents [{oi_num} 0 R] " if oi_num is not None else ""
     catalog_num = pdf.add(
         f"<< /Type /Catalog /Pages {pages_num} 0 R "
-        f"/Metadata {xmp_num} 0 R /OutputIntents [{oi_num} 0 R] "
+        f"/Metadata {xmp_num} 0 R {oi_entry}"
         f"/ViewerPreferences << /Direction /R2L >> >>"
     )
     date = _pdf_date(now)
-    gts = f"/GTS_PDFXVersion ({profile.version})"
-    if profile.conformance is not None:  # X-4 無 GTS_PDFXConformance
-        gts += f" /GTS_PDFXConformance ({profile.conformance})"
+    gts = ""
+    if profile.is_pdfx:
+        gts = f" /GTS_PDFXVersion ({profile.version})"
+        if profile.conformance is not None:  # X-4 無 GTS_PDFXConformance
+            gts += f" /GTS_PDFXConformance ({profile.conformance})"
     info_num = pdf.add(
         f"<< /Title {_pdf_text_string(doc.title)} "
         f"/Producer (CJKFolio) /Creator (CJKFolio) "
-        f"/CreationDate ({date}) /ModDate ({date}) /Trapped /False "
+        f"/CreationDate ({date}) /ModDate ({date}) /Trapped /False"
         f"{gts} >>"
     )
 
@@ -784,7 +780,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         fonts_used=sorted(writer.fonts_used),
         font_warnings=list(writer.registry.warnings) + list(writer.notdef_warnings),
         embedded_fonts=embedded,
-        output_condition_identifier=output_condition_identifier,
+        output_condition_identifier=oi_id,
         icc_embedded=icc_bytes is not None,
         justify_stats=dict(layout.justify_stats),
         images_placed=len(writer._images),
@@ -799,4 +795,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),
         ink_uses=ink_uses,
         tac_warnings=tuple(tac_warnings(ink_uses)),
+        image_color_warnings=tuple(writer.image_color_warnings),
     )

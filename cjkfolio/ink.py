@@ -59,8 +59,8 @@ def image_max_tac(image: Image.Image) -> float:
     """置入影像的**最高**單點墨量百分比（不取平均：一枚重墨像素即構成風險）。
 
     mode "L"＝DeviceGray（0 全黑）：墨量＝(255 − 值) / 2.55，上限 100%（單 K）。
-    mode "CMYK"：四分量和 / 2.55，上限 400%。其餘 mode 快速失敗（本產品只寫出
-    這兩種影像色彩空間，images.IMAGE_COLORSPACES）。
+    mode "CMYK"：四分量和 / 2.55，上限 400%。其餘 mode 快速失敗：墨量是印刷色彩
+    空間才有的量，RGB 影像沒有對應語意（送印路徑於 pdf_writer 先轉灰再判）。
 
     四分量相加走 PIL ImageMath（C 層、"I" 模式不飽和截斷），逐像素相加在
     Python 層對送印級影像過慢，且 ImageChops.add 會在 255 截斷而失真。

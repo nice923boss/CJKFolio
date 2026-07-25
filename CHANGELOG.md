@@ -2,6 +2,46 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.131.0（2026-07-26，Sprint 137）預覽全彩：彩色封面圖在螢幕上是彩的，送印稿仍守 §9
+
+### 為什麼做這件事
+
+Owner 真視窗回饋（承 Sprint 136 同一張封面截圖）：**「封面圖片是彩色的，但顯示是黑白的，希望 APP 也要能支援全彩功能。」**
+
+實查根因不是 bug，是**一條規格被套錯層**：§9 印前規格寫「全文 CMYK 或 Grayscale，無殘留 RGB」，這是**送印稿**的硬條件；但自 Sprint 38 (c) 起，預覽 PNG 畫布就直接開成 `mode="L"`，`open_placed` 也把所有非 CMYK 來源一律 `convert("L")`。結果是**印廠的規矩管到了 Owner 的螢幕上**：置入一張彩色封面圖，編輯器畫布、頁面面板縮圖、預覽 PNG 全部是黑白的，而且從頭到尾沒有任何提示說「你的顏色被丟掉了」。
+
+本輪把這條界線劃回它該在的位置：**螢幕保留來源色彩，送印路徑才收斂到 CMYK／Grayscale，而且轉換一事要說出來。**
+
+### 變更
+
+- [實作] **預覽畫布改 RGB**（`render.py`）：`Image.new("RGB", ...)`，文字與線條填色新增 `_ink_rgb()` 由 CMYK 逐通道換算 `255×(1−x)×(1−k)`。內文預設單 K92 換出 (20, 20, 20)、紙白仍 255，故**純文字頁的畫面內容零改動**：既有像素斷言（`test_colors`／`test_image_rects`／`test_images`／`test_cmyk_image` 共 9 處取值點）改取 R 分量後**數值全數原值通過**，另以真樣張複驗全頁 236 種相異色**無一偏色**（三分量逐像素全等，R 分量極值 (20, 255)＝舊灰階畫布的同一組值）。誠實記錄：PNG 檔本身因色彩型別由 Grayscale 改為 RGB 而位元組不同，等值的是畫面，不是檔案。
+- [實作] **置入圖依來源色彩空間分流**（`images.open_placed`）：CMYK 保持 CMYK、灰階類（`L`／`LA`／`1`／`I`／`I;16`／`F` 等）轉 `L`、其餘一律轉 `RGB`。調色盤 `P` **歸入彩色**：調色盤存得了彩色，模式本身不足以判定，猜錯的代價是靜默丟色。
+- [實作] **送印路徑轉灰並據實警告**（`pdf_writer._image`）：PDF/X 輸出遇非 `{L, CMYK}` 影像時轉 `L` 嵌入，同時記一筆 `image_color_warnings`：「檔名：RGB 影像已轉灰階嵌入（PDF/X 只收 CMYK 或 Grayscale；要保留彩色請選一般 PDF 輸出，或先於影像軟體轉 CMYK 後置入）」。轉換本身不是新行為（Sprint 92 起就在轉），**新的是它不再沉默**。
+- [實作] **新增「一般 PDF」輸出形態 `pdfx="none"`**：不寫 OutputIntent、不寫 `GTS_PDFXVersion`／`GTS_PDFXConformance`、header 1.4、允許透明，RGB 置入圖原樣以 `/DeviceRGB` 嵌入。這是螢幕與試閱用的彩色檔，**不是送印稿**，標籤即寫明「一般 PDF（非 PDF/X，可含 RGB）」。三處配套守門：非 PDF/X 時 `icc_profile` **快速失敗**（無 OutputIntent 可嵌，收下卻不寫＝沉默丟棄）、`doc.title` 不再強制（`/Title` 是 PDF/X 的要求不是 PDF 的）、`preflight.check_pdfx` 對非 PDF/X 形態 fast-fail（沒有 PDF/X 機械規則可驗，回「ok」等於背書一份沒被驗過的檔）。
+- [實作] **報告一律讀成品自身的事實**：CLI 與 editor 的完成報告都改以 `result.output_condition_identifier` 是否為空字串分流（空 ⇔ 檔案裡確實沒寫 OutputIntent），不看送進去的選項。一般 PDF 的報告直說「無 OutputIntent、無 GTS 識別鍵，不可送印」。
+- [實作] **`PdfxProfile` 加 `is_pdfx` 屬性**（`version is not None`），writer／preflight／CLI／editor 四處分支同用這一個判準，不各自寫 `pdfx == "none"` 字串比對。形態登記表（`PDFX_PROFILES` 等）自 `pdf_writer` 移入 `pdfx_meta`（`pdf_writer` 逼近 800 行上限，且形態常數本就屬 meta 模組），原有 import 路徑以再匯出維持相容。
+- [實作] **編輯器畫布與縮圖同步吃彩色**（`editor/canvas.py`）：`pil_to_qimage` 改依 mode 分流，`L` 走 `Format_Grayscale8`、其餘轉 RGB 走 `Format_RGB888`。轉存對話框把「一般 PDF」列在最後（預設仍是 X-1a），選中時停用 ICC 列並就地說明「一般 PDF 不是 PDF/X：無 OutputIntent 與 GTS 識別鍵，置入的 RGB 彩色影像原樣保留，但拿去送印廠會被退件。要送印請改選 X-1a 或 X-4」。
+- [實作] **`ink.image_max_tac` 的拒收理由改寫正**：原註解說「本產品只寫這兩種色彩空間」，Sprint 137 起不成立；真正的理由是**墨量是印刷色彩空間才有的量，RGB 影像沒有對應語意**（送印路徑於 `pdf_writer` 先轉灰再判，故函式本身仍只見得到 `L`／`CMYK`）。
+
+### 效能與保真實測（R5 真實素材：實拍彩色照片置入 `samples/cover.doc.json` 封面版面）
+
+專案內既有影像**全是參考書黑白掃描**（`assets/reference/` 與 `samples/cover-art.png` 實測彩色像素 0.0%），無一張驗得動全彩；故取 Owner 機器上的實拍照片 `C:\Windows\Web\Wallpaper\Spotlight\img14.jpg`（RGB 3840×2400）裁成書封比例，素材與產物一律落在 `.gitignore` 的 `out/sprint137-r5/`，不入 repo、不進 `samples/`。
+
+- **素材**：RGB 740×925，最大分量差 255、彩色像素 99.9%。
+- **預覽**：封面頁 PNG `RGB` 874×1240，分量差 255、**彩色像素 18.6%**（Owner 的原始症狀點）。
+- **編輯器介面**（離屏開真 `EditorWindow`）：畫布底圖 pixmap 874×1240 分量差 255／彩色像素 **18.6%**、頁面面板縮圖 105×149 分量差 254／彩色像素 **18.3%**。
+- **送印**：X-1a 成品影像色彩空間 `{'/DeviceGray': 1}`、`preflight ok=True`，並確實吐出那句轉灰警告。
+- **全彩**：一般 PDF 成品影像色彩空間 `{'/DeviceRGB': 1}`，位元組層確認 `/OutputIntents` 與 `GTS_PDFX` **皆不存在**（不冒充送印稿）。
+- **Gate 4 不同方法**：兩份成品另以 PyMuPDF 光柵化讀回量彩度（不採信排版引擎自報），X-1a 讀回為灰、一般 PDF 讀回有彩；**Gate 1** 親 Read 四張 PNG（預覽頁、兩份讀回圖、介面縮圖）目視確認。
+- 全庫 **1372 → 1391 綠（+19）0 退步**、py_compile（cjkfolio／editor／tools／tests）EXIT_CODE=0、smoke C1〜C38 全過（C29 擴充一般 PDF 形態）。
+
+### 待 Owner 真實素材驗收（GAPS #92，承 #19 批次）
+
+- **RGB → CMYK 色彩管理未做**：送印路徑目前把彩色**轉灰**，不做 ICC 色彩轉換。要真正輸出彩色送印稿，需先定 profile 與 rendering intent 並跑 spike，非本輪範圍；當下的替代路徑是先在影像軟體轉 CMYK 再置入（CMYK 來源自 Sprint 92 起就原樣保留）。
+- **預覽的 CMYK → RGB 是無色彩管理的逐通道近似**：`255×(1−x)×(1−k)`，螢幕顏色與印出來的顏色不會一致，僅供版面判讀。
+- **透明度仍在置入時被丟掉**（既有行為，非本輪引入）：`RGBA`／`LA` 來源轉 `RGB`／`L` 時 alpha 被丟，且不提示。
+- **真視窗目視**：離屏量到的是像素數字，彩色封面在真視窗裡的觀感、縮圖辨識度、以及一般 PDF 那段警語是否讀得懂，仍待 Owner 實機確認。
+
 ## v0.130.0（2026-07-25，Sprint 136）文字框整框增刪移：封面的字刪得掉也搬得動了
 
 ### 為什麼做這件事

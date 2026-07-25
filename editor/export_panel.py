@@ -1,8 +1,12 @@
 """轉存 PDF 選項對話框（Sprint 127：乙4 匯出 PDF 介面）。
 
-只暴露 export_pdf 已驗且對印前送印必要的選項：輸出路徑、PDF/X 形態（X-1a／X-4）、
-輸出 ICC（X-4 強制嵌 DestOutputProfile）、首頁書頁碼、頁腳頁碼、裁切標記。判定與
-寫檔全在 cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收選項不做匯出。
+只暴露 export_pdf 已驗且對印前送印必要的選項：輸出路徑、輸出形態（X-1a／X-4／
+一般 PDF）、輸出 ICC（X-4 強制嵌 DestOutputProfile）、首頁書頁碼、頁腳頁碼、裁切
+標記。判定與寫檔全在 cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收
+選項不做匯出。
+
+一般 PDF（Sprint 137）排在最後，預設索引 0 仍是 X-1a：送印是本產品的主用途，
+保留全彩是例外，例外不搶預設。
 
 印前標記與套準單 K（press_marks／registration_single_k）為耦合的一組，且印前標記
 為自擬配置（非標準控制條），v1 介面未納入（GAPS #82），仍可經 CLI 使用。
@@ -49,7 +53,7 @@ class ExportDialog(QDialog):
         path_browse.clicked.connect(self._pick_path)
 
         self._pdfx = QComboBox()
-        for key in ("x-1a", "x-4"):
+        for key in ("x-1a", "x-4", "none"):
             self._pdfx.addItem(PDFX_PROFILES[key].label, key)
         self._pdfx.currentIndexChanged.connect(self._sync_icc_enabled)
 
@@ -89,10 +93,19 @@ class ExportDialog(QDialog):
         self._sync_icc_enabled()
 
     def _sync_icc_enabled(self) -> None:
-        """X-4 才需輸出 ICC；X-1a 停用 ICC 列避免誤導（registry 免嵌）。"""
-        need = self._pdfx.currentData() == "x-4"
+        """X-4 才需輸出 ICC；X-1a 停用 ICC 列避免誤導（registry 免嵌）。
+
+        一般 PDF 同樣停用（無 OutputIntent 可嵌），並就地寫明不可送印：
+        選單標籤之外再說一次，避免為了保留彩色而誤把送印稿存成非 PDF/X。
+        """
+        key = self._pdfx.currentData()
+        need = key == "x-4"
         self._icc_edit.setEnabled(need)
         self._icc_browse.setEnabled(need)
+        self._notice.setText(
+            "一般 PDF 不是 PDF/X：無 OutputIntent 與 GTS 識別鍵，置入的 RGB 彩色影像"
+            "原樣保留，但拿去送印廠會被退件。要送印請改選 X-1a 或 X-4。"
+            if key == "none" else "")
 
     def _pick_path(self) -> None:
         path, _ = QFileDialog.getSaveFileName(

@@ -1,8 +1,9 @@
 """彩色 CMYK 影像置入（Sprint 92，PLAN §9「全文 CMYK 或 Grayscale」；關 GAPS #29 (c)）。
 
-涵蓋：open_placed 依來源色彩空間分流（CMYK 保留／其餘轉灰階）、CMYK JPEG 快速失敗
-（spike18 實測 PIL 對 Adobe YCCK JPEG 讀出反相值）、EmbeddedImage 的 DeviceCMYK
-形態、兩後端置入（PDF 寫 DeviceCMYK／PNG 預覽轉灰階）、preflight 與 PPI 不退步。
+涵蓋：open_placed 依來源色彩空間分流（CMYK 保留／灰階類轉灰／其餘保持 RGB）、
+CMYK JPEG 快速失敗（spike18 實測 PIL 對 Adobe YCCK JPEG 讀出反相值）、EmbeddedImage
+的 DeviceCMYK 形態、兩後端置入（PDF 寫 DeviceCMYK／PNG 預覽畫布）、preflight 與 PPI
+不退步。RGB 保持與送印路徑轉灰的分工在 tests/test_full_color.py（Sprint 137）。
 
 真書素材為紅線不入 repo，本檔一律用程式合成的 CMYK 圖（極值可手算）。
 """
@@ -57,16 +58,20 @@ def test_open_placed_keeps_cmyk(tmp_path):
     assert im.getpixel((1, 0)) == (0, 0, 0, 255)    # 單 K 黑
 
 
-def test_open_placed_converts_rgb_to_gray(tmp_path):
+def test_open_placed_keeps_rgb(tmp_path):
+    """Sprint 137 起 RGB 保持原色（Sprint 92〜136 為轉灰）。"""
     p = tmp_path / "rgb.png"
     Image.new("RGB", (3, 2), (200, 100, 50)).save(p)
-    assert open_placed(p).mode == "L"
+    im = open_placed(p)
+    assert im.mode == "RGB"
+    assert im.getpixel((0, 0)) == (200, 100, 50)
 
 
-def test_open_placed_converts_palette_to_gray(tmp_path):
+def test_open_placed_converts_palette_to_rgb(tmp_path):
+    """調色盤可存彩色，模式本身不足以判定為灰階，故當彩色展開為 RGB。"""
     p = tmp_path / "pal.png"
     Image.new("P", (3, 2)).save(p)
-    assert open_placed(p).mode == "L"
+    assert open_placed(p).mode == "RGB"
 
 
 def test_open_placed_missing_file_raises(tmp_path):
@@ -92,10 +97,10 @@ def test_open_placed_cmyk_jpeg_fast_fails(tmp_path):
 
 
 def test_rgb_jpeg_still_accepted(tmp_path):
-    """只擋 CMYK JPEG；一般 RGB JPEG 照舊走灰階，不誤傷。"""
+    """只擋 CMYK JPEG（反相歧異）；一般 RGB JPEG 照收，不誤傷。"""
     p = tmp_path / "rgb.jpg"
     Image.new("RGB", (8, 8), (120, 130, 140)).save(p)
-    assert open_placed(p).mode == "L"
+    assert open_placed(p).mode == "RGB"
 
 
 # ---------- EmbeddedImage：DeviceCMYK 形態 ----------
@@ -125,8 +130,9 @@ def test_embedded_image_emit_devicecmyk():
 
 
 def test_embedded_image_rejects_unsupported_mode():
+    """RGBA 不可嵌（無 SMask 形態，alpha 無處可去）；RGB 可嵌見 test_full_color.py。"""
     with pytest.raises(ImageError):
-        EmbeddedImage(Image.new("RGB", (2, 2)), "Im1")
+        EmbeddedImage(Image.new("RGBA", (2, 2)), "Im1")
 
 
 def test_embedded_image_cmyk_bytes_are_not_inverted():
@@ -177,14 +183,14 @@ def test_export_gray_image_still_devicegray(tmp_path, template):
 
 
 def test_render_png_preview_accepts_cmyk(tmp_path, template):
-    """PNG 為灰階預覽畫布（Sprint 38 (c) 慣例）：CMYK 圖轉灰階畫入，不崩。"""
+    """PNG 預覽畫布自 Sprint 137 改 RGB：CMYK 圖轉 RGB 畫入，不崩。"""
     _make_cmyk(tmp_path / "c.tif", size=(40, 30))
     result = render_document(_figure_doc("c.tif"), template, tmp_path / "out",
                              footer=False, image_base_dir=tmp_path)
     assert result.images_placed == 1
     assert result.violations == []
     png = sorted((tmp_path / "out").glob("*.png"))[0]
-    assert Image.open(png).mode == "L"
+    assert Image.open(png).mode == "RGB"
 
 
 def test_cmyk_image_ppi_recorded(tmp_path, template):

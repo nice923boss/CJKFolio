@@ -2,8 +2,9 @@
 
 離屏可驗：檔案選單「轉存為 PDF…」項與 Ctrl+E、空白文件守門、驅動選項對話框後背景
 export_pdf 真產出成品（以 PyMuPDF 獨立讀回頁數／Title／頁面文字＝Gate 4 不同方法）、
-匯出跑於非 GUI 執行緒（tid 相異）、X-4 未選 ICC 擋 accept（不默默降回 X-1a）、取消
-據實提示、匯出中再觸發不重入。真視窗檔案選取與匯出手感待 Owner（GAPS #82）。
+匯出跑於非 GUI 執行緒（tid 相異）、X-4 未選 ICC 擋 accept（不默默降回 X-1a）、一般
+PDF 形態（Sprint 137）停用 ICC 列並標明不可送印且成品確無 OutputIntent、取消據實
+提示、匯出中再觸發不重入。真視窗檔案選取與匯出手感待 Owner（GAPS #82）。
 
 由 smoke_check.main() 呼叫，需求的離屏環境（QT_QPA_PLATFORM＝offscreen、QApplication
 已建）由呼叫端備妥。
@@ -102,6 +103,31 @@ def check_export(EditorWindow, DOC) -> None:
                 "X-4 未選 ICC 不應被接受"
             assert "PDF/X-4 須嵌" in dlg_x4._notice.text(), "X-4 缺 ICC 未據實說明"
 
+            # 一般 PDF（Sprint 137）：ICC 列停用、就地標明非送印形態、選項回 none
+            dlg_none = ExportDialog(td / "彩色.pdf", parent=win)
+            assert dlg_none._pdfx.findData("none") == 2, \
+                "一般 PDF 應排最後（預設索引 0 仍是 X-1a）"
+            dlg_none._pdfx.setCurrentIndex(2)
+            assert not dlg_none._icc_edit.isEnabled(), "一般 PDF 無 OutputIntent 可嵌"
+            assert "不是 PDF/X" in dlg_none._notice.text(), "一般 PDF 未標明不可送印"
+            opts_none = dlg_none.options()
+            assert opts_none["pdfx"] == "none" and opts_none["icc_profile"] is None, \
+                f"一般 PDF 選項不符：{opts_none}"
+            dlg_none._pdfx.setCurrentIndex(dlg_none._pdfx.findData("x-1a"))
+            assert dlg_none._notice.text() == "", "改回 X-1a 後提示未清"
+
+            # 一般 PDF 真匯出：成品確實不含 OutputIntent，報告據實說不可送印
+            color_out = td / "彩色.pdf"
+            ExportDialog.exec = _drive(color_out, "none")
+            win._export_pdf_dialog()
+            result_none = win._export_wait()
+            assert result_none is not None and color_out.exists(), "一般 PDF 未產出"
+            assert result_none.pdfx_label.startswith("一般 PDF"), \
+                f"成品形態不符：{result_none.pdfx_label}"
+            assert b"/OutputIntents" not in color_out.read_bytes(), \
+                "一般 PDF 不應寫 OutputIntent"
+            assert "不可送印" in infos[-1], f"報告未標明不可送印：{infos[-1]}"
+
             # 取消：對話框 reject → 據實提示、不起執行緒
             ExportDialog.exec = lambda dlg: int(QDialog.DialogCode.Rejected)
             win._export_pdf_dialog()
@@ -140,6 +166,7 @@ def check_export(EditorWindow, DOC) -> None:
     print(
         "C29 轉存 PDF 介面：檔案選單轉存項＋Ctrl+E＋空白文件守門＋驅動選項對話框後"
         "背景 export_pdf 真產出成品（PyMuPDF 讀回頁數／Title／首頁文字）＋匯出跑於"
-        "非 GUI 執行緒（tid 相異）＋X-4 未選 ICC 擋 accept（不默默降回 X-1a）＋取消"
-        "據實提示＋匯出中再觸發不重入"
+        "非 GUI 執行緒（tid 相異）＋X-4 未選 ICC 擋 accept（不默默降回 X-1a）＋"
+        "一般 PDF 形態停用 ICC 列並標明不可送印、成品確無 OutputIntent＋"
+        "取消據實提示＋匯出中再觸發不重入"
     )

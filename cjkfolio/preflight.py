@@ -140,11 +140,17 @@ def check_pdfx(path, profile: str = "x-1a") -> PreflightReport:
     profile="x-1a"（預設）或 "x-4"。X-4 header 為 1.6、GTS_PDFXVersion=PDF/X-4
     且無 GTS_PDFXConformance、OutputIntent 須嵌 DestOutputProfile、且允許透明
     （故不列 no-transparency 規則）。
+    非 PDF/X 形態（pdfx="none" 產出的一般 PDF）不受理：它本就不宣稱 PDF/X，
+    逐條判它等於拿錯尺（會滿江紅卻毫無意義）。
     """
     if profile not in PDFX_PROFILES:
         raise ValueError(
             f"未知 preflight profile {profile!r}，可選 {sorted(PDFX_PROFILES)}")
     prof = PDFX_PROFILES[profile]
+    if not prof.is_pdfx:
+        raise ValueError(
+            f"{prof.label} 非 PDF/X 一致性形態，無 PDF/X 機械規則可驗："
+            "preflight 只受理 x-1a 與 x-4")
     path = Path(path)
     findings = []
 

@@ -3,10 +3,16 @@
 圖片置入的單一事實來源：所有後端（render PNG／pdf_writer XObject）經此開啟圖檔、
 決定色彩空間並載入像素；置入幾何（等比縮放置中）在 primitives.fit_image_rect。
 
-色彩空間依**來源檔自帶的形態**分流（Sprint 92，open_placed）：CMYK 來源保持
-DeviceCMYK（真書送印稿 16 次彩色置入即此形態，tools/measure_cmyk_images.py 實測），
-其餘一律轉 8-bit 灰階 DeviceGray（單 K）。本產品不做 RGB→CMYK 換算：色彩轉換屬
-印廠 ICC 範疇（Sprint 76 色票決議、§7 對策「影像外部轉 CMYK 置入」）。
+色彩空間依**來源檔自帶的形態**分流（Sprint 92 立、Sprint 137 擴 RGB，open_placed）：
+CMYK 來源保持 DeviceCMYK（真書送印稿 16 次彩色置入即此形態，
+tools/measure_cmyk_images.py 實測）、灰階類來源轉 8-bit 灰階 DeviceGray（單 K）、
+其餘（RGB／RGBA／調色盤）保持 RGB。
+
+RGB 保持的理由與代價（Sprint 137）：Sprint 92〜136 期間非 CMYK 一律轉灰，於是彩色
+封面圖在螢幕上是黑白的（Owner 真視窗回饋）。保持 RGB 讓螢幕看到原色，但 RGB 不是
+§9 的印前色彩空間，**送印路徑（PDF/X-1a／X-4）仍在嵌入時轉灰並據實警告**，不沉默
+也不擋流程；要彩色送印稿請在影像軟體轉 CMYK 後置入。本產品仍不做 RGB→CMYK 換算：
+色彩轉換屬印廠 ICC 範疇（Sprint 76 色票決議、§7 對策「影像外部轉 CMYK 置入」）。
 
 CMYK JPEG 快速失敗（spike18）：PIL 對 CMYK JPEG 一律以「Adobe 反相」慣例解讀，而
 真實世界的 Adobe YCCK JPEG 經此讀出的是負片值（真書兩張樣本實測，反相假設誤差
@@ -37,8 +43,8 @@ def open_grayscale(path) -> Image.Image:
     """開啟圖檔並轉 8-bit 灰階（mode "L"）。回傳已載入記憶體的 PIL 影像。
 
     §9：灰階照片走單 K（DeviceGray）。恆轉灰階，不看來源色彩空間；置入用的分流
-    在 open_placed（本函式為其非 CMYK 分支）。開啟失敗（缺檔、非影像）快速失敗，
-    不沉默。
+    在 open_placed（自 Sprint 137 起彩色來源保持 RGB，故兩者不再等價）。開啟失敗
+    （缺檔、非影像）快速失敗，不沉默。
     """
     try:
         with Image.open(path) as im:
@@ -47,17 +53,25 @@ def open_grayscale(path) -> Image.Image:
         raise ImageError(f"讀取圖檔失敗 {path}：{e}") from e
 
 
-def open_placed(path) -> Image.Image:
-    """開啟置入圖並依來源色彩空間分流：CMYK 來源保持 "CMYK"，其餘轉 "L"。
+#: 灰階類來源模式（單通道或單通道＋alpha）→ 轉 "L"。其餘非 CMYK 模式轉 "RGB"。
+#: 調色盤 "P" 不在此列：調色盤可存彩色，模式本身不足以判定，故一律當彩色。
+GRAY_SOURCE_MODES = frozenset({"L", "LA", "La", "1", "I", "I;16", "I;16B", "I;16L", "F"})
 
-    §9 允許 CMYK 與 Grayscale 兩種印前色彩空間，來源檔自帶哪一種就用哪一種（機器
-    可讀的事實，非推測）。CMYK JPEG 拒收（模組 docstring 記反相實測）；開啟失敗
-    快速失敗，不沉默。
+
+def open_placed(path) -> Image.Image:
+    """開啟置入圖並依來源色彩空間分流：CMYK 保持、灰階類轉 "L"、其餘轉 "RGB"。
+
+    來源檔自帶哪一種就用哪一種（機器可讀的事實，非推測）。§9 的兩種印前色彩空間
+    （CMYK、Grayscale）原樣保留；RGB 保留是為了螢幕看得到原色（Sprint 137），
+    送印時的轉灰與警告在 pdf_writer，不在此處靜默處理。
+    CMYK JPEG 拒收（模組 docstring 記反相實測）；開啟失敗快速失敗，不沉默。
     """
     try:
         with Image.open(path) as im:
-            if im.mode != "CMYK":
+            if im.mode in GRAY_SOURCE_MODES:
                 return im.convert("L")
+            if im.mode != "CMYK":
+                return im.convert("RGB")
             if (im.format or "").upper() in ("JPEG", "JPEG2000", "MPO"):
                 raise ImageError(
                     f"不支援 CMYK JPEG 置入 {path}：JPEG 的 CMYK 分量有反相慣例歧異，"
@@ -69,7 +83,7 @@ def open_placed(path) -> Image.Image:
 
 
 def resolve_placed_images(doc, masters_by_page: dict, base_dir=None) -> dict:
-    """把 doc.images 解析為 {版面頁號: ((解析後路徑, PIL "L" 影像, rect|None), ...)}。
+    """把 doc.images 解析為 {版面頁號: ((解析後路徑, PIL 影像, rect|None), ...)}。
 
     兩後端共用；每頁多張（文件序＝繪製序，Sprint 54）。
     masters_by_page＝{版面頁號: MasterPage}（節式主版指派後逐頁主版，Sprint 51）：
@@ -151,17 +165,21 @@ def resolution_warnings(resolutions, min_ppi: float = MIN_IMAGE_PPI) -> list:
     ]
 
 
-#: PIL mode → PDF 影像色彩空間（§9 只此兩種印前色彩空間，皆非 preflight
-#: color-cmyk-only 的禁列項）
-IMAGE_COLORSPACES = {"L": "/DeviceGray", "CMYK": "/DeviceCMYK"}
+#: PIL mode → PDF 影像色彩空間。前兩種是 §9 的印前色彩空間，非 preflight
+#: color-cmyk-only 的禁列項；"RGB" 是 preflight 會判失敗的那一種，只在非 PDF/X 的
+#: 一般 PDF 走得到（PDF/X 路徑於 pdf_writer 轉灰並警告，Sprint 137）。
+IMAGE_COLORSPACES = {"L": "/DeviceGray", "CMYK": "/DeviceCMYK", "RGB": "/DeviceRGB"}
+
+#: §9 印前色彩空間（PDF/X 輸出只嵌這兩種）。
+PRINT_IMAGE_MODES = frozenset({"L", "CMYK"})
 
 
 class EmbeddedImage:
-    """置入影像的 PDF XObject 表示（§9 灰階單 K 或彩色 CMYK）：影像領域的 PDF 形態。
+    """置入影像的 PDF XObject 表示（灰階單 K／CMYK／RGB）：影像領域的 PDF 形態。
 
     res_name＝ImN（pdf_writer 與字型 FN 分名域）；data＝8-bit 原始像素（row-major、
-    首列在上，PIL tobytes）：mode "L" 為每像素 1 分量、"CMYK" 為 4 分量。emit 經傳入
-    的 PDF builder 的 stream 做 FlateDecode 壓縮並回傳物件號。
+    首列在上，PIL tobytes）：mode "L" 為每像素 1 分量、"RGB" 為 3 分量、"CMYK" 為
+    4 分量。emit 經傳入的 PDF builder 的 stream 做 FlateDecode 壓縮並回傳物件號。
 
     無 SMask（不置入 alpha，preflight no-transparency 不觸；真書送印稿雖有 14 處
     SMask，其交印檔本就非 PDF/X，不比照）。無 /Decode 反相陣列（分量即墨量，與真書

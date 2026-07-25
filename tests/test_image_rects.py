@@ -177,9 +177,10 @@ def test_render_multi_rect_images_pixels(template, tmp_path):
     assert result.images_placed == 2
     img = Image.open(result.paths[0])
     scale = 150 / 72.0
-    assert img.getpixel((round(90 * scale), round(130 * scale))) < 80    # dark 中心
-    assert img.getpixel((round(230 * scale), round(330 * scale))) > 180  # light 中心
-    assert img.getpixel((round(160 * scale), round(500 * scale))) > 240  # 空白處仍紙白
+    # 畫布自 Sprint 137 為 RGB，灰階來源畫入後三分量同值，取 R 分量比明暗
+    assert img.getpixel((round(90 * scale), round(130 * scale)))[0] < 80    # dark 中心
+    assert img.getpixel((round(230 * scale), round(330 * scale)))[0] > 180  # light 中心
+    assert img.getpixel((round(160 * scale), round(500 * scale)))[0] > 240  # 空白處仍紙白
 
 
 @needs_fonts

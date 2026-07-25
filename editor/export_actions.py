@@ -124,16 +124,21 @@ class ExportActionsMixin:
         X 結論；沿用 CLI cmd_export_pdf 的語彙，讓 UI 與命令列同一套說法。
         """
         lines = [f"轉存完成：{result.page_count} 頁 → {result.path}"]
-        lines.append(
-            f"{result.pdfx_label} 識別：OutputIntent "
-            f"{result.output_condition_identifier}"
-            + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
+        # 識別以成品自身的事實分流（一般 PDF 未寫 OutputIntent → 識別為空字串），
+        # 不看送出去的選項：報告要說的是檔案裡有什麼。
+        if not result.output_condition_identifier:
+            lines.append(f"{result.pdfx_label}：無 OutputIntent、無 GTS 識別鍵，不可送印")
+        else:
+            lines.append(
+                f"{result.pdfx_label} 識別：OutputIntent "
+                f"{result.output_condition_identifier}"
+                + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
         if result.crop_marks:
             lines.append("裁切標記：8 條單 K 角標（MediaBox 外擴、BleedBox＝trim＋出血）")
         if result.images_placed:
             lines.append(f"置入圖：{result.images_placed} 張影像 XObject")
-        notes = list(result.ppi_warnings) + list(result.tac_warnings) \
-            + list(result.license_warnings)
+        notes = list(result.image_color_warnings) + list(result.ppi_warnings) \
+            + list(result.tac_warnings) + list(result.license_warnings)
         lines.extend(notes)
         if not notes:
             lines.append(

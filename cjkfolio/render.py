@@ -126,13 +126,21 @@ def _missing_chars(text: str, infos) -> list:
     return [text[i.cluster] for i in infos if i.codepoint == 0 and i.cluster < len(text)]
 
 
-def _ink_gray(cmyk) -> int:
-    """文字填色 → PNG 灰值：255×(1−k) 只取 k 分量（灰階預覽限制，同 Sprint 15
-    線條慣例；c/m/y 不表達）。預設暖黑 K92 → 20。"""
-    return round(255 * (1 - cmyk[3]))
+def _ink_rgb(cmyk) -> tuple:
+    """文字／線條填色 CMYK → PNG 的 RGB 三元組：逐通道 255×(1−x)×(1−k)。
+
+    Sprint 137 起 PNG 畫布為 RGB，四個分量都表達得出來（此前只取 k，c/m/y 一律
+    丟棄，青色文字在預覽裡是白的＝看不見）。此式為**未經色彩管理的天真換算**，
+    只為螢幕示意；送印稿的忠實色彩仍只在 PDF 後端的 DeviceCMYK。
+    純 K 值不受影響（c=m=y=0 時三通道同為 255×(1−k)，暖黑 K92 → 20，
+    與 Sprint 15〜136 的灰值逐像素相同）。
+    """
+    k = max(0.0, min(1.0, cmyk[3]))
+    return tuple(max(0, min(255, round(255 * (1 - max(0.0, min(1.0, x))) * (1 - k))))
+                 for x in cmyk[:3])
 
 
-def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale, ink=0):
+def _draw_ttb_char(img, shaper, ch, axis_x_pt, cell_top_pt, size_pt, scale, ink=(0, 0, 0)):
     """單一 CJK 字以 TTB 塑形置於字槽（行軸置中、槽頂對齊）。回傳缺字來源字元。"""
     sf = shaper.set_size(size_pt)
     infos, poss = shaper.shape(ch, "ttb")
@@ -169,7 +177,7 @@ def _render_horizontal_strip(shaper, text, size_pt, scale):
 
 
 def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, scale,
-              ink=0):
+              ink=(0, 0, 0)):
     """縱中橫：短數字串橫排塞進一個字槽，行軸置中。回傳缺字來源字元。"""
     strip, missing = _render_horizontal_strip(shaper, text, size_pt * TCY_SIZE_RATIO,
                                               scale)
@@ -183,7 +191,7 @@ def _draw_tcy(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, advance_pt, sc
 
 
 def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scale,
-                        ink=0):
+                        ink=(0, 0, 0)):
     """長串拉丁／數字：橫排塑形後順時針轉 90 度，沿行軸向下。回傳缺字來源字元。"""
     strip, missing = _render_horizontal_strip(shaper, text, size_pt, scale)
     rot = strip.transpose(Image.Transpose.ROTATE_270)
@@ -194,30 +202,30 @@ def _draw_rotated_latin(img, shaper, text, axis_x_pt, cell_top_pt, size_pt, scal
 
 
 def _draw_stroke_rect(img, rect, scale):
-    """描邊矩形（PIL "L" 模式，outline=0 純黑）：top-down pt × scale → px。
+    """描邊矩形（PIL "RGB" 模式，outline 純黑）：top-down pt × scale → px。
 
-    PNG 為灰階預覽，不表達 CMYK（描邊 CMYK 差異只在 PDF 後端）；框線純黑同文字。
+    圖框佔位框無 CMYK 宣告（非文件內容），一律純黑同文字預設。
     """
     draw = ImageDraw.Draw(img)
     w_px = max(1, round(rect.line_width_pt * scale))
     box = [round(rect.x0 * scale), round(rect.y0 * scale),
            round(rect.x1 * scale), round(rect.y1 * scale)]
-    draw.rectangle(box, outline=0, width=w_px)
+    draw.rectangle(box, outline=(0, 0, 0), width=w_px)
 
 
 def _draw_stroke_line(img, line, scale):
-    """描邊線段（PIL "L" 模式）：top-down pt × scale → px，dash_on_pt>0 時分段畫。
+    """描邊線段（PIL "RGB" 模式）：top-down pt × scale → px，dash_on_pt>0 時分段畫。
 
-    PNG 為灰階預覽：描邊灰值以 255×(1−k) 近似（只取 k 分量，c/m/y 不表達；
-    CMYK 忠實表達只在 PDF 後端）。分段節奏與 pdf 端 `d` 算符同源（同一 StrokeLine）。
+    描邊色以 _ink_rgb 天真換算呈現（Sprint 137 前只取 k 分量）；送印稿的忠實
+    CMYK 只在 PDF 後端。分段節奏與 pdf 端 `d` 算符同源（同一 StrokeLine）。
     """
     draw = ImageDraw.Draw(img)
-    gray = max(0, min(255, round(255 * (1.0 - line.cmyk[3]))))
+    rgb = _ink_rgb(line.cmyk)
     w_px = max(1, round(line.line_width_pt * scale))
     x0, y0 = line.x0 * scale, line.y0 * scale
     x1, y1 = line.x1 * scale, line.y1 * scale
     if line.dash_on_pt <= 0:  # 實線
-        draw.line([(x0, y0), (x1, y1)], fill=gray, width=w_px)
+        draw.line([(x0, y0), (x1, y1)], fill=rgb, width=w_px)
         return
     length = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
     if length <= 0:
@@ -228,12 +236,12 @@ def _draw_stroke_line(img, line, scale):
     while t < length:
         seg = min(on, length - t)
         draw.line([(x0 + ux * t, y0 + uy * t),
-                   (x0 + ux * (t + seg), y0 + uy * (t + seg))], fill=gray, width=w_px)
+                   (x0 + ux * (t + seg), y0 + uy * (t + seg))], fill=rgb, width=w_px)
         t += on + off
 
 
 def _draw_horizontal_cell(img, shaper, text, pen_x_pt, baseline_y_pt, size_pt, scale,
-                          ink=0):
+                          ink=(0, 0, 0)):
     """橫排一個 cell：LTR 塑形直接落在頁面 (pen_x, baseline)。回傳缺字來源字元。
 
     與 pdf_writer 橫排路徑同源：字形擺放走 hb ltr，頁面 pen 推進由 layout 決定
@@ -303,7 +311,7 @@ class PageRenderer:
                 x = round((page_w_pt - item.outer_offset_pt) * self.scale) - strip.width
             else:
                 x = round(item.outer_offset_pt * self.scale)
-            img.paste(_ink_gray(resolve_text_cmyk(template, style)), (x, y), strip)
+            img.paste(_ink_rgb(resolve_text_cmyk(template, style)), (x, y), strip)
 
     def _draw_vertical_body(self, img, page, book_number: int) -> None:
         master, template = self.master, self.template
@@ -330,7 +338,7 @@ class PageRenderer:
                     cstyle = None
                     use_shaper, use_size = shaper, style.size_pt
                 cell_top += cell.glyph_offset * use_size  # 字形位移（em×字級，Sprint 117）
-                ink = _ink_gray(resolve_text_cmyk(template, cstyle, style))
+                ink = _ink_rgb(resolve_text_cmyk(template, cstyle, style))
                 if cell.kind == "cjk":
                     missing = _draw_ttb_char(img, use_shaper, cell.text, axis, cell_top, use_size, self.scale, ink)
                     if cell.ruby:  # 注音／ruby：字右側鄰欄、於 base 群組範圍置中
@@ -370,7 +378,7 @@ class PageRenderer:
                 if cell.kind != "space":
                     missing = _draw_horizontal_cell(
                         img, use_shaper, cell.text, pen_x, baseline_y, use_size, self.scale,
-                        _ink_gray(resolve_text_cmyk(template, cstyle, style)))
+                        _ink_rgb(resolve_text_cmyk(template, cstyle, style)))
                     self._note_missing(use_shaper, missing)
                 pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
 
@@ -406,8 +414,9 @@ class PageRenderer:
         rect＝任意圖框（trim pt、top-down，Sprint 54）；None＝主版 figure 保留區
         （槽式，取代佔位框）。幾何與 pdf_writer._image 同源（fit_image_rect）；
         溢出版心的 rect 由 PIL 於畫布邊界自然裁切（PNG 為 trim 空間預覽）。
-        CMYK 來源在此轉灰階（PNG 畫布為 "L"，同 Sprint 15 起的灰階預覽慣例；
-        彩色只在 PDF 完稿呈現，GAPS #38 (c) 同型）。"""
+        畫布為 "RGB"（Sprint 137）：RGB 來源原樣貼、灰階來源等值展成三通道、
+        CMYK 來源以 PIL 內建換算轉 RGB 顯示。CMYK→RGB **未經色彩管理**，螢幕上
+        的是示意色而非打樣色（要準色請看 PDF 完稿或印廠打樣）。"""
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
             slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
@@ -417,8 +426,8 @@ class PageRenderer:
         w_px = max(1, round((box.x1 - box.x0) * self.scale))
         h_px = max(1, round((box.y1 - box.y0) * self.scale))
         resized = pil.resize((w_px, h_px))
-        if resized.mode != "L":
-            resized = resized.convert("L")
+        if resized.mode != "RGB":
+            resized = resized.convert("RGB")
         img.paste(resized, (round(box.x0 * self.scale), round(box.y0 * self.scale)))
 
     def _draw_text_frame(self, img, placement) -> None:
@@ -426,7 +435,7 @@ class PageRenderer:
         同源），逐字格繪製復用直排 body 的 cell 繪製助手（框內不齊行、等距）。"""
         style = self.template.paragraph_styles[placement.style]
         shaper = self._shaper_for(style)
-        ink = _ink_gray(resolve_text_cmyk(self.template, style))
+        ink = _ink_rgb(resolve_text_cmyk(self.template, style))
         for fl in placement.lines:
             content_i = 0
             for cell in fl.line.cells:
@@ -459,7 +468,7 @@ class PageRenderer:
                 ), self.scale)
             cstyle = self.template.character_styles[m.char_style]
             shaper = self._shaper_for(cstyle)
-            ink = _ink_gray(resolve_text_cmyk(self.template, cstyle))
+            ink = _ink_rgb(resolve_text_cmyk(self.template, cstyle))
             for i, digit in enumerate(m.digits):
                 cell_top = m.page_no_top_pt + i * m.digit_advance_pt
                 missing = _draw_tcy(img, shaper, digit, axis, cell_top,
@@ -478,7 +487,7 @@ class PageRenderer:
             round(mm_to_pt(template.page_width_mm) * self.scale),
             round(mm_to_pt(template.page_height_mm) * self.scale),
         )
-        img = Image.new("L", size_px, 255)
+        img = Image.new("RGB", size_px, (255, 255, 255))
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先畫）
         if not vertical and self.master.frame and page.placed:
             self._draw_frame(img, page, book_number)
@@ -512,7 +521,7 @@ class RenderResult:
     fonts_used: list
     font_warnings: list
     justify_stats: dict
-    images_placed: int = 0  # 置入照片數（槽式＋rect 任意圖框；PNG 預覽一律灰階畫布）
+    images_placed: int = 0  # 置入照片數（槽式＋rect 任意圖框；PNG 畫布為 RGB）
 
 
 def render_document(doc, template: Template, out_dir, dpi: int = 150,

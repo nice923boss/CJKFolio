@@ -262,12 +262,13 @@ def test_render_image_pixels_and_orientation(tmp_path, template):
     cx = round((box.x0 + box.x1) / 2 * scale)
     top_y = round((box.y0 + (box.y1 - box.y0) * 0.25) * scale)
     bot_y = round((box.y0 + (box.y1 - box.y0) * 0.75) * scale)
-    top_val, bot_val = img.getpixel((cx, top_y)), img.getpixel((cx, bot_y))
+    # 畫布自 Sprint 137 為 RGB，取 R 分量比明暗（測試圖三分量同值）
+    top_val, bot_val = img.getpixel((cx, top_y))[0], img.getpixel((cx, bot_y))[0]
     assert top_val < 128 < bot_val  # 上暗下亮（未上下翻轉）
     # 貼高置中 → 左側留白為背景白（無佔位框、無影像）
     lb_x = round((slot.x0 + 3) * scale)
     lb_y = round((slot.y0 + slot.y1) / 2 * scale)
-    assert img.getpixel((lb_x, lb_y)) > 250
+    assert img.getpixel((lb_x, lb_y)) == (255, 255, 255)
 
 
 def test_render_no_images_placed_zero(tmp_path, template):

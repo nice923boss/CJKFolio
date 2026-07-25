@@ -67,10 +67,18 @@ class FrameCellHit:
 
 
 def pil_to_qimage(img) -> QImage:
-    """PIL "L" 灰階 → QImage（stride＝寬，PIL tobytes 無 padding；copy 保活）。"""
-    return QImage(
-        img.tobytes(), img.width, img.height, img.width, QImage.Format_Grayscale8
-    ).copy()
+    """PIL 影像 → QImage（stride＝寬×分量數，PIL tobytes 無 padding；copy 保活）。
+
+    "RGB"（Sprint 137 起的預設畫布）走 Format_RGB888、"L" 走 Format_Grayscale8。
+    其餘模式先轉 RGB：QImage 沒有對應格式，硬套 stride 會讀出雜訊而非報錯。
+    """
+    if img.mode == "L":
+        fmt, stride = QImage.Format_Grayscale8, img.width
+    else:
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        fmt, stride = QImage.Format_RGB888, img.width * 3
+    return QImage(img.tobytes(), img.width, img.height, stride, fmt).copy()
 
 
 def iter_cell_rects(

@@ -296,13 +296,20 @@ def cmd_export_pdf(args) -> int:
               "（落在 TrimBox 外的標記環內）")
         print("印前標記為自擬配置，非任何標準控制條（Ugra／Fogra／Brunner）；"
               "送印前請向印廠索取規格")
-    print(f"{result.pdfx_label} 識別：OutputIntent {result.output_condition_identifier}"
-          + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
+    # 依成品自身的事實分流（一般 PDF 未寫 OutputIntent → 識別為空字串），與
+    # editor 報告同一條判準：報告要說的是檔案裡有什麼，不是選項送了什麼。
+    if not result.output_condition_identifier:
+        print(f"{result.pdfx_label}：無 OutputIntent、無 GTS 識別鍵，不可送印")
+    else:
+        print(f"{result.pdfx_label} 識別：OutputIntent {result.output_condition_identifier}"
+              + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
     if result.images_placed:
         spaces = "、".join(
             f"{cs.lstrip('/')} {n} 張"
             for cs, n in sorted(result.image_colorspaces.items()))
         print(f"置入圖：{result.images_placed} 張影像 XObject（{spaces}）")
+        for warning in result.image_color_warnings:
+            print(f"影像色彩：{warning}")
         for warning in result.ppi_warnings:
             print(warning)
         if not result.ppi_warnings:
@@ -471,8 +478,9 @@ def main(argv=None) -> int:
                        help="印刷條件人讀描述")
     p_pdf.add_argument("--icc", default=None,
                        help="嵌入 DestOutputProfile 的 CMYK 輸出 ICC 檔（自訂識別時必填）")
-    p_pdf.add_argument("--pdfx", choices=["x-1a", "x-4"], default="x-1a",
-                       help="PDF/X 一致性形態（預設 x-1a:2001；x-4:2010 須以 --icc 提供 ICC）")
+    p_pdf.add_argument("--pdfx", choices=["x-1a", "x-4", "none"], default="x-1a",
+                       help="輸出形態（預設 x-1a:2001；x-4:2010 須以 --icc 提供 ICC；"
+                            "none＝非 PDF/X 的一般 PDF，可含 RGB 彩色影像但不可送印）")
     p_pdf.add_argument("--crop-marks", action="store_true",
                        help="加裁切標記（MediaBox 外擴、BleedBox=trim+出血、8 條單 K 角標）")
     p_pdf.add_argument("--press-marks", action="store_true",
