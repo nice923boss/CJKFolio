@@ -2,8 +2,11 @@
 
 只暴露 export_pdf 已驗且對印前送印必要的選項：輸出路徑、輸出形態（X-1a／X-4／
 一般 PDF）、輸出 ICC（X-4 強制嵌 DestOutputProfile）、首頁書頁碼、頁腳頁碼、裁切
-標記。判定與寫檔全在 cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收
-選項不做匯出。
+標記、RGB 影像轉 CMYK 與其 rendering intent（Sprint 139）。判定與寫檔全在
+cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收選項不做匯出。
+
+色彩轉換的目標描述檔就是「輸出 ICC」那一份，故該欄空著時勾選框停用：沒有描述檔
+就沒有可據以轉換的目標（本產品不做無色彩管理的換算）。
 
 一般 PDF（Sprint 137）排在最後，預設索引 0 仍是 X-1a：送印是本產品的主用途，
 保留全彩是例外，例外不搶預設。
@@ -60,8 +63,16 @@ class ExportDialog(QDialog):
         self._icc_edit = QLineEdit()
         self._icc_edit.setPlaceholderText(
             "PDF/X-4 須嵌 CMYK 輸出 ICC；X-1a 免（registry 識別）")
+        self._icc_edit.textChanged.connect(self._sync_convert_enabled)
         self._icc_browse = QPushButton("瀏覽…")
         self._icc_browse.clicked.connect(self._pick_icc)
+
+        # 色彩轉換（Sprint 139）：目標描述檔＝上方那份輸出 ICC，故沒選 ICC 就沒得轉
+        self._convert = QCheckBox("RGB 影像依上方 ICC 轉 CMYK（灰階與 CMYK 來源不動）")
+        self._convert.toggled.connect(self._sync_convert_enabled)
+        self._intent = QComboBox()
+        self._intent.addItem("相對色度（預設）", "relative")
+        self._intent.addItem("感知（全域壓縮色域）", "perceptual")
 
         self._first_page = QSpinBox()
         self._first_page.setRange(1, 9999)
@@ -88,24 +99,39 @@ class ExportDialog(QDialog):
         form.addRow("首頁書頁碼", self._first_page)
         form.addRow("", self._footer)
         form.addRow("", self._crop)
+        form.addRow("", self._convert)
+        form.addRow("轉換 intent", self._intent)
         form.addRow(self._notice)
         form.addRow(buttons)
         self._sync_icc_enabled()
 
     def _sync_icc_enabled(self) -> None:
-        """X-4 才需輸出 ICC；X-1a 停用 ICC 列避免誤導（registry 免嵌）。
+        """PDF/X 兩形態都可選輸出 ICC；一般 PDF 停用（無 OutputIntent 可嵌）。
 
-        一般 PDF 同樣停用（無 OutputIntent 可嵌），並就地寫明不可送印：
-        選單標籤之外再說一次，避免為了保留彩色而誤把送印稿存成非 PDF/X。
+        X-4 是強制嵌，X-1a 是選配（registry 識別免嵌），但 X-1a 選了也會嵌，
+        且那份描述檔同時是色彩轉換的目標（Sprint 139），故不再停用該列。
+        一般 PDF 就地寫明不可送印：選單標籤之外再說一次，避免為了保留彩色而
+        誤把送印稿存成非 PDF/X。
         """
         key = self._pdfx.currentData()
-        need = key == "x-4"
-        self._icc_edit.setEnabled(need)
-        self._icc_browse.setEnabled(need)
+        self._icc_edit.setEnabled(key != "none")
+        self._icc_browse.setEnabled(key != "none")
         self._notice.setText(
             "一般 PDF 不是 PDF/X：無 OutputIntent 與 GTS 識別鍵，置入的 RGB 彩色影像"
             "原樣保留，但拿去送印廠會被退件。要送印請改選 X-1a 或 X-4。"
             if key == "none" else "")
+        self._sync_convert_enabled()
+
+    def _sync_convert_enabled(self) -> None:
+        """沒選 ICC 就沒有轉換目標：勾選框停用並取消勾，intent 隨勾選啟用。
+
+        停用時一併取消勾，避免留下「勾了卻不生效」的狀態（options 也會再擋一次）。
+        """
+        ready = bool(self._icc_edit.text().strip()) and self._icc_edit.isEnabled()
+        self._convert.setEnabled(ready)
+        if not ready:
+            self._convert.setChecked(False)
+        self._intent.setEnabled(self._convert.isChecked())
 
     def _pick_path(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -134,15 +160,21 @@ class ExportDialog(QDialog):
     def options(self) -> dict:
         """收好的選項：out_path 由呼叫端強制 .pdf 後綴，其餘鍵直接餵 export_pdf。
 
-        icc_profile 僅在 X-4 時帶入（X-1a 走 registry 識別免嵌，UI 亦停用該欄）。
+        icc_profile 在兩種 PDF/X 形態都帶入（X-4 強制嵌、X-1a 選配），一般 PDF
+        不帶（無 OutputIntent 可嵌，export_pdf 會拒收）。
+        color_convert 以「真的有描述檔」為前提再判一次：UI 已停用，這裡是第二道，
+        因為送進 export_pdf 的是這份 dict，不是使用者看到的畫面。
         """
         icc = self._icc_edit.text().strip()
         pdfx = self._pdfx.currentData()
+        profile = Path(icc) if (icc and pdfx != "none") else None
         return {
             "out_path": Path(self._path_edit.text().strip()),
             "pdfx": pdfx,
-            "icc_profile": Path(icc) if (icc and pdfx == "x-4") else None,
+            "icc_profile": profile,
             "first_page": self._first_page.value(),
             "footer": self._footer.isChecked(),
             "crop_marks": self._crop.isChecked(),
+            "color_convert": self._convert.isChecked() and profile is not None,
+            "rendering_intent": self._intent.currentData(),
         }

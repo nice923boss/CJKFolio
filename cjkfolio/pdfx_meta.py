@@ -78,6 +78,38 @@ def validate_output_profile(data: bytes, source) -> None:
         )
 
 
+def resolve_output_icc(profile: PdfxProfile, icc_profile,
+                       output_condition_identifier: str) -> Optional[bytes]:
+    """OutputIntent 要嵌的描述檔位元組；免嵌或不寫 OutputIntent 時回 None。
+
+    三種形態的嵌入條款集中在此（自 pdf_writer.export_pdf 抽出，Sprint 139）：
+    一般 PDF 無 OutputIntent，ICC 沒有地方放，收下卻不寫＝沉默丟棄，故快速失敗；
+    X-1a 的識別命中 KNOWN_PRINT_CONDITIONS 者免嵌，自訂識別須補描述檔；
+    X-4 一律強制嵌（ISO 15930-7，registry 免嵌不足）。
+    回傳的位元組另有第二個用途（Sprint 139）：色彩轉換的目標描述檔即這一份，
+    故「轉換目標」與「PDF 宣告的輸出條件」必然是同一個檔。
+    """
+    if not profile.is_pdfx:
+        if icc_profile is not None:
+            raise ValueError(
+                f"{profile.label} 不寫 OutputIntent，icc_profile 無處可嵌："
+                "要嵌輸出描述檔請選 PDF/X-1a 或 PDF/X-4")
+        return None
+    if icc_profile is not None:
+        data = Path(icc_profile).read_bytes()
+        validate_output_profile(data, icc_profile)
+        return data
+    if profile.require_embedded_icc:
+        raise ValueError(
+            f"{profile.label} 要求嵌入 DestOutputProfile（registry 識別不足）："
+            "請以 icc_profile 提供 CMYK 輸出 ICC 描述檔")
+    if output_condition_identifier not in KNOWN_PRINT_CONDITIONS:
+        raise ValueError(
+            f"印刷條件識別 {output_condition_identifier!r} 不在已知 ICC registry 名單，"
+            f"{profile.label} 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔")
+    return None
+
+
 def _xml_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 

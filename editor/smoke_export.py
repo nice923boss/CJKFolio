@@ -3,8 +3,9 @@
 離屏可驗：檔案選單「轉存為 PDF…」項與 Ctrl+E、空白文件守門、驅動選項對話框後背景
 export_pdf 真產出成品（以 PyMuPDF 獨立讀回頁數／Title／頁面文字＝Gate 4 不同方法）、
 匯出跑於非 GUI 執行緒（tid 相異）、X-4 未選 ICC 擋 accept（不默默降回 X-1a）、一般
-PDF 形態（Sprint 137）停用 ICC 列並標明不可送印且成品確無 OutputIntent、取消據實
-提示、匯出中再觸發不重入。真視窗檔案選取與匯出手感待 Owner（GAPS #82）。
+PDF 形態（Sprint 137）停用 ICC 列並標明不可送印且成品確無 OutputIntent、色彩轉換
+閘門（Sprint 139：沒選 ICC 不給勾）、取消據實提示、匯出中再觸發不重入。真視窗檔案
+選取與匯出手感待 Owner（GAPS #82）。
 
 由 smoke_check.main() 呼叫，需求的離屏環境（QT_QPA_PLATFORM＝offscreen、QApplication
 已建）由呼叫端備妥。
@@ -116,6 +117,27 @@ def check_export(EditorWindow, DOC) -> None:
             dlg_none._pdfx.setCurrentIndex(dlg_none._pdfx.findData("x-1a"))
             assert dlg_none._notice.text() == "", "改回 X-1a 後提示未清"
 
+            # 色彩轉換閘門（Sprint 139）：沒選 ICC 不給勾，選了才開；停用時強制退勾
+            dlg_cc = ExportDialog(td / "轉換.pdf", parent=win)
+            assert dlg_cc._icc_edit.isEnabled(), "X-1a 亦可選輸出 ICC（轉換目標）"
+            assert not dlg_cc._convert.isEnabled(), "未選 ICC 不應可勾色彩轉換"
+            # 對話框只看欄位空不空（描述檔內容的守門在 export_pdf，pytest 已驗）
+            icc_path = td / "輸出.icc"
+            dlg_cc._icc_edit.setText(str(icc_path))
+            assert dlg_cc._convert.isEnabled(), "選了 ICC 後應可勾色彩轉換"
+            assert not dlg_cc._intent.isEnabled(), "未勾轉換時 intent 應停用"
+            dlg_cc._convert.setChecked(True)
+            assert dlg_cc._intent.isEnabled(), "勾了轉換後 intent 應可選"
+            opts_cc = dlg_cc.options()
+            assert opts_cc["color_convert"] and opts_cc["icc_profile"] == icc_path, \
+                f"轉換選項未帶出：{opts_cc}"
+            assert opts_cc["rendering_intent"] == "relative", \
+                f"預設 intent 非相對色度：{opts_cc['rendering_intent']}"
+            dlg_cc._pdfx.setCurrentIndex(dlg_cc._pdfx.findData("none"))
+            assert not dlg_cc._convert.isChecked(), "改一般 PDF 後轉換未退勾"
+            assert dlg_cc.options()["color_convert"] is False, \
+                "一般 PDF 不應帶出色彩轉換"
+
             # 一般 PDF 真匯出：成品確實不含 OutputIntent，報告據實說不可送印
             color_out = td / "彩色.pdf"
             ExportDialog.exec = _drive(color_out, "none")
@@ -168,5 +190,6 @@ def check_export(EditorWindow, DOC) -> None:
         "背景 export_pdf 真產出成品（PyMuPDF 讀回頁數／Title／首頁文字）＋匯出跑於"
         "非 GUI 執行緒（tid 相異）＋X-4 未選 ICC 擋 accept（不默默降回 X-1a）＋"
         "一般 PDF 形態停用 ICC 列並標明不可送印、成品確無 OutputIntent＋"
+        "色彩轉換閘門（未選 ICC 不給勾、選了才開、改一般 PDF 強制退勾）＋"
         "取消據實提示＋匯出中再觸發不重入"
     )

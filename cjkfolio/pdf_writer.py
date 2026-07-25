@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from .color_convert import DEFAULT_INTENT, convert_placed_images
 from .fonts import DEFAULT_FONT_DIR, FontRegistry
 from .frames import resolve_text_frames
 from .images import (
@@ -43,7 +44,7 @@ from .pdfx_meta import (  # re-export：既有 import 路徑（preflight／edito
     PDFX_VERSION,
     REGISTRY_URL,
     PdfxProfile,
-    validate_output_profile,
+    resolve_output_icc,
     xmp_packet,
 )
 from .layout import (
@@ -586,7 +587,7 @@ class PdfResult:
     ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
     ink_uses: tuple = ()           # 著色與影像的最高墨量 InkUse（依 TAC 降序）
     tac_warnings: tuple = ()       # 總墨量超 §9 320% 上限的警告（不擋流程）
-    image_color_warnings: tuple = ()  # 送印形態下 RGB 影像已轉灰階的告知（不擋流程）
+    image_color_warnings: tuple = ()  # RGB 影像已轉灰／已依描述檔轉 CMYK 的告知（不擋流程）
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -597,6 +598,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                pdfx: str = "x-1a", crop_marks: bool = False,
                press_marks: bool = False,
                registration_single_k: bool = False,
+               color_convert: bool = False,
+               rendering_intent: str = DEFAULT_INTENT,
                license_policy: str = "warn") -> PdfResult:
     """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
@@ -610,6 +613,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     免嵌不足），header 升 1.6、GTS_PDFXVersion=PDF/X-4 且無 GTS_PDFXConformance。
     置入圖（doc.images）以影像 XObject 嵌入（色彩空間依來源分流，見 images.open_placed），
     路徑相對 image_base_dir 解析。
+    color_convert=True（Sprint 139）把 RGB 置入圖依 icc_profile 轉 CMYK 再嵌（灰階與
+    CMYK 來源不動），故須有 icc_profile；rendering_intent 見 color_convert 模組。
+    顏色正確性由描述檔與印廠決定，本產品只負責照描述檔換算。
     crop_marks=True 加裁切標記（§9）：MediaBox 於 BleedBox 外擴 MARK_LENGTH_MM、
     BleedBox 縮回 trim＋出血、8 條單 K 角標；預設 False 時輸出與無標記相同（BleedBox
     ＝MediaBox，向後相容）。
@@ -623,26 +629,12 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     if not doc.title and profile.is_pdfx:
         raise ValueError(
             f"{profile.label} 要求 Info /Title：文件 meta.title 不可為空")
-    icc_bytes = None
-    if not profile.is_pdfx:
-        # 一般 PDF 無 OutputIntent，ICC 沒有地方放。收下卻不寫＝沉默丟棄，故快速失敗
-        if icc_profile is not None:
-            raise ValueError(
-                f"{profile.label} 不寫 OutputIntent，icc_profile 無處可嵌："
-                "要嵌輸出描述檔請選 PDF/X-1a 或 PDF/X-4")
-    elif icc_profile is not None:
-        icc_bytes = Path(icc_profile).read_bytes()
-        validate_output_profile(icc_bytes, icc_profile)
-    elif profile.require_embedded_icc:
+    icc_bytes = resolve_output_icc(profile, icc_profile,
+                                   output_condition_identifier)
+    if color_convert and not icc_bytes:
         raise ValueError(
-            f"{profile.label} 要求嵌入 DestOutputProfile（registry 識別不足）："
-            "請以 icc_profile 提供 CMYK 輸出 ICC 描述檔"
-        )
-    elif output_condition_identifier not in KNOWN_PRINT_CONDITIONS:
-        raise ValueError(
-            f"印刷條件識別 {output_condition_identifier!r} 不在已知 ICC registry 名單，"
-            f"{profile.label} 要求嵌入 DestOutputProfile：請以 icc_profile 提供 ICC 描述檔"
-        )
+            f"color_convert 要求目標 CMYK 輸出描述檔（{profile.label}）："
+            "請以 icc_profile 提供，registry 免嵌識別不足以作為轉換目標")
     if registration_single_k and not press_marks:
         raise ValueError(
             "registration_single_k 需搭 press_marks（套準十字只在印前標記中產生）"
@@ -657,6 +649,10 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
+    convert_notes = []
+    if color_convert:   # 轉在寫出層之前：寫出層看到的已是 CMYK，墨量帳自然接手
+        images_by_page, convert_notes = convert_placed_images(
+            images_by_page, icc_bytes, rendering_intent, icc_profile)
     frames_by_page = resolve_text_frames(doc, template, masters_by_page)
     frame_violations = [v for pls in frames_by_page.values()
                         for pl in pls for v in pl.violations]
@@ -795,5 +791,5 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),
         ink_uses=ink_uses,
         tac_warnings=tuple(tac_warnings(ink_uses)),
-        image_color_warnings=tuple(writer.image_color_warnings),
+        image_color_warnings=tuple(convert_notes) + tuple(writer.image_color_warnings),
     )

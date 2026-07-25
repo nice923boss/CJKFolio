@@ -2,6 +2,41 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.133.0（2026-07-26，Sprint 139）ICC 色彩轉換 v1：照你給的描述檔換算，不擔保印出來的顏色
+
+### 為什麼做這件事
+
+Sprint 138 把「不做 RGB→CMYK」推翻成「**有描述檔才做**」，並把唯一擋著的東西寫成 GAPS #92 (a) 的 Owner 閘門：**沒有描述檔**。§9 指定的 Japan Color 屬第三方散布不可內建，本機只有作業系統夾帶的美規 `RSWOP.icm`。Owner 於本日交來 `JapanColor2011Coated.icc`（1,979,304 bytes，§9 指定的輸出條件），閘門滿足，本輪實作。
+
+### [實作] 三條件缺一不可，缺了就快速失敗
+
+- **新模組 `cjkfolio/color_convert.py`**（純邏輯、Qt 無關、156 行）：來源描述檔取影像內嵌的 ICC，沒有才假設 sRGB（Spike 25 實測兩者分量差平均 0.007／255，捨入級）；**灰階與 CMYK 來源直接原樣返還**（不進轉換，守 §9「灰階照片走單 K」）；intent 只收 `relative`（預設）與 `perceptual`，`saturation` 與 `absolute` **明列拒收並附理由**（前者連純黑都轉成四色 (63, 73, 81, 255)、TAC 185%，後者是打樣模擬用途）。描述檔即使過了既有的 header 檢查，littleCMS 打不開仍不轉：header 合格不代表色彩轉換表完整。
+- **`export_pdf` 加 `color_convert` 與 `rendering_intent` 兩參數**：轉換發生在 `resolve_placed_images` 之後、寫出層之前，故 `_PdfPageWriter._image` **一行未改**就吃到 CMYK 影像，既有的 `ink.image_max_tac` 與 `tac_warnings` 也自動接手（不是另寫一套帳）。
+- **轉換目標與 PDF 宣告的輸出條件必然同一份位元組**：ICC 的取用政策自 `pdf_writer` 抽成 `pdfx_meta.resolve_output_icc`（一般 PDF 快速失敗／X-1a registry 免嵌／X-4 強制嵌），轉換與 OutputIntent 共用它的回傳值。副作用是 **X-1a 只靠 registry 識別時不足以當轉換目標**，勾了轉換卻沒給描述檔即快速失敗（不默默改走轉灰）。抽出也讓 `pdf_writer` 加完接線後停在 795 行，仍在 800 行紀律內。
+- **CLI 兩旗標**：`--color-convert`（須有 `--icc`）與 `--rendering-intent {perceptual,relative}`。
+- **轉存對話框閘門**（`editor/export_panel.py`）：ICC 欄空著時勾選框停用並強制退勾，intent 隨勾選啟用；改選一般 PDF 時連帶退勾。`options()` 再判一次「真的有描述檔」，因為送進 `export_pdf` 的是那份 dict，不是使用者看到的畫面。
+- **每張轉出的圖都記一筆告知**（沿用 Sprint 137 的 `image_color_warnings`，不擋流程）：「檔名：RGB 影像已依『描述檔名』以 relative intent 轉為 CMYK 嵌入（來源＝內嵌 ICC／假設 sRGB）；顏色正確性須經印廠打樣確認，本產品不擔保」。
+
+### R5 真素材驗收：走真命令列，PyMuPDF 於 PIL 之外複量
+
+素材兩份皆非為本測試而造：Owner 取得的 `JapanColor2011Coated.icc`（第三方散布物，**不入 repo**）與 Windows Spotlight 夾帶的桌布（3D 算圖非實拍；專案內既有影像全是黑白掃描，彩度不足以驗色彩轉換）。產物落 `.gitignore` 的 `out/sprint139-r5/`。
+
+- **轉換路徑**：成品首圖 `/DeviceCMYK`、無 `/Decode` 反相陣列、樣本 10,952,000 bytes＝1480×1850×4；解壓後逐四位元組於 PIL 之外複量最高 TAC **350.2%**（超 320% 的像素 7,910／2,738,000），與命令列自報的超標警告吻合。
+- **350% 不是 bug，是描述檔的性質**：Japan Color 2011 Coated 屬 light GCR，純黑 RGB (0,0,0) 轉出 **(238, 233, 218, 204)** 的四色黑；同一張圖走 `RSWOP.icm` 則是單 K100。本產品**據實報墨量超標而不擋、也不壓**：壓墨量屬描述檔選擇與 GCR／UCR 範疇，選錯的代價由印廠承擔，不該由排版軟體悄悄替使用者決定。
+- **轉換目標＝宣告的輸出條件**：成品內嵌的 DestOutputProfile 1,979,304 bytes，與來源檔**位元組相同**。
+- **灰階回歸**：同一份文件換灰階圖、轉換照樣開著，成品仍 `/DeviceGray`、最高 TAC **91.0%**（單 K 上限 100%），且不記色彩告知（因為根本沒轉）。
+- **未開轉換時行為不變**：Sprint 137 的預設路徑仍是 `/DeviceGray`。
+- **守門**：勾了轉換卻沒給描述檔，rc=1 且**不留半成品檔**。
+- **Gate 1**：親自 Read 成品首頁的光柵化 PNG，封面圖為彩色、直排書名與作者無異常。
+
+`tests/test_color_convert.py` 新增 29 測試（含兩處以實測值改寫的斷言：純黑在兩個描述檔下走向不同故只驗 K 通道；兩 intent 的差異只出現在色域外像素，純藍為 (253, 168, 0, 43) 對 (253, 172, 0, 54)），全庫 **1420 測試通過**，離屏 editor smoke（C29 加色彩轉換閘門段）PASS。
+
+### 誠實邊界
+
+**顏色正確性本機仍無從驗證**，本輪驗的全是機械性質（色彩空間、Decode、墨量、位元組同一性、守門）。無打樣、無分光儀、無標準光源；只驗過兩個描述檔（Japan Color 2011 Coated、SWOP）與一張高飽和的 3D 算圖，膚色、中性照片、非塗布紙皆未驗。**未做**：墨量壓縮與 GCR／UCR 調整、預覽軟打樣（GAPS #92 (b) 據實不排期）、文字與向量著色（本來就是單 K 不經轉換）、透明度保留（`RGBA` 仍在置入時被丟掉，承 #92 (c)）。UI 與文件皆不出現「顏色會正確」的宣稱。
+
+---
+
 ## v0.132.0（2026-07-26，Sprint 138）ICC 色彩轉換可行性：先量再排，不是先排再說
 
 ### 為什麼做這件事

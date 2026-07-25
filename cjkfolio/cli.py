@@ -19,6 +19,7 @@ from pathlib import Path
 from .ai_config import load_ai_config
 from .ai_style import apply_suggestions, suggest_styles
 from .book import assemble_book, load_book
+from .color_convert import DEFAULT_INTENT, RENDERING_INTENTS
 from .document import (
     load_document,
     save_document,
@@ -281,6 +282,8 @@ def cmd_export_pdf(args) -> int:
             pdfx=args.pdfx, crop_marks=args.crop_marks,
             press_marks=args.press_marks,
             registration_single_k=args.registration_single_k,
+            color_convert=args.color_convert,
+            rendering_intent=args.rendering_intent,
             license_policy=args.license_policy,
             font_dir=args.font_dir or None,
         )
@@ -481,6 +484,13 @@ def main(argv=None) -> int:
     p_pdf.add_argument("--pdfx", choices=["x-1a", "x-4", "none"], default="x-1a",
                        help="輸出形態（預設 x-1a:2001；x-4:2010 須以 --icc 提供 ICC；"
                             "none＝非 PDF/X 的一般 PDF，可含 RGB 彩色影像但不可送印）")
+    p_pdf.add_argument("--color-convert", action="store_true",
+                       help="RGB 置入圖依 --icc 的描述檔轉 CMYK 嵌入（須有 --icc；"
+                            "灰階與 CMYK 來源不動）。顏色是否符合印出來的樣子須打樣確認")
+    p_pdf.add_argument("--rendering-intent", choices=sorted(RENDERING_INTENTS),
+                       default=DEFAULT_INTENT,
+                       help="色彩轉換的 rendering intent（預設 relative＝相對色度；"
+                            "perceptual＝感知，全域壓縮色域）")
     p_pdf.add_argument("--crop-marks", action="store_true",
                        help="加裁切標記（MediaBox 外擴、BleedBox=trim+出血、8 條單 K 角標）")
     p_pdf.add_argument("--press-marks", action="store_true",
