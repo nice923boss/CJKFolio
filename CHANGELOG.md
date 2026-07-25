@@ -2,6 +2,44 @@
 
 > Phase 0（Spike 1〜5）歷程見 devlog/；自 Phase 1 產品碼進場（Sprint 6）起立此檔。
 
+## v0.132.0（2026-07-26，Sprint 138）ICC 色彩轉換可行性：先量再排，不是先排再說
+
+### 為什麼做這件事
+
+Owner 指示：**「安排 RGB → CMYK 色彩轉換。」**
+
+這件事排不了，得先過一道閘門。專案裡有兩條白紙黑字的既有決議寫著不做：§10 Sprint 76 色票管理定案「**無 RGB→CMYK 自動轉換**，色彩轉換屬印廠 ICC 範疇不做 naive 換算」，Sprint 137 又記了一次「色彩轉換要定 profile 與 rendering intent，選錯會產出顏色看似正常、印出來卻偏掉的成品，屬 R2 須先 spike 的技術」。要推翻，舉證責任在推翻的一方，不是在維持現狀的一方。所以本輪先做 Spike 25（pre-mortem 在先、報告在後），**產品程式碼一行未動**。
+
+### [Spike] Spike 25：ICC 色彩管理下的 RGB → CMYK（`spikes/spike25-icc-cmyk/`）
+
+結論**條件性通過**。可行性面：`PIL.ImageCms` 隨 Pillow 12.2.0 在庫（littleCMS 2.18）**無新相依**；轉出寫進本產品 PDF 後為 `/DeviceCMYK`、無 `/Decode` 反相陣列，以 PyMuPDF 取解壓後原始樣本、於 PIL 之外逐四位元組複量最高 TAC **282.7%**，與 PIL 自報吻合；300ppi 滿版 1748×2480 轉換 **106ms**，速度不構成限制。
+
+三項量測直接約束形態，不是加註解而已：
+
+- **中性灰不守單 K**：256 階中性灰有 **254 階**轉出 C／M／Y 非零，中灰 128 → CMYK **(63, 53, 50, 94)**。四色灰違反 §9「灰階照片走單 K」，且四版沒對準就偏色。故**灰階來源永不進轉換**，維持既有 `L` 路徑（等於不動，不是新增機制）。
+- **rendering intent 不可由本產品代選**：perceptual 對 relative colorimetric 的單點分量差最大 **199／255**（平均 5.45），差異全在色域外像素的處置方式，而本機沒有打樣，**無從判斷哪個對**。故列為使用者可見選項、預設 relative colorimetric（本次量到的 TAC 最低）；saturation 連純黑都轉成四色（(63, 73, 81, 255)，TAC 185%）直接排除。
+- **本機無 §9 指定的 Japan Color**：唯一的 CMYK 輸出（prtr）描述檔是作業系統夾帶的 `RSWOP.icm`（Agfa : Swop Standard，218,103 bytes），且它通過既有 `validate_output_profile`，可同時充當 X-1a／X-4 的 DestOutputProfile。§10 Sprint 10 已為 Adobe ICC 的 EULA 轉嫁義務繞過一次，轉換繞不過（非得有描述檔的實際位元組不可），故**不內建描述檔**，沿用 Sprint 101 的 ICC 選取器由使用者提供。
+
+另兩項量測收掉兩個懸而未決的設計問題：內嵌 sRGB 與合成 sRGB 轉出的分量差為**平均 0.007／255**（捨入級），故「未標記影像假設 sRGB」站得住；`out/eyeball-對照.png` 親眼複驗四張對照，**沒有負片、沒有通道錯位**（Spike 18 那類失效未出現）。
+
+### GAPS #92 (b) 據實推翻：預覽不改走 ICC 反算
+
+原本登記的是「(b) 隨 (a) 一併處理」。實測不成立：預覽若改 ICC 反算，內文暖黑 K92 由現行的 (20, 20, 20) 變成 **(52, 51, 51)** 且三分量不等，帶黑點補償仍是 (37, 36, 36)。色彩管理上這是對的（紙上的單 K92 本來就不是純黑），但**編輯看的是稿，不是打樣**，每一頁內文變淺又帶色偏是退步。正確形態是軟打樣作為可切換的檢視模式，而軟打樣還需要螢幕描述檔與標準觀察環境，本專案兩者皆無。故 (b) 與 (a) 拆開，且**不排期**。
+
+### 已排程：Sprint 139 [實作] ICC 色彩轉換 v1
+
+新增 `cjkfolio/color_convert.py`（純邏輯）＋`export_pdf` 加 `color_convert` 與 `rendering_intent`（預設維持 Sprint 137 的轉灰；**無描述檔時快速失敗不降級**＝Sprint 76 禁 naive 換算的延伸）＋轉出影像一律過既有 `ink.image_max_tac` 與 `tac_warnings`＋CLI 兩旗標＋轉存對話框選了 ICC 才可勾＋警告文案改寫。**不做**：內建描述檔、預覽軟打樣、墨量壓縮與 GCR／UCR、文字與向量著色（本來就是單 K）。DoD 五條與 Owner 閘門（取得可用的 CMYK 描述檔，向印廠索取為正途）見 PLAN §6 Phase 5 Sprint 138 條與 GAPS #92 (a)。
+
+### 誠實邊界
+
+**色彩正確性本機無從驗證。**無打樣、無分光儀、無標準光源，本 spike 量的全是機械性質（TAC、中性、往返、耗時、PDF 結構）。只驗過一個描述檔（美規塗布 SWOP）與一張素材（高飽和藍的 3D 算圖），膚色、中性照片、非塗布紙、Japan Color 皆未驗。眼看時 perceptual 與 relative 都把那片藍推向青且顯得更飽和，那是轉回 sRGB 顯示的結果，不代表印出來的樣子。實作交付時，「顏色會正確」這個宣稱不得出現在 UI、CHANGELOG 或說明文件中。
+
+### 併修：Sprint 137 的 R5 素材描述不實
+
+前一輪把素材寫成「實拍彩色照片」，實際是 Windows Spotlight 隨機器夾帶的桌布，屬 **3D 算圖非實拍**（該檔路徑 `C:\Windows\Web\Wallpaper\Spotlight\img14.jpg` 當時就寫在文件裡，自相矛盾）。R5 的整個意義就在素材要據實描述，故 CHANGELOG、GAPS #92、PLAN Sprint 137 條三處一併改正並補記「滿足『非為本測試而造』但不涵蓋相機產出的性質」。**commit `1f9ab59` 的訊息文字留錯**：改它要重寫歷史，代價高於收益，於此記明。
+
+---
+
 ## v0.131.0（2026-07-26，Sprint 137）預覽全彩：彩色封面圖在螢幕上是彩的，送印稿仍守 §9
 
 ### 為什麼做這件事
@@ -23,9 +61,9 @@ Owner 真視窗回饋（承 Sprint 136 同一張封面截圖）：**「封面圖
 - [實作] **編輯器畫布與縮圖同步吃彩色**（`editor/canvas.py`）：`pil_to_qimage` 改依 mode 分流，`L` 走 `Format_Grayscale8`、其餘轉 RGB 走 `Format_RGB888`。轉存對話框把「一般 PDF」列在最後（預設仍是 X-1a），選中時停用 ICC 列並就地說明「一般 PDF 不是 PDF/X：無 OutputIntent 與 GTS 識別鍵，置入的 RGB 彩色影像原樣保留，但拿去送印廠會被退件。要送印請改選 X-1a 或 X-4」。
 - [實作] **`ink.image_max_tac` 的拒收理由改寫正**：原註解說「本產品只寫這兩種色彩空間」，Sprint 137 起不成立；真正的理由是**墨量是印刷色彩空間才有的量，RGB 影像沒有對應語意**（送印路徑於 `pdf_writer` 先轉灰再判，故函式本身仍只見得到 `L`／`CMYK`）。
 
-### 效能與保真實測（R5 真實素材：實拍彩色照片置入 `samples/cover.doc.json` 封面版面）
+### 效能與保真實測（R5 素材：Owner 機器上的既有彩色影像置入 `samples/cover.doc.json` 封面版面）
 
-專案內既有影像**全是參考書黑白掃描**（`assets/reference/` 與 `samples/cover-art.png` 實測彩色像素 0.0%），無一張驗得動全彩；故取 Owner 機器上的實拍照片 `C:\Windows\Web\Wallpaper\Spotlight\img14.jpg`（RGB 3840×2400）裁成書封比例，素材與產物一律落在 `.gitignore` 的 `out/sprint137-r5/`，不入 repo、不進 `samples/`。
+專案內既有影像**全是參考書黑白掃描**（`assets/reference/` 與 `samples/cover-art.png` 實測彩色像素 0.0%），無一張驗得動全彩；故取 Owner 機器上的 `C:\Windows\Web\Wallpaper\Spotlight\img14.jpg`（RGB 3840×2400）裁成書封比例。**素材性質據實記載**：這是 Windows Spotlight 隨機器夾帶的桌布，屬 3D 算圖非實拍照片；它滿足 R5 要的「非為本測試而造」（是機器上本來就有的高飽和真實檔案，不是合成測試圖），但不是相機產出，涉及鏡頭雜訊與自然膚色的結論不可據此推得。素材與產物一律落在 `.gitignore` 的 `out/sprint137-r5/`，不入 repo、不進 `samples/`。
 
 - **素材**：RGB 740×925，最大分量差 255、彩色像素 99.9%。
 - **預覽**：封面頁 PNG `RGB` 874×1240，分量差 255、**彩色像素 18.6%**（Owner 的原始症狀點）。
