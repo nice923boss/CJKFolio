@@ -285,6 +285,7 @@ def cmd_export_pdf(args) -> int:
             color_convert=args.color_convert,
             rendering_intent=args.rendering_intent,
             license_policy=args.license_policy,
+            max_tac=args.max_tac,
             font_dir=args.font_dir or None,
         )
     except LicenseBlocked as exc:
@@ -323,7 +324,7 @@ def cmd_export_pdf(args) -> int:
     elif result.ink_uses:
         print(f"油墨總量：最高 TAC {result.ink_uses[0].tac:.0f}%"
               f"（{result.ink_uses[0].kind} {result.ink_uses[0].label}）"
-              f"，未逾 §9 {MAX_TAC:.0f}% 上限")
+              f"，未逾上限 {args.max_tac:.0f}%")
     print(_justify_line(result.justify_stats))
     print(f"禁則檢查：{'0 違規' if not result.violations else result.violations}")
     for warning in result.font_warnings:
@@ -500,6 +501,9 @@ def main(argv=None) -> int:
     p_pdf.add_argument("--registration-single-k", action="store_true",
                        help="套準十字改單 K100（油墨檢查全綠，但該標記不會出現在 "
                             "C／M／Y 印版上）；需搭 --press-marks")
+    p_pdf.add_argument("--max-tac", type=float, default=MAX_TAC,
+                       help="總墨量上限百分比（印廠條件；§9 320〜340%%，預設 320）；"
+                            "只影響油墨警告門檻，不改寫出的位元")
     p_pdf.add_argument("--license-policy", choices=list(LICENSE_POLICIES), default="warn",
                        help="字型授權未過時的處置：warn 只提示（預設）；"
                             "block 不產出檔案")

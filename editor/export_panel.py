@@ -1,9 +1,12 @@
 """轉存 PDF 選項對話框（Sprint 127：乙4 匯出 PDF 介面）。
 
 只暴露 export_pdf 已驗且對印前送印必要的選項：輸出路徑、輸出形態（X-1a／X-4／
-一般 PDF）、輸出 ICC（X-4 強制嵌 DestOutputProfile）、首頁書頁碼、頁腳頁碼、裁切
-標記、RGB 影像轉 CMYK 與其 rendering intent（Sprint 139）。判定與寫檔全在
-cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收選項不做匯出。
+一般 PDF）、輸出 ICC（X-4 強制嵌 DestOutputProfile）、總墨量上限（Sprint 140）、
+首頁書頁碼、頁腳頁碼、裁切標記、RGB 影像轉 CMYK 與其 rendering intent（Sprint 139）。
+判定與寫檔全在 cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收選項不做匯出。
+
+輸出形態與總墨量上限的起始值來自印前設定（設定＞印前設定…），由呼叫端讀本機檔後
+傳入；在此改動只影響這一次匯出，不回寫設定（設定是預設值，不是最終值）。
 
 色彩轉換的目標描述檔就是「輸出 ICC」那一份，故該欄空著時勾選框停用：沒有描述檔
 就沒有可據以轉換的目標（本產品不做無色彩管理的換算）。
@@ -21,6 +24,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -31,7 +35,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from cjkfolio.ink import MAX_TAC
 from cjkfolio.pdf_writer import PDFX_PROFILES
+from cjkfolio.press_config import MAX_POSSIBLE_TAC
 
 
 def _browse_row(edit: QLineEdit, button: QPushButton) -> QWidget:
@@ -47,7 +53,8 @@ def _browse_row(edit: QLineEdit, button: QPushButton) -> QWidget:
 class ExportDialog(QDialog):
     """收轉存選項；accept 前擋輸出路徑空與 X-4 未選 ICC（不默默降回 X-1a）。"""
 
-    def __init__(self, default_path, first_page: int = 1, parent=None) -> None:
+    def __init__(self, default_path, first_page: int = 1, parent=None, *,
+                 pdfx: str = "x-1a", max_tac: float = MAX_TAC) -> None:
         super().__init__(parent)
         self.setWindowTitle("轉存為 PDF（印前成品）")
 
@@ -58,7 +65,19 @@ class ExportDialog(QDialog):
         self._pdfx = QComboBox()
         for key in ("x-1a", "x-4", "none"):
             self._pdfx.addItem(PDFX_PROFILES[key].label, key)
+        # 先落起始值再接訊號：_sync_icc_enabled 會讀下面尚未建好的 ICC 欄位
+        self._pdfx.setCurrentIndex(max(0, self._pdfx.findData(pdfx)))
         self._pdfx.currentIndexChanged.connect(self._sync_icc_enabled)
+
+        self._max_tac = QDoubleSpinBox()  # 印廠條件（Sprint 140）：只改警告門檻
+        self._max_tac.setRange(1.0, MAX_POSSIBLE_TAC)
+        self._max_tac.setDecimals(0)
+        self._max_tac.setSingleStep(10.0)
+        self._max_tac.setSuffix(" %")
+        self._max_tac.setValue(max_tac)
+        self._max_tac.setToolTip(
+            "總墨量上限（TAC）：超過此值的色塊會列為印廠條件提示，不擋匯出、"
+            "不改寫出的位元。預設值於「設定 > 印前設定…」調整。")
 
         self._icc_edit = QLineEdit()
         self._icc_edit.setPlaceholderText(
@@ -96,6 +115,7 @@ class ExportDialog(QDialog):
         form.addRow("輸出路徑", _browse_row(self._path_edit, path_browse))
         form.addRow("PDF/X 形態", self._pdfx)
         form.addRow("輸出 ICC", _browse_row(self._icc_edit, self._icc_browse))
+        form.addRow("總墨量上限", self._max_tac)
         form.addRow("首頁書頁碼", self._first_page)
         form.addRow("", self._footer)
         form.addRow("", self._crop)
@@ -172,6 +192,7 @@ class ExportDialog(QDialog):
             "out_path": Path(self._path_edit.text().strip()),
             "pdfx": pdfx,
             "icc_profile": profile,
+            "max_tac": self._max_tac.value(),
             "first_page": self._first_page.value(),
             "footer": self._footer.isChecked(),
             "crop_marks": self._crop.isChecked(),

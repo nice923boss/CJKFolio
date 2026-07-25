@@ -58,8 +58,10 @@ from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
 from editor.smoke_ai import check_ai_assign, check_ai_toc  # noqa: E402
+from editor.smoke_blank import check_blank  # noqa: E402
 from editor.smoke_book import check_book
 from editor.smoke_cover import check_cover
+from editor.smoke_page_size import check_page_size, check_press_config  # noqa: E402
 from editor.smoke_quality import check_quality  # noqa: E402
 from editor.smoke_images import check_images, check_wrap_ui  # noqa: E402
 from editor.smoke_import import check_import  # noqa: E402
@@ -685,33 +687,8 @@ def main() -> int:
         f"字格相連無死區，hit-test {len(rects24)}/{len(rects24)} 全對"
     )
 
-    # C25 空白起始（Sprint 123）：無參數＝未命名空白文件，從零開始匯入或打字
-    win25 = EditorWindow(None)
-    assert "未命名" in win25.windowTitle() and "骨架" not in win25.windowTitle(), \
-        f"標題失準：{win25.windowTitle()}"
-    assert win25.page is None, "空白文件應為空紙面（page None）"
-    assert len(win25.scene.items()) > 0, "空紙面未畫出"
-    assert "匯入稿件" in win25.statusBar().currentMessage(), "開場未引導匯入"
-    win25._turn_page(1)  # 空白時翻頁不炸、據實提示
-    assert "尚無頁面" in win25.statusBar().currentMessage()
-    win25._ime.setText("測")
-    win25._on_ime_commit()  # 第一字：空白直接落段 0 字位 0
-    assert win25.doc.paragraphs[0].text == "測"
-    assert win25.page is not None and win25.page.number == 1
-    assert win25.cursor is not None, "第一字後游標未跟隨"
-    win25._ime.setText("試")
-    win25._on_ime_commit()  # 第二字：沿游標接續，不需再點字格
-    assert win25.doc.paragraphs[0].text == "測試"
-    win25._on_undo()
-    win25._on_undo()
-    assert win25.doc.paragraphs[0].text == "" and win25.page is None, "undo 未回到空紙面"
-    win25._import_manuscript_dialog(str(ROOT / "samples" / "jiejiao-manxing-ch1.md"))
-    assert win25.page is not None and "jiejiao-manxing-ch1" in win25.windowTitle(), \
-        "匯入後標題未跟隨文件名"
-    print(
-        "C25 空白起始：未命名標題、空紙面、空白翻頁據實提示、輸入欄第一字即成頁"
-        "＋第二字沿游標接續、兩步 undo 回空紙面、匯入後標題跟文件名"
-    )
+    # C25 空白起始（Sprint 123，抽於 editor/smoke_blank.py，同行數紀律）
+    check_blank(EditorWindow, ROOT)
 
     # C26 畫布縮放平移（Sprint 124，抽於 editor/smoke_view.py，同行數紀律）
     check_view(EditorWindow, DOC)
@@ -753,6 +730,10 @@ def main() -> int:
     # C38 文字框整框增刪移（Sprint 136，抽於 editor/smoke_frame_box.py）
     check_frame_box(EditorWindow, ROOT)
 
+    # C39 成品尺寸與印前設定（Sprint 140，抽於 editor/smoke_page_size.py）
+    check_page_size(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_press_config(EditorWindow, DOC)
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -791,6 +772,11 @@ def main() -> int:
         "＋文字框整框增刪移（框空白處選整框而框內仍點得到字／拖框邊移動與拖角改"
         "大小各一步 undo／Delete 與刪到最後一字皆移除整框／選單新增置於頁面中央／"
         "滿版圖蓋住書名框時選單選得到且邊帶疊在圖上仍可搬）"
+        "＋成品尺寸（版面選單換開本／只換紙張不重排與勾選重算版心兩態／邊距不動而"
+        "行列數與頁數跟著紙張走／同尺寸不佔 undo／非法尺寸擋下／一步 undo 回原尺寸"
+        "／改小紙張溢出項據實列出不阻擋／成品 MediaBox 與 TrimBox 經 PyMuPDF 讀回）"
+        "＋印前設定（設定選單總墨量上限與 PDF/X 形態／缺檔回保守預設／面板 round-trip"
+        "只寫本機檔／轉存對話框以印前設定起始且上限確實送達 export_pdf）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

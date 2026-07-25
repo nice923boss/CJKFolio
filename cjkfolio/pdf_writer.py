@@ -34,7 +34,7 @@ from .images import (
     resolution_warnings,
     resolve_placed_images,
 )
-from .ink import InkUse, image_max_tac, tac_percent, tac_warnings
+from .ink import MAX_TAC, InkUse, image_max_tac, tac_percent, tac_warnings
 from .pdf_fonts import EmbeddedFont
 from .pdf_objects import PdfBuilder
 from .pdfx_meta import (  # re-export：既有 import 路徑（preflight／editor）不變
@@ -586,7 +586,7 @@ class PdfResult:
     image_resolutions: tuple = ()  # 逐次置入的 ImageResolution（來源像素＋繪製尺寸）
     ppi_warnings: tuple = ()       # 實效 PPI 低於 §9 300ppi 的影像警告（不擋流程）
     ink_uses: tuple = ()           # 著色與影像的最高墨量 InkUse（依 TAC 降序）
-    tac_warnings: tuple = ()       # 總墨量超 §9 320% 上限的警告（不擋流程）
+    tac_warnings: tuple = ()       # 總墨量超上限（預設 §9 320%）的警告（不擋流程）
     image_color_warnings: tuple = ()  # RGB 影像已轉灰／已依描述檔轉 CMYK 的告知（不擋流程）
 
 
@@ -600,7 +600,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                registration_single_k: bool = False,
                color_convert: bool = False,
                rendering_intent: str = DEFAULT_INTENT,
-               license_policy: str = "warn") -> PdfResult:
+               license_policy: str = "warn",
+               max_tac: float = MAX_TAC) -> PdfResult:
     """文件＋模版 → PDF/X（預設 X-1a:2001；pdfx="x-4" 選 X-4:2010）。
 
     pdfx="none"（Sprint 137）輸出**非 PDF/X** 的一般 PDF：不寫 X 識別鍵與
@@ -621,6 +622,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     ＝MediaBox，向後相容）。
     license_policy="warn"（預設）字型授權問題只列 license_warnings 不擋；"block"
     則於寫檔前中止並拋 ValueError，不留半成品檔案。
+    max_tac 為總墨量上限（%，預設 §9 保守下限 320）：印廠條件，只影響 tac_warnings
+    的判定門檻，不改任何寫出的位元（同 ink 模組「只警告不擋流程」）。
     """
     if pdfx not in PDFX_PROFILES:
         raise ValueError(
@@ -790,6 +793,6 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         image_resolutions=tuple(writer._image_resolutions),
         ppi_warnings=tuple(resolution_warnings(writer._image_resolutions)),
         ink_uses=ink_uses,
-        tac_warnings=tuple(tac_warnings(ink_uses)),
+        tac_warnings=tuple(tac_warnings(ink_uses, max_tac)),
         image_color_warnings=tuple(convert_notes) + tuple(writer.image_color_warnings),
     )

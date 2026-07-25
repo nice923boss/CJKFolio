@@ -66,6 +66,7 @@ from .image_editing import (
     set_image_wrap,
 )
 from .layout import LayoutResult
+from .page_size import set_page_size
 from .toc import document_with_toc
 from .wrap import layout_with_wrap
 from .style_editing import (
@@ -391,6 +392,17 @@ class EditSession:
         同一模版物件 no-op 回 None。
         """
         return self._commit_template(template)
+
+    def update_page_size(self, width_mm, height_mm, *, refit_grid: bool = False):
+        """改成品尺寸（trim size，Sprint 140）：入統一 undo 歷史，一步可還原。
+
+        refit_grid=True 時邊距不動、把紙張增減換算成版心行列增減，內文重排、頁數會變；
+        False 只換紙張，一個字都不重排。溢出成品的項不在此擋（改小開本本來就可能讓
+        既有元件落到紙外），由 page_size.page_fit_warnings 據實回報、呼叫端呈現。
+        等值變更 no-op 回 None；非法尺寸於套用前 TemplateError 快速失敗、狀態不變。
+        """
+        return self._commit_template(set_page_size(
+            self._template, width_mm, height_mm, refit_grid=refit_grid))
 
     def merge_draft(self, draft: Mapping):
         """萃取草稿一鍵併入現行模版（GAPS #37 (b)，Sprint 77）：回 (result, report)。

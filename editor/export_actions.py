@@ -14,7 +14,9 @@ from PySide6.QtCore import QCoreApplication, QThread, Signal
 from PySide6.QtWidgets import QDialog, QMessageBox
 
 from cjkfolio.pdf_writer import PDFX_PROFILES, export_pdf
+from cjkfolio.press_config import PressConfig, PressConfigError, load_press_config
 from editor.export_panel import ExportDialog
+from editor.press_panel import PressConfigDialog
 
 
 def _pdf_default_path(doc_path: Path) -> Path:
@@ -74,7 +76,13 @@ class ExportActionsMixin:
         if self._export_thread is not None:
             self.statusBar().showMessage("PDF 轉存進行中，請稍候…")
             return
-        dlg = ExportDialog(_pdf_default_path(self._doc_path), parent=self)
+        try:  # 印前設定＝起始值（Sprint 140）；壞檔不擋匯出，回 §9 保守預設並據實說
+            press = load_press_config()
+        except PressConfigError as err:
+            press = PressConfig()
+            self.statusBar().showMessage(f"印前設定讀取失敗，以預設值起始：{err}")
+        dlg = ExportDialog(_pdf_default_path(self._doc_path), parent=self,
+                           pdfx=press.pdfx, max_tac=press.max_tac)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             self.statusBar().showMessage("已取消 PDF 轉存")
             return
@@ -89,6 +97,17 @@ class ExportActionsMixin:
         self.statusBar().showMessage(
             f"{label} 轉存中（背景執行，可繼續編輯）→ {out_path.name}…")
         thread.start()
+
+    def _show_press_config(self) -> None:
+        """設定＞印前設定…：總墨量上限與 PDF/X 形態的本機預設值（Sprint 140 乙）。
+
+        存的是**下次轉存的起始值**，不是最終值：轉存對話框仍可就該次匯出改動，
+        判定與寫檔一律在 export_pdf。
+        """
+        if PressConfigDialog(self).exec() == QDialog.DialogCode.Accepted:
+            self.statusBar().showMessage(
+                "印前設定已儲存（本機 local/press-config.local.json；"
+                "轉存 PDF 對話框下次以此值起始）")
 
     def _export_wait(self, timeout_ms: int = 180000):
         """等背景匯出跑完並派送結果（離屏驗證與測試用；真視窗由事件圈派送）。

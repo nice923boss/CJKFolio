@@ -36,12 +36,12 @@ def check_nav(EditorWindow, doc_path) -> None:
     assert win._page_panel.count() == total
     assert win._page_panel.currentRow() == 0
 
-    # 版面選單五項與快捷鍵（findChildren：QAction.menu() wrapper 不可靠，C26 教訓）
+    # 版面選單六項與快捷鍵（findChildren：QAction.menu() wrapper 不可靠，C26 教訓）
     menu = next(
         m for m in win.menuBar().findChildren(QMenu) if m.title() == "版面")
     acts = [a for a in menu.actions() if not a.isSeparator()]
     assert [a.text() for a in acts] == \
-        ["上一頁", "下一頁", "第一頁", "最後一頁", "跳至頁碼…"], \
+        ["上一頁", "下一頁", "第一頁", "最後一頁", "跳至頁碼…", "成品尺寸…"], \
         f"版面選單項異常：{[a.text() for a in acts]}"
     keys = {a.text(): [s.toString() for s in a.shortcuts()] for a in acts}
     assert keys["上一頁"] == ["PgUp"] and keys["下一頁"] == ["PgDown"], keys

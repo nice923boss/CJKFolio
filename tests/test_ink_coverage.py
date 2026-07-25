@@ -13,10 +13,12 @@ TAC 非 ISO 15930-1 條款（是紙張吸墨與乾燥的印廠條件），故不
 真書量測值（富黑 349.5%、影像最大 357%）只作為測試取值的依據，不含其內容。
 """
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import fitz
 import pytest
+from fontTools.ttLib.tables import _h_e_a_d as _head
 from PIL import Image
 
 from cjkfolio.document import Document, Paragraph, PlacedImage
@@ -29,6 +31,7 @@ from cjkfolio.ink import (
     tac_percent,
     tac_warnings,
 )
+from cjkfolio import pdf_writer
 from cjkfolio.pdf_writer import export_pdf
 from cjkfolio.preflight import (
     InkCoverageReport,
@@ -245,6 +248,41 @@ def test_export_does_not_block_on_over_limit(tmp_path, template):
                         image_base_dir=tmp_path)
     assert out.exists() and result.page_count >= 1
     assert result.tac_warnings
+
+
+def test_export_max_tac_raises_threshold(tmp_path, rich_black_template):
+    """印廠上限較寬時（Sprint 140 max_tac）：349.5% 的富黑在 340 門檻下不再報。"""
+    result = export_pdf(_text_doc(), rich_black_template, tmp_path / "wide.pdf",
+                        footer=False, max_tac=350.0)
+    assert list(result.tac_warnings) == []
+    assert max(u.tac for u in result.ink_uses) == pytest.approx(349.5)  # 仍據實記錄
+
+
+class _FrozenClock:
+    """只釘死 pdf_writer 取的時鐘（該檔僅用 datetime.now()，多用即在此炸開）。"""
+
+    @staticmethod
+    def now():
+        return datetime(2026, 1, 1, 9, 0, tzinfo=timezone(timedelta(hours=8)))
+
+
+def test_export_max_tac_changes_no_bytes(tmp_path, rich_black_template, monkeypatch):
+    """上限只是警告門檻：同一份稿以不同上限匯出，寫出的 PDF 位元完全相同。
+
+    TAC 是印廠條件不是 PDF/X 條款，故不得因為上限改了就改寫檔內容。
+    寫檔會蓋兩種時戳，兩次匯出跨秒天然就不同，故兩者都先釘死，位元比對才驗得到
+    「上限」這一個變因：
+    - PDF 層：Info 的 CreationDate／ModDate 與 XMP（trailer /ID 又是全體物件的 md5）。
+    - 字型層：fontTools 子集化預設 recalcTimestamp，會把 head.modified 寫成當下秒數
+      （長度不變、內容變，故 Flate 後連 /Length 都會差一兩個位元組）。
+    """
+    monkeypatch.setattr(pdf_writer, "datetime", _FrozenClock)
+    monkeypatch.setattr(_head, "timestampNow", lambda: 0)
+    a = tmp_path / "a.pdf"
+    b = tmp_path / "b.pdf"
+    export_pdf(_text_doc(), rich_black_template, a, footer=False, max_tac=320.0)
+    export_pdf(_text_doc(), rich_black_template, b, footer=False, max_tac=400.0)
+    assert a.read_bytes() == b.read_bytes()
 
 
 # ---------- preflight 獨立檢查（verifier 側，PyMuPDF） ----------

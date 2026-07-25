@@ -38,7 +38,8 @@ NOT_COVERED = (
     "影像色彩空間由 color-cmyk-only 涵蓋，DeviceGray 與 DeviceCMYK 合法、"
     "DeviceRGB 判失敗）",
     "油墨總量 TAC（非 ISO 15930-1 條款故不入本規則集，另由 check_ink_coverage "
-    "依 §9 320% 上限檢查內容流著色與影像；超標為印廠條件風險非 X 不合規）",
+    "依總墨量上限（預設 §9 保守下限 320%，可調）檢查內容流著色與影像；"
+    "超標為印廠條件風險非 X 不合規）",
     "字型授權嵌入旗標",
     "視覺內容正確性（人工抽檢）",
     "Acrobat／印廠認證級 preflight",

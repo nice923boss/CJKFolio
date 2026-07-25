@@ -85,6 +85,10 @@ class WindowChromeMixin:
         goto_action.setShortcut(QKeySequence("Ctrl+J"))  # InDesign 慣例
         goto_action.triggered.connect(self._prompt_goto_page)
         layout_menu.addAction(goto_action)
+        layout_menu.addSeparator()
+        trim_action = QAction("成品尺寸…", self)  # 換開本（Sprint 140 甲）
+        trim_action.triggered.connect(lambda: self._page_size_dialog())
+        layout_menu.addAction(trim_action)
 
         view_menu = self.menuBar().addMenu("檢視")
         for label, keys, handler in (
@@ -178,9 +182,13 @@ class WindowChromeMixin:
         check_x4_action.triggered.connect(lambda: self._run_preflight("x-4"))
         check_menu.addAction(check_x4_action)
 
+        settings_menu = self.menuBar().addMenu("設定")
+        press_action = QAction("印前設定…", self)  # 總墨量上限與 PDF/X（Sprint 140 乙）
+        press_action.triggered.connect(self._show_press_config)
+        settings_menu.addAction(press_action)
         ai_action = QAction("AI 設定…", self)
         ai_action.triggered.connect(self._show_ai_config)
-        self.menuBar().addMenu("設定").addAction(ai_action)
+        settings_menu.addAction(ai_action)
 
         help_action = QAction("Owner IME 實測說明", self)
         help_action.triggered.connect(self._show_help)

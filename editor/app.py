@@ -79,6 +79,7 @@ from editor.import_actions import ImportActionsMixin  # noqa: E402
 from editor.info_actions import InfoActionsMixin  # noqa: E402
 from editor.master_actions import MasterActionsMixin  # noqa: E402
 from editor.nav_actions import NavActionsMixin  # noqa: E402
+from editor.page_size_actions import PageSizeActionsMixin  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
 from editor.window_chrome import WindowChromeMixin  # noqa: E402
@@ -95,7 +96,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
                    ImportActionsMixin,
                    EditActionsMixin, FindActionsMixin, InfoActionsMixin,
                    NavActionsMixin, MasterActionsMixin, BookActionsMixin,
-                   FileActionsMixin, QMainWindow):
+                   PageSizeActionsMixin, FileActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()
         # 編輯狀態單一事實來源＝EditSession（Sprint 61 接線；doc／layout／template
