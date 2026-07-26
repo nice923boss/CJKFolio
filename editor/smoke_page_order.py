@@ -5,8 +5,9 @@ Owner 回饋：AI 樣式指派後封面跑到第 4 頁，要能像搬投影片�
 
 離屏可驗：插入位換算（drop_index 純函式，含 IconMode 多欄）、面板 dropEvent 把
 （來源頁, 插入位）交給 mixin、搬節後逐頁主版與目前頁跟隨、一步 undo 回原序、
-非節首頁拒收並指名該搬哪一頁、放回原位不佔 undo、封面頁不參與。真滑鼠拖曳手感
-與插入線視覺待 Owner 真視窗（GAPS #19 批次）。
+非節首頁於拖曳起點（真 panel.startDrag，Sprint 145 起點守門）即拒收並指名該搬
+哪一頁、放回原位不佔 undo、封面頁不參與。可搬頁的真滑鼠全程（startDrag 進
+QDrag.exec 阻塞迴圈，離屏不可驗）與插入線視覺屬真視窗驗收（GAPS #19 批次）。
 """
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QDropEvent
@@ -77,15 +78,23 @@ def check_page_order(EditorWindow, chapter_path, paiban_path) -> None:
     assert _masters(win) == before, "封面拖曳不應改版面"
     assert win._section_head_pages() == [2, 3], win._section_head_pages()
 
-    # ── 單節多頁真稿 paiban-xiaoji-ch1：非節首頁拒收並指名該搬哪一頁 ──
+    # ── 單節多頁真稿 paiban-xiaoji-ch1：非節首頁「按下就拖不動」並指名該搬哪頁
+    # （Sprint 145 起點守門：走真 panel.startDrag，不再只直呼 mixin。Owner 真視窗
+    # 拖非節首頁遭拒卻無提示＝拒收訊息掛在放下事件上而 Qt 未必遞送 Drop；被擋的
+    # startDrag 於進 QDrag 阻塞迴圈前返回，離屏可驗）──
     win2 = EditorWindow(str(paiban_path))
     assert len(_masters(win2)) == 11
     assert win2._section_head_pages() == [1], win2._section_head_pages()
     doc_before = win2.doc
-    win2._reorder_pages(3, 1)
+    panel2 = win2._page_panel
+    panel2.setCurrentRow(2)  # 按下頁 3（非節首）開拖
+    panel2.startDrag(Qt.DropAction.MoveAction)
     msg2 = win2.statusBar().currentMessage()
     assert "頁 3 不是節首" in msg2 and "請改拖頁 1" in msg2, msg2
     assert win2.doc is doc_before, "拒收時文件不得變動"
+    win2.statusBar().clearMessage()
+    win2._reorder_pages(3, 1)  # 放下路徑縱深防禦：與起點守門同一套說詞
+    assert "頁 3 不是節首" in win2.statusBar().currentMessage()
 
     # 裝訂補頁不參與（Sprint 144）：末尾補的空白頁隨內文頁數自動增減，不是可搬的節
     blank_no = next(p.number for p in win2.layout_result.pages if p.blank)

@@ -6,10 +6,10 @@
 頁1（奇）單邊左（僅一張底圖、無對頁 item）、關閉對頁回單頁、切換不改版面頁數
 （純檢視不污染匯出）。視覺對位與印刷拼版待 Owner 真視窗（GAPS #84 批次）。
 
-Sprint 144 Owner 回饋（「封面是單獨一頁是正確，但翻開來的目次就應該要是對頁檢視的
-狀態」）：帶封面時封面自身仍單頁，翻開後的書頁 1（目次位）恆兩頁寬，右側畫封二那張
-空紙面（無內容故不渲染第二張底圖、不給跳頁鍵）。本檔以 scene 邊界寬對比封面單頁寬
-判定（空紙面是 RectItem，不影響底圖張數與 item_map），數據見 C32 print。
+Sprint 145 Owner 回饋（「封面為紙張的第一頁，而第二頁應該是要在翻開後的右邊」）：
+配對改依紙面奇偶（偶右奇左，與封面無關）。帶封面時翻開封面即見紙面 2（書頁 1）在右、
+紙面 3 在左＝兩張真底圖成對，Sprint 144 的封二空紙面已隨配對修正移除；封面（紙面 1）
+與末偶紙面（翻完闔上書的封底畫面）單頁。本檔以底圖張數與 scene 邊界寬判定。
 """
 from PySide6.QtGui import QTransform
 from PySide6.QtWidgets import QApplication, QGraphicsPixmapItem, QMenu
@@ -91,26 +91,33 @@ def check_spread(EditorWindow, doc_path) -> None:
     assert not win._facing and _base_count(win) == 1, "關閉對頁未回單頁"
     assert len(win.layout_result.pages) == total, "對頁切換不得改版面頁數"
 
-    # ── 帶封面：翻開封面後恆兩頁寬，封面自身仍單頁（Sprint 144 Owner 回饋） ──
+    # ── 帶封面（Sprint 145 紙面配對）：翻開封面即見紙面2 右、紙面3 左（兩張真
+    # 底圖成對），封面與末偶紙面單頁（闔上的書與翻完闔上書的封底畫面） ──
     from cjkfolio.cover import with_cover
 
     win.session.replace_document(with_cover(win.doc, win.template))
+    total_c = len(win.layout_result.pages)
+    assert total_c == 12 and not any(p.blank for p in win.layout_result.pages), \
+        f"1 封面＋11 內文＝12 已是 4 的倍數應補 0，得 {total_c} 頁"
     facing_act.trigger()
-    win._goto_page(1)                    # 封面：單獨一頁（Owner「封面是單獨一頁是正確」）
+    win._goto_page(1)                    # 封面＝紙面1：單獨一頁（闔上的書）
     w_cover = win.scene.itemsBoundingRect().width()
-    assert _base_count(win) == 1 and not _facing_items(win), "封面應單邊在右"
-    win._goto_page(2)                    # 書頁1（目次位）：左＝本頁、右＝封二空紙面
+    assert _base_count(win) == 1 and not _facing_items(win), "封面應單頁"
+    win._goto_page(2)                    # 紙面2（書頁1／目次位）：右＝本頁、左＝紙面3
     w_spread = win.scene.itemsBoundingRect().width()
+    assert _base_count(win) == 2, "翻開封面應兩張真底圖（紙面2＋3），空紙面已廢"
+    assert {it.data(0)[1] for it in _facing_items(win)} == {3}, "對頁應為紙面3"
     assert w_spread > w_cover * 1.9, \
-        f"書頁1 對頁應兩頁寬（右側畫封二空紙），得 {w_spread:.0f} vs {w_cover:.0f}"
-    assert _base_count(win) == 1, "空紙面不渲染第二張底圖（無內容可畫）"
-    assert not _facing_items(win), "空紙面不可點（無跳頁鍵）"
+        f"翻開封面應兩頁寬，得 {w_spread:.0f} vs {w_cover:.0f}"
+    win._goto_page(total_c)              # 末偶紙面：單頁（翻完闔上書＝封底畫面）
+    assert _base_count(win) == 1 and not _facing_items(win), "末偶紙面應單頁封底"
     facing_act.trigger()
 
     win._shutdown_thumbnails()
     print(
         f"C32 對頁檢視：檢視選單勾選項＋Ctrl+3，頁2 開對頁併排兩張底圖（右2左3，"
-        f"Sprint 22 偶右奇左）、目前頁 {hit} 格偏移後全命中、對頁整頁標跳頁鍵不入"
+        f"紙面偶右奇左）、目前頁 {hit} 格偏移後全命中、對頁整頁標跳頁鍵不入"
         f"item_map、點對頁跳頁3、頁1 單邊左、關閉回單頁（版面 {total} 頁不變）、"
-        f"帶封面時書頁1 恆兩頁寬（{w_spread:.0f}px）而封面單頁（{w_cover:.0f}px）"
+        f"帶封面時翻開封面兩頁寬（{w_spread:.0f}px）而封面與末偶紙面單頁"
+        f"（{w_cover:.0f}px）＝闔上的書與封底畫面"
     )

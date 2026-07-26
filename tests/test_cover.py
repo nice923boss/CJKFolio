@@ -19,7 +19,7 @@ import pytest
 
 from cjkfolio.document import DocumentError, document_from_dict, document_to_dict
 from cjkfolio.layout import layout_document
-from cjkfolio.primitives import book_number_for, is_right_page
+from cjkfolio.primitives import book_number_for, is_right_page, sheet_face_for
 from cjkfolio.render import mm_to_pt
 from cjkfolio.styles import load_template
 
@@ -84,11 +84,16 @@ def test_book_number_封面與自訂起始頁碼併用():
     assert book_number_for(1, first_page=5, cover_pages=1) == 4
 
 
-def test_封面頁側別為右頁():
-    """Sprint 22 側別 SSOT：偶數書頁＝右頁。封面書頁號 0＝右頁（右翻書封面在右），
-    翻開後內文首頁書頁號 1＝左頁，與實體書一致。"""
-    assert is_right_page(book_number_for(1, cover_pages=1)) is True
-    assert is_right_page(book_number_for(2, cover_pages=1)) is False
+def test_封面為紙面1左頁_翻開後紙面2為右頁():
+    """Sprint 145 側別 SSOT：偶數紙面＝右頁，側別由紙張的面決定、與封面無關。
+    封面＝紙面 1（奇＝左半、書脊在右）；翻開封面即見紙面 2 在右、紙面 3 在左
+    （Owner：「封面為紙張的第一頁，而第二頁應該是要在翻開後的右邊才正確」）。
+    無封面文件紙面號＝書頁號，側別零變更。"""
+    assert sheet_face_for(1) == 1 and sheet_face_for(2) == 2
+    assert sheet_face_for(1, first_page=5) == 5  # 續排片段同步位移（同書頁號公式）
+    assert is_right_page(sheet_face_for(1)) is False
+    assert is_right_page(sheet_face_for(2)) is True
+    assert is_right_page(sheet_face_for(3)) is False
 
 
 # ---- 2. document 欄位驗證與序列化 ----

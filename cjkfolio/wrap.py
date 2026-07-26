@@ -15,12 +15,12 @@ from math import ceil, floor
 
 from .engine import Exclusion
 from .layout import layout_document
-from .primitives import PT_PER_MM, book_number_for, line_axis_x_pt
+from .primitives import PT_PER_MM, line_axis_x_pt, sheet_face_for
 
 _EPS = 1e-6
 
 
-def image_exclusion(rect, template, master, book_number: int,
+def image_exclusion(rect, template, master, sheet_face: int,
                     margin_pt: float = 0.0):
     """圖框 rect（trim pt、top-down）→ 該頁 Exclusion；不覆蓋任何行槽時回 None。
 
@@ -36,7 +36,7 @@ def image_exclusion(rect, template, master, book_number: int,
     grid = master.grid
     pitch = grid.line_pitch_pt
     half = pitch / 2
-    axis0 = line_axis_x_pt(template, master, 0, book_number)
+    axis0 = line_axis_x_pt(template, master, 0, sheet_face)
     # 重疊條件：axis(s)−half < x1 且 axis(s)+half > x0，axis(s)＝axis0 − s×pitch
     slot_lo = max(0, int(ceil((axis0 - x1 - half) / pitch + _EPS)))
     slot_hi = min(grid.lines_per_page,
@@ -48,8 +48,7 @@ def image_exclusion(rect, template, master, book_number: int,
                      span_lo_pt=y0 - top_pt, span_hi_pt=y1 - top_pt)
 
 
-def page_exclusions(doc, pages, template, first_page: int = 1,
-                    cover_pages: int = 0) -> dict:
+def page_exclusions(doc, pages, template, first_page: int = 1) -> dict:
     """{版面頁號: (Exclusion, ...)}：doc 中 wrap 圖依其落點頁主版與鏡像換算。
 
     pages＝Pass 1 的 LayoutPage 序列（提供逐頁主版與書寫方向）。橫排頁 v1 不繞排
@@ -66,7 +65,7 @@ def page_exclusions(doc, pages, template, first_page: int = 1,
             continue
         master = template.masters[page.master]
         ex = image_exclusion(im.rect, template, master,
-                             book_number_for(im.page, first_page, cover_pages),
+                             sheet_face_for(im.page, first_page),  # 鏡像依紙面（Sprint 145）
                              margin_pt=im.wrap_margin_mm * PT_PER_MM)
         if ex is not None:
             out.setdefault(im.page, []).append(ex)
@@ -85,8 +84,7 @@ def layout_with_wrap(doc, template, first_page: int = 1,
     result = layout_document(doc, template, first_para_continues)
     if not any(im.wrap for im in doc.images):
         return result
-    exclusions = page_exclusions(doc, result.pages, template, first_page,
-                                 result.cover_pages)
+    exclusions = page_exclusions(doc, result.pages, template, first_page)
     if not exclusions:
         return result
     final = layout_document(doc, template, first_para_continues,

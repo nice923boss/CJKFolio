@@ -168,16 +168,16 @@ def test_layout_justify_stats(template):
 # ---------- render 幾何（純數學） ----------
 
 def test_line_axis_positions_odd_even_mirror(template):
-    """真書側別（Sprint 22 三向互證修正）：偶數書頁＝右頁（書口右）、
-    奇數書頁＝左頁（書口左、slot 0 自訂口內推）。"""
+    """真書側別（Sprint 22 三向互證；Sprint 145 改依紙面）：偶數紙面＝右頁（書口右）、
+    奇數紙面＝左頁（書口左、slot 0 自訂口內推）。"""
     master = template.masters["A-內文版"]
     page_w = mm_to_pt(template.page_width_mm)
-    odd0 = line_axis_x_pt(template, master, slot=0, page_number=1)
-    even0 = line_axis_x_pt(template, master, slot=0, page_number=2)
+    odd0 = line_axis_x_pt(template, master, slot=0, sheet_face=1)
+    even0 = line_axis_x_pt(template, master, slot=0, sheet_face=2)
     assert even0 == pytest.approx(page_w - mm_to_pt(master.margins.outer_mm) - 11.5 / 2)
     assert odd0 == pytest.approx(page_w - mm_to_pt(master.margins.inner_mm) - 11.5 / 2)
-    assert even0 > odd0  # 偶數頁（右頁）書口在右，行軸更靠右
-    assert line_axis_x_pt(template, master, slot=3, page_number=2) == pytest.approx(even0 - 3 * 23.0)
+    assert even0 > odd0  # 偶數紙面（右頁）書口在右，行軸更靠右
+    assert line_axis_x_pt(template, master, slot=3, sheet_face=2) == pytest.approx(even0 - 3 * 23.0)
 
 
 # ---------- render 著墨（需字型） ----------
@@ -452,9 +452,9 @@ def test_layout_horizontal_no_justify_and_flags_direction(template):
 def test_horizontal_geometry_left_and_baseline(template):
     master = template.masters["F-版權頁"]
     # 左起 x：mirror=false → 恆以 outer 槽為起排側（p178 左頁書口 25.81mm，Sprint 22）
-    left = horizontal_left_x_pt(master, book_number=1)
+    left = horizontal_left_x_pt(master, sheet_face=1)
     assert left == pytest.approx(mm_to_pt(master.margins.outer_mm))
-    assert horizontal_left_x_pt(master, book_number=2) == pytest.approx(left)  # 無鏡像
+    assert horizontal_left_x_pt(master, sheet_face=2) == pytest.approx(left)  # 無鏡像
     # 基線：行由上而下，每行 +line_pitch；首行含 ascent
     b0 = horizontal_baseline_y_pt(master, slot=0, size_pt=8.0)
     b1 = horizontal_baseline_y_pt(master, slot=1, size_pt=8.0)
@@ -476,7 +476,7 @@ def test_render_horizontal_page_lands_top_left(template, tmp_path):
     scale = 200 / 72.0
     img = Image.open(result.paths[0]).convert("L")
     # F 版有 CIP 細框（Sprint 14）：量文字須排除框，裁掉框邊界內側再取 ink
-    rect = cip_frame_rect(master, horizontal_left_x_pt(master, book_number=1),
+    rect = cip_frame_rect(master, horizontal_left_x_pt(master, sheet_face=1),
                           n_lines=2, frame=master.frame)
     inset = round((master.frame.line_width_pt + 1) * scale)
     ox, oy = round(rect.x0 * scale) + inset, round(rect.y0 * scale) + inset

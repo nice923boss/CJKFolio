@@ -13,38 +13,53 @@ from dataclasses import dataclass
 PT_PER_MM = 72.0 / 25.4  # 物理常數（同 render.PT_PER_MM，底層層各自持有免循環依賴）
 
 
-def is_right_page(book_number: int) -> bool:
-    """右頁（書口在右）＝偶數書頁。
+def is_right_page(sheet_face: int) -> bool:
+    """右頁（書口在右）＝偶數紙面（Sprint 145：側別由紙張的面決定，非書頁號）。
 
-    真書《內在整理》三向互證（Sprint 22，A 級）：頁碼側（偶頁頁碼書口右）、
-    書眉側（書名書眉皆偶頁）、版心側（偶頁右邊距 21mm＝outer 精確）。
-    右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大。
+    實體模型（Owner 真書確認）：封面＝紙面 1，右翻書每翻一張即見其背面在右、
+    下一面在左，故偶數紙面恆右頁、奇數紙面恆左頁。無封面且 first_page=1 時
+    紙面號＝書頁號，真書《內在整理》三向互證（Sprint 22，A 級：頁碼側、書眉側、
+    版心側皆偶頁在右）即此對齊特例；帶封面時書頁號比紙面號小 cover_pages，
+    以書頁號判側會整組錯一面（Sprint 145 Owner 回饋：目次應在翻開後的右邊）。
+    右翻直排書 spread＝（偶右、奇左），讀序右→左。
     """
-    return book_number % 2 == 0
+    return sheet_face % 2 == 0
+
+
+def sheet_face_for(page_number: int, first_page: int = 1) -> int:
+    """版面頁號 → 紙面號（側別、鏡像與頁腳奇偶一律依此，Sprint 145 SSOT）。
+
+    紙面號＝該版面落在實體書的第幾個紙面：版面頁 1 即紙面 1（含封面：封面就是
+    第一張紙的第一面，Owner「封面為紙張的第一頁」），逐頁遞增，封面不另計。
+    first_page>1＝續排片段（自某紙面接續），同步位移；無封面文件的紙面號恆等於
+    書頁號（book_number_for），故既有輸出零變更。
+    """
+    return page_number + first_page - 1
 
 
 def book_number_for(page_number: int, first_page: int = 1,
                     cover_pages: int = 0) -> int:
-    """版面頁號 → 書頁號（鏡像、頁腳奇偶與目錄頁碼一律依此，Sprint 12 SSOT）。
+    """版面頁號 → 書頁號（頁腳與目錄的頁碼「數字」一律依此，Sprint 12 SSOT）。
 
     cover_pages＝封面佔的版面頁數（Sprint 132）：頁碼自封面翻開後起算，故內文
     首頁的書頁號恆為 first_page，封面依序往前推（單頁封面＝first_page−1，預設
-    即 0）。封面書頁號 0 為偶數＝右頁（is_right_page），與右翻書封面在右一致。
-    cover_pages=0 時退化為既有公式（版面頁號＋first_page−1），無封面文件零變更。
+    即 0）。cover_pages=0 時退化為既有公式（版面頁號＋first_page−1），無封面
+    文件零變更。側別與鏡像自 Sprint 145 起改依紙面號（sheet_face_for），本函式
+    只管印出來的頁碼數字。
     """
     return page_number - cover_pages + first_page - 1
 
 
-def line_axis_x_pt(template, master, slot: int, page_number: int,
+def line_axis_x_pt(template, master, slot: int, sheet_face: int,
                    line_slots: int = 1) -> float:
-    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入書頁號，偶數＝右頁書口在右；
+    """第 slot 行槽的行軸（欄中心）x 座標，pt。傳入紙面號，偶數＝右頁書口在右；
     mirror=false 恆以 outer 槽為起排側（B 部扉先例）。
 
     兩後端與繞排排除區換算（wrap.py，Sprint 89）的行軸單一事實來源；render 與
     pdf_writer 自此 re-export（既有呼叫端不變）。
     """
     page_w = template.page_width_mm * PT_PER_MM
-    outer_side = is_right_page(page_number) or not master.mirror
+    outer_side = is_right_page(sheet_face) or not master.mirror
     margin_mm = master.margins.outer_mm if outer_side else master.margins.inner_mm
     axis0 = page_w - margin_mm * PT_PER_MM - master.grid.base_size_pt / 2
     return axis0 - (slot + (line_slots - 1) / 2) * master.grid.line_pitch_pt

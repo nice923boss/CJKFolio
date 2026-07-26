@@ -60,7 +60,7 @@ def test_render_cip_frame_is_outer_ink(template, tmp_path):
     master = template.masters["F-版權頁"]
     scale = 200 / 72.0
     rect = cip_frame_rect(
-        master, horizontal_left_x_pt(master, book_number=1), n_lines=2, frame=master.frame)
+        master, horizontal_left_x_pt(master, sheet_face=1), n_lines=2, frame=master.frame)
     ink = ImageOps.invert(Image.open(result.paths[0]).convert("L")).getbbox()
     assert ink is not None, "橫排框頁整頁空白"
     # 框寬＝版心滿行寬（遠大於兩短行文字），四緣皆由框決定

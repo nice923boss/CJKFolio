@@ -38,6 +38,16 @@ def test_trailing_even_page_is_solo_right() -> None:
     assert spread_pages(4, 4) == (None, 4)
 
 
+def test_帶封面配對不特例_Sprint145紙面奇偶():
+    """側別由紙面決定，配對公式與封面無關（Sprint 145，Owner 實體書模型）：
+    紙面 1（封面）＝闔上的書，單邊；翻開封面即見紙面 2（目次）在右、紙面 3 在左；
+    末偶紙面＝翻完闔上書的單頁封底畫面。136＝《成名之路》帶封面補頁後的總紙面。"""
+    assert spread_pages(1, 136) == (1, None)
+    assert spread_pages(2, 136) == (3, 2)
+    assert spread_pages(3, 136) == (3, 2)
+    assert spread_pages(136, 136) == (None, 136)
+
+
 def test_side_and_reading_order_invariants() -> None:
     # 左頁恆奇（或 None）、右頁恆偶（或 None）；兩者皆在時 left == right + 1
     # 且右頁號 < 左頁號（讀序右→左＝頁碼小→大）

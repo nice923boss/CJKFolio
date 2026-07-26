@@ -26,11 +26,13 @@ _TITLE_COLUMNS = 2  # 書名框寬＝2 欄（長書名可折欄，不必逐字�
 
 def default_title_frame(template, cover_master: str, title: str,
                         style: str = "") -> TextFrame:
-    """預設封面書名框（版面頁 1）：靠書口側、自天頭起的直排 2 欄框。
+    """預設封面書名框（版面頁 1）：靠右緣、自天頭起的直排 2 欄框。
 
-    幾何確定性推導：書口側緣＝頁寬−outer（封面書頁號 0＝偶數＝右頁，書口在右，
-    見 primitives.is_right_page）；框寬＝2 欄（欄距依書名樣式級數換算）；
-    框高＝頁高×0.62 自天頭起。style 省略時取模版宣告的封面書名樣式。
+    幾何確定性推導：右緣＝頁寬−outer（直排封面書名慣例靠右；封面＝紙面 1、
+    書脊在右，Sprint 145 側別 SSOT 見 primitives.is_right_page。框為絕對座標，
+    位置沿用 Sprint 132 既有幾何，不隨側別修正移動）；框寬＝2 欄（欄距依書名
+    樣式級數換算）；框高＝頁高×0.62 自天頭起。style 省略時取模版宣告的封面
+    書名樣式。
     """
     master = template.masters[cover_master]
     style = style or cover_title_style(template)

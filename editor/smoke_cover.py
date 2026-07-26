@@ -4,10 +4,11 @@ Owner 真視窗回饋：匯入稿件後封面的位置直接就是第一頁，�
 自加文字，頁碼從封面翻開後才算第一頁。
 
 離屏可驗：匯入預設建封面（書名框落封面頁、內文整體後移一個版面頁）、頁碼
-指示器與跳頁對話框改書頁語意（封面標「封面」、頁碼扣掉封面）、畫布書頁號位移
-使封面走右頁幾何而內文首頁側別不因加封面而翻轉（回歸關鍵）、封面頁不繪頁碼、
-對頁檢視封面單邊在右（實體書封面不與內頁併排）、封面上可置圖與加字（既有
-自由佈局載體）。封面的視覺設計與拖放手感待 Owner 真視窗（GAPS #19 批次）。
+指示器與跳頁對話框改書頁語意（封面標「封面」、頁碼扣掉封面）、側別依紙面
+（Sprint 145：封面＝紙面 1＝左頁，加封面使內文整組換面＝翻開封面書頁 1 在右，
+與實體書一致）、裝訂補頁倍數含封面、封面頁不繪頁碼、對頁檢視封面單邊（闔上
+的書）、封面上可置圖與加字（既有自由佈局載體）。封面的視覺設計與拖放手感待
+Owner 真視窗（GAPS #19 批次）。
 """
 
 
@@ -34,27 +35,29 @@ def check_cover(EditorWindow, md_path, ROOT) -> None:
     body_pages = [p for p in pages[1:] if not p.blank]
     assert len(body_pages) == 11, f"內文應 11 頁，得 {len(body_pages)}"
     assert before == 11, before
-    assert sum(1 for p in pages if p.blank) == 1, "11 頁內文應補 1 頁湊足 12"
+    # 倍數含封面（Sprint 145）：1 封面＋11 內文＝12 已是 4 的倍數，補 0 頁
+    assert sum(1 for p in pages if p.blank) == 0, "12 總頁已是 4 的倍數不應補頁"
+    assert len(pages) == 12 and len(pages) % 4 == 0, len(pages)
 
     # ── 頁碼指示器與跳頁：書頁語意 ──
     win._goto_page(1)
     assert win._page_label.text() == "封面", win._page_label.text()
-    # 總數含裝訂補頁（12＝11 內文＋1 補頁）：使用者要的就是「成冊那疊紙的頁數」，
-    # 補頁實體上翻得到，故算頁數但不印頁碼（Sprint 144）
+    # 總數含裝訂補頁且倍數含封面（Sprint 145）：1 封面＋11 內文＝12 已是 4 的
+    # 倍數，補 0 頁（Sprint 144 只湊內文那疊係誤解：封面就是第一張紙的第一面）
     win._goto_page(2)
-    assert win._page_label.text() == "頁 1／12", win._page_label.text()
+    assert win._page_label.text() == "頁 1／11", win._page_label.text()
     win._goto_page(12)
-    assert win._page_label.text() == "頁 11／12", win._page_label.text()
+    assert win._page_label.text() == "頁 11／11", win._page_label.text()
 
-    # ── 側別回歸：加封面不使內文側別翻轉 ──
-    # 封面書頁號 0＝偶＝右頁（右翻書封面在右）；內文首頁書頁號 1＝奇＝左頁，
-    # 與無封面時的內文首頁完全相同（first_page 語意＝內文首頁的書頁碼）。
-    assert is_right_page(0) and not is_right_page(1)
+    # ── 側別依紙面（Sprint 145）：加封面使內文整組換面，與實體書一致 ──
+    # 封面＝紙面 1（奇＝左半、書脊在右）；翻開封面即見紙面 2（書頁 1）在右、
+    # 紙面 3（書頁 2）在左（Owner：「第二頁應該是要在翻開後的右邊才正確」）。
+    assert not is_right_page(1) and is_right_page(2)
 
-    # ── 對頁檢視：封面單邊在右 ──
-    assert spread_pages(1, 12, cover_pages=1) == (None, 1), "封面應單邊在右"
-    assert spread_pages(2, 12, cover_pages=1) == (2, None), "內文首頁（書頁1 奇）在左"
-    assert spread_pages(3, 12, cover_pages=1) == (4, 3), "書頁2 右、書頁3 左"
+    # ── 對頁檢視：紙面配對與封面無關；頭尾單邊＝闔上的書 ──
+    assert spread_pages(1, 12) == (1, None), "封面＝紙面1 單邊（闔上的書）"
+    assert spread_pages(2, 12) == (3, 2), "翻開封面：紙面2（書頁1）右、紙面3 左"
+    assert spread_pages(12, 12) == (None, 12), "末偶紙面單邊＝翻完闔上書的封底"
 
     # ── 封面頁不繪頁碼（底圖層：footer 未餵給 renderer） ──
     win._goto_page(1)

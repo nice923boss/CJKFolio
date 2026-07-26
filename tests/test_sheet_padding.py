@@ -9,7 +9,7 @@ Owner 需求：「假如最後一頁的頁碼並非 4 的倍數，也要增加�
 單元測試的 1〜2 頁合成稿全被補成 4〜5 頁。程式庫預設不補（None），預設值 4 由編輯器
 入口補上（editor.book_binding.with_binding），故使用者既有書檔開起來即生效。
 
-覆蓋：補頁數學、補頁承末頁主版與方向、頁號連續、封面不計入倍數、欄位驗證與序列化、
+覆蓋：補頁數學、補頁承末頁主版與方向、頁號連續、倍數含封面（Sprint 145）、欄位驗證與序列化、
 兩後端補頁不編頁碼（PDF 走 PyMuPDF 獨立驗證＝Gate 4）、含補頁的 PDF 過 preflight、
 編輯器層預設值、頁面面板縮圖頁腳、未宣告者 0 行為改變（回歸）。素材一律自擬。
 """
@@ -112,12 +112,17 @@ def test_補頁頁號連續且承末頁主版與方向(template):
 
 # ---- 2. 封面與空稿 ----
 
-def test_封面不計入倍數(template):
-    """要成帖的是內文那疊：封面另計紙張，故倍數只算內文頁。"""
+def test_倍數含封面(template):
+    """Sprint 145（Owner 回饋修正 Sprint 144）：封面就是第一張紙的第一面
+    （「封面為紙張的第一頁」「要確認每一張紙都會被印製到」），故 4 的倍數以
+    「含封面的總頁數」計；總數湊成偶數＝末紙面恆偶＝翻完闔上書的單頁封底。"""
     result = layout_document(make_doc(4, cover=COVER_MASTER), template)
     assert result.cover_pages == 1
-    assert (len(result.pages) - result.cover_pages) % 4 == 0
+    assert len(result.pages) % 4 == 0
     assert not result.pages[0].blank, "封面不是補頁"
+    # SHORT＝1 內文頁：1 封面＋1 內文＝2 → 補 2 至 4（舊制只湊內文＝補 3、總 5）
+    assert len(result.pages) == 4
+    assert [p.number for p in result.pages if p.blank] == [3, 4]
 
 
 def test_只有封面的空稿不補頁(template):

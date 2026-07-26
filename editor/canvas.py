@@ -29,7 +29,7 @@ from cjkfolio.layout import (
     style_advance_pt,
     style_line_slots,
 )
-from cjkfolio.primitives import book_number_for
+from cjkfolio.primitives import book_number_for, sheet_face_for
 from cjkfolio.render import PageRenderer, line_axis_x_pt, mm_to_pt
 from cjkfolio.styles import Template
 
@@ -82,7 +82,7 @@ def pil_to_qimage(img) -> QImage:
 
 
 def iter_cell_rects(
-    template: Template, master, page, book_number: int, scale: float
+    template: Template, master, page, sheet_face: int, scale: float
 ) -> Iterator[tuple]:
     """互動層字格矩形（px），與 render 直排 body 逐項同源。
 
@@ -98,7 +98,7 @@ def iter_cell_rects(
             template,
             master,
             placed.slot,
-            book_number,
+            sheet_face,
             line_slots=style_line_slots(style, master.grid),
         )
         adv, _status = line_justified_advance(placed.line, advance)
@@ -173,26 +173,24 @@ def iter_image_rects(doc: Document, page_number: int, scale: float) -> Iterator[
         yield idx, x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale
 
 
-def spread_pages(page_number: int, total: int, cover_pages: int = 0):
-    """右翻書對開配對：回傳 (left_page, right_page)，None＝該側空白。頁號皆版面頁號。
+def spread_pages(page_number: int, total: int):
+    """右翻書對開配對（紙面奇偶，Sprint 145）：回傳 (left_page, right_page)，
+    None＝該側空白。頁號皆版面頁號（編輯器 first_page=1，版面頁號＝紙面號）。
 
-    Sprint 22 側別（SSOT）：偶數書頁＝右頁（書口在右）、奇數書頁＝左頁（書口在左）；
-    右翻直排書 spread＝（偶右、奇左），讀序右→左＝頁碼小→大，故右頁號 < 左頁號。
-    一組 spread＝(偶 E, 奇 E+1)：右＝E、左＝E+1。頁1（奇）右夥伴頁0不存在＝單邊在左；
-    末頁若為偶則左夥伴 E+1 不存在＝單邊在右。導航到 spread 內任一頁都得同一組。
-
-    封面（Sprint 132）：封面是書的最外層，實體上不與任何內頁攤開併排，故封面頁
-    一律單邊顯示（在右，＝右翻書封面在右）；奇偶配對改以書頁號判定（帶封面時
-    版面頁號與書頁號差 cover_pages，用版面頁號會整組配錯）。
+    側別由紙張的面決定（primitives.is_right_page，Owner 實體書模型）：封面＝紙面 1，
+    每翻一張即見其背面在右、下一面在左，故偶數紙面＝右頁、奇數紙面＝左頁。一組
+    spread＝(右 偶 E, 左 奇 E+1)，讀序右→左＝頁號小→大。紙面 1（含封面）的右夥伴
+    紙面 0 不存在＝單邊（闔上的書）；末偶紙面的左夥伴不存在＝單邊（翻完闔上書的
+    封底畫面）。導航到 spread 內任一頁都得同一組。帶不帶封面配對公式相同：封面
+    只是紙面 1 的內容，不再特例單邊在右（Sprint 132 的書頁號配對已廢，Owner：
+    「第二頁應該是要在翻開後的右邊才正確」）。
     """
-    if page_number <= cover_pages:  # 封面單邊在右（不與內頁併排）
-        return None, page_number
-    if (page_number - cover_pages) % 2 == 0:  # 書頁號偶＝右頁
+    if page_number % 2 == 0:  # 偶數紙面＝右頁
         right = page_number
         left = page_number + 1 if page_number + 1 <= total else None
-    else:  # 書頁號奇＝左頁
+    else:  # 奇數紙面＝左頁
         left = page_number
-        right = page_number - 1 if page_number - 1 > cover_pages else None
+        right = page_number - 1 if page_number - 1 >= 1 else None
     return left, right
 
 
@@ -225,9 +223,10 @@ def build_page_scene(
     """
     scale = dpi / 72.0  # 互動層字格幾何一律依 dpi（scene 座標系），不隨底圖畫質變
     base_dpi = base_dpi or dpi  # 底圖渲染解析度（Sprint 133，畫質用；預設同 scene）
-    # 書頁號（鏡像與頁腳奇偶依此）：帶封面時頁碼自封面翻開後起算，與兩後端同源
-    # （Sprint 132）。畫布原直接用版面頁號＝隱含 first_page=1 且無封面。
+    # 頁碼數字＝書頁號（封面翻開後起算，Sprint 132）；側別與鏡像＝紙面號
+    # （Sprint 145 SSOT），與兩後端同源。
     book_number = book_number_for(page.number, first_page, layout.cover_pages)
+    sheet_face = sheet_face_for(page.number, first_page)
     renderer = PageRenderer(template, doc.master, dpi=base_dpi)
     no_folio = page.number <= layout.cover_pages or page.blank  # 封面與補頁不編頁碼
     footer = None if no_folio else {
@@ -235,7 +234,7 @@ def build_page_scene(
     vertical = getattr(page, "vertical", layout.vertical)  # 逐頁方向（Sprint 53）
     frames = page_frame_placements(template, doc, layout, page)
     pil_img = renderer.render_page(
-        page, footer_texts=footer, book_number=book_number, vertical=vertical,
+        page, footer_texts=footer, sheet_face=sheet_face, vertical=vertical,
         frames=frames,  # 底圖含獨立文字框（Sprint 55）；互動層字格見下（Sprint 58）
         images=images,  # 底圖含置入圖（Sprint 102）；互動層圖框見下
     )
@@ -283,7 +282,7 @@ def build_page_scene(
     # 逐頁主版（節式主版指派，Sprint 51）：互動層幾何依該頁主版，與 render 同源
     master = template.masters[getattr(page, "master", "") or doc.master]
     for pi, ci, x, y, w, h, _kind in iter_cell_rects(
-        template, master, page, book_number, scale
+        template, master, page, sheet_face, scale
     ):
         add_item(x, y, w, h, (pi, ci))
     for fi, li, ci, x, y, w, h, _kind in iter_frame_cell_rects(frames, scale):

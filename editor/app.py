@@ -260,30 +260,25 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         return scene, {it.data(0): it for it in items}
 
     def _make_spread_scene(self, scene):
-        """對頁檢視（Sprint 129 甲4）：右翻書偶右奇左（Sprint 22 側別）兩頁併排。
+        """對頁檢視（Sprint 129 甲4）：右翻書偶右奇左（紙面奇偶，Sprint 145）兩頁併排。
 
         左頁置於 x=0、右頁置於 x=頁寬（螢幕左右＝實體書攤開左右）。目前頁照常建
         可互動字格（keys 原樣入 item_map，編輯行為不變）；另一頁整頁改標
         ("facing", 頁號)＝點它跳頁（不進 item_map，單頁 hit-test 路徑永遠看不到其
         keys，故既有 C1〜C31 命中邏輯零影響）。純檢視：不改版面、不影響匯出。
 
-        空白側畫空紙面（Sprint 144，Owner 回饋「翻開來的目次就應該要是對頁檢視的
-        狀態，而不是單一頁面」）：帶封面的書冊，書頁1 的右鄰是封二、末偶頁的左鄰是
-        封三，實體上都翻得到那一面，故畫一張空紙使對頁恆為兩頁寬。封面自身例外（同
-        一回饋「目前封面是單獨一頁是正確」），不帶封面的文件也維持原本單邊顯示。
+        單邊 spread 恆只有頭尾兩處且都畫單頁（Sprint 145，Owner 回饋）：紙面 1＝
+        闔上的書（封面），末偶紙面＝翻完闔上書的封底畫面（「最後一頁要是翻完闔上
+        書的樣子，也就等於是單頁封底畫面」）。中間每組 (偶, 奇) 天然成對：翻開
+        封面即見紙面 2（目次）在右、紙面 3 在左，Sprint 144 的空白紙面填充已無
+        必要而移除（該填充建立在書頁號配對上，配對本身已修正）。
         """
         pages = self.layout_result.pages
-        cover_pages = self.layout_result.cover_pages
-        left_no, right_no = spread_pages(self.page.number, len(pages), cover_pages)
+        left_no, right_no = spread_pages(self.page.number, len(pages))
         page_w_px = self.template.page_width_mm / 25.4 * DPI
-        blank_facing = cover_pages > 0 and self.page.number > cover_pages
         item_map: dict = {}
         for pg_no, x_off in ((left_no, 0.0), (right_no, page_w_px)):
-            if pg_no is None:  # 該側空白（頁1 左單邊、末偶頁右單邊）
-                if blank_facing:  # 空紙面：無 data(0) 故點擊不命中任何字格
-                    scene.addRect(x_off, 0, page_w_px,
-                                  self.template.page_height_mm / 25.4 * DPI,
-                                  QPen(QColor("#c8c8c8")), QBrush(QColor("white")))
+            if pg_no is None:  # 該側空白（紙面1 右側、末偶紙面左側）：單頁顯示
                 continue
             pg = pages[pg_no - 1]
             try:

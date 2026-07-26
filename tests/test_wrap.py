@@ -71,26 +71,26 @@ def long_body(chars: int = 600):
 
 def test_exclusion_slots_match_reference_page(template, master_a):
     """真書 PDF 53 R 半頁的圖 rect → A-內文版 slot 7〜12（量測 6 欄逐欄吻合）。"""
-    ex = image_exclusion(REF_RECT, template, master_a, book_number=2)
+    ex = image_exclusion(REF_RECT, template, master_a, sheet_face=2)
     assert (ex.slot_lo, ex.slot_hi) == REF_SLOTS
 
 
 def test_exclusion_span_is_relative_to_top_margin(template, master_a):
     """字軸區間相對天頭（32.49mm＝92.09pt）。"""
-    ex = image_exclusion(REF_RECT, template, master_a, book_number=2)
+    ex = image_exclusion(REF_RECT, template, master_a, sheet_face=2)
     assert ex.span_lo_pt == pytest.approx(289.01 - 92.0975, abs=0.01)
     assert ex.span_hi_pt == pytest.approx(467.54 - 92.0975, abs=0.01)
 
 
 def test_window_shortens_line_before_image(template, master_a):
     """圖佔字軸後段 → 受影響行可用字格自天頭起縮短（真書：滿行 32 → 16 格）。"""
-    ex = image_exclusion(REF_RECT, template, master_a, book_number=2)
+    ex = image_exclusion(REF_RECT, template, master_a, sheet_face=2)
     assert line_window((ex,), 7, 1, ADVANCE_PT, CHARS_PER_LINE) == (0, 16)
 
 
 def test_window_margin_matches_reference_gap(template, master_a):
     """wrap_margin 一字格時與真書逐格吻合（真書該 6 欄末字落 cell 14，end＝15）。"""
-    ex = image_exclusion(REF_RECT, template, master_a, book_number=2,
+    ex = image_exclusion(REF_RECT, template, master_a, sheet_face=2,
                          margin_pt=ADVANCE_PT)
     assert line_window((ex,), 7, 1, ADVANCE_PT, CHARS_PER_LINE) == (0, 15)
 
@@ -98,20 +98,20 @@ def test_window_margin_matches_reference_gap(template, master_a):
 def test_window_shifts_line_start_after_image(template, master_a):
     """圖佔字軸前段（天頭側）→ 行首推移到圖之後（真書 PDF 60 形態）。"""
     rect = (77.63, 92.58, 271.52, 229.05)
-    ex = image_exclusion(rect, template, master_a, book_number=2)
+    ex = image_exclusion(rect, template, master_a, sheet_face=2)
     start, end = line_window((ex,), ex.slot_lo, 1, ADVANCE_PT, CHARS_PER_LINE)
     assert (start, end) == (12, 32)   # (229.05−92.0975)/12.08＝11.34 → ceil 12
 
 
 def test_window_untouched_slot_is_full(template, master_a):
-    ex = image_exclusion(REF_RECT, template, master_a, book_number=2)
+    ex = image_exclusion(REF_RECT, template, master_a, sheet_face=2)
     assert line_window((ex,), 0, 1, ADVANCE_PT, CHARS_PER_LINE) == (0, CHARS_PER_LINE)
 
 
 def test_window_full_column_blocked_is_empty(template, master_a):
     """圖覆蓋整欄字軸 → 空窗（該行槽不排字）。"""
     rect = (76.64, 80.0, 195.66, 490.0)
-    ex = image_exclusion(rect, template, master_a, book_number=2)
+    ex = image_exclusion(rect, template, master_a, sheet_face=2)
     start, end = line_window((ex,), 8, 1, ADVANCE_PT, CHARS_PER_LINE)
     assert start == end
 
@@ -119,26 +119,26 @@ def test_window_full_column_blocked_is_empty(template, master_a):
 def test_window_takes_larger_side(template, master_a):
     """圖落字軸中段 → v1 取較大的一段（另一段不排字，GAPS 誠實登記）。"""
     rect = (76.64, 92.0975 + 5 * ADVANCE_PT, 195.66, 92.0975 + 9 * ADVANCE_PT)
-    ex = image_exclusion(rect, template, master_a, book_number=2)
+    ex = image_exclusion(rect, template, master_a, sheet_face=2)
     assert line_window((ex,), 8, 1, ADVANCE_PT, CHARS_PER_LINE) == (9, 32)
 
 
 def test_exclusion_slots_mirror_on_left_page(template, master_a):
     """鏡像主版：同一 rect 在左頁（奇數書頁）對到不同行槽（版心左右互換）。"""
-    right = image_exclusion(REF_RECT, template, master_a, book_number=2)
-    left = image_exclusion(REF_RECT, template, master_a, book_number=3)
+    right = image_exclusion(REF_RECT, template, master_a, sheet_face=2)
+    left = image_exclusion(REF_RECT, template, master_a, sheet_face=3)
     assert (left.slot_lo, left.slot_hi) != (right.slot_lo, right.slot_hi)
 
 
 def test_exclusion_outside_body_is_none(template, master_a):
     """圖完全落在版心行軸範圍外（書口外側）→ 無排除區。"""
     assert image_exclusion((380.0, 100.0, 410.0, 200.0), template, master_a,
-                           book_number=2) is None
+                           sheet_face=2) is None
 
 
 def test_line_window_multi_slot_line_uses_any_overlap(template, master_a):
     """跨多行槽的大級數行：任一行槽與圖重疊即受裁切（保守）。"""
-    ex = image_exclusion(REF_RECT, template, master_a, book_number=2)
+    ex = image_exclusion(REF_RECT, template, master_a, sheet_face=2)
     assert line_window((ex,), 6, 2, ADVANCE_PT, CHARS_PER_LINE) == (0, 16)
 
 

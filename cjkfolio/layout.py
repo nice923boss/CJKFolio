@@ -311,13 +311,16 @@ def layout_document(doc, template: Template, first_para_continues: bool = False,
         for page in raw_pages:
             pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name,
                                     vertical=vertical))
-    # 裝訂補頁（Sprint 144）：真實書冊以對折紙成帖，內文頁數非 doc.sheet_pages 的倍數
-    # 就湊不成整數張紙，故於末尾補空白頁。封面不計（封面另計紙張，要成帖的是內文那疊）；
-    # 補頁承末頁主版與方向，空 placed 使兩後端的主版裝飾（rule／frame／figure，皆帶
+    # 裝訂補頁（Sprint 144；145 改含封面）：真實書冊以對折紙成帖，總紙面數非
+    # doc.sheet_pages 的倍數就湊不成整數張紙，故於末尾補空白頁。封面就是第一張紙
+    # 的第一面（Owner：「封面為紙張的第一頁」「要確認每一張紙都會被印製到」），
+    # 故以「含封面的總頁數」取模（Sprint 144 只湊內文那疊係誤解，已修正）；總數
+    # 湊成 4 的倍數＝偶數，末紙面恆偶＝翻完闔上書的單頁封底。補頁承末頁主版與
+    # 方向，空 placed 使兩後端的主版裝飾（rule／frame／figure，皆帶
     # `and page.placed`）自然不繪，頁碼與書眉另由 blank 旗標抑制。
     unit = doc.sheet_pages or 0
     if unit > 1 and len(pages) > cover_pages:
-        for _ in range(-(len(pages) - cover_pages) % unit):
+        for _ in range(-len(pages) % unit):
             last = pages[-1]
             pages.append(LayoutPage(len(pages) + 1, (), master=last.master,
                                     vertical=last.vertical, blank=True))

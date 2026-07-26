@@ -153,7 +153,7 @@ def test_case_ttb_ink_centered_on_line_axis(template, tmp_path):
             {"text": "夫妻與兩名子女，四人同住。", "style": "內文-明體直排"},
         ],
     })
-    first_page = 2  # 偶＝右頁；單頁 → book_number = 版面頁號1 + first_page − 1 = first_page
+    first_page = 2  # 偶＝右頁；單頁 → 紙面號 = 版面頁號1 + first_page − 1 = first_page
     out = tmp_path / "case.pdf"
     export_pdf(doc, template, out, first_page=first_page, footer=False)
     chars = [
@@ -287,7 +287,7 @@ def test_export_horizontal_two_backend_position_parity(template, tmp_path):
 
     master = template.masters["F-版權頁"]
     cip_size = template.paragraph_styles["版權頁-CIP橫排"].size_pt  # 隨模版真值（p178 量測）
-    expect_x = BLEED_PT + horizontal_left_x_pt(master, book_number=1)
+    expect_x = BLEED_PT + horizontal_left_x_pt(master, sheet_face=1)
     for i, (_, (ox, oy)) in enumerate(lines):
         expect_y = BLEED_PT + horizontal_baseline_y_pt(master, slot=i, size_pt=cip_size)
         assert ox == pytest.approx(expect_x, abs=0.3), f"行 {i} 左緣 {ox} vs {expect_x}"

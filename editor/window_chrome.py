@@ -128,7 +128,8 @@ class WindowChromeMixin:
         page_dock = QDockWidget("頁面", self)  # 縮圖面板（Sprint 125）
         self._page_panel = PagePanel(       # 拖曳重排（Sprint 142）：搬的是整節
             self._goto_page, on_context_menu=self._page_context_menu,
-            on_reorder=self._reorder_pages)
+            on_reorder=self._reorder_pages,
+            on_drag_start=self._check_drag_start)  # 起點守門（Sprint 145）
         page_dock.setWidget(self._page_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, page_dock)
 

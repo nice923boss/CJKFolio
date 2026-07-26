@@ -35,6 +35,7 @@ from .images import (
     resolve_placed_images,
 )
 from .ink import MAX_TAC, InkUse, image_max_tac, tac_percent, tac_warnings
+from .pdf_content import _Content, _fmt
 from .pdf_fonts import EmbeddedFont
 from .pdf_objects import PdfBuilder
 from .pdfx_meta import (  # re-export：既有 import 路徑（preflight／editor）不變
@@ -89,6 +90,7 @@ from .render import (
     line_axis_x_pt,
     mm_to_pt,
     rule_break_ranges,
+    sheet_face_for,
 )
 from .styles import DEFAULT_TEXT_CMYK, resolve_text_cmyk
 from .wrap import layout_with_wrap
@@ -100,17 +102,6 @@ TEXT_K = DEFAULT_TEXT_CMYK[3]  # 內文單 K92（§10 決議：§9 K90〜92 區�
 # press_marks 模組；一致性形態（PdfxProfile／PDFX_PROFILES）、ICC registry 名單與
 # 輸出描述檔驗證同住 pdfx_meta 模組（Sprint 137 行數上限管理）；本檔 re-export
 # 兩者以維持既有 import 路徑。
-
-
-def _fmt(v: float) -> str:
-    s = f"{v:.3f}".rstrip("0").rstrip(".")
-    return s if s else "0"
-
-
-def _fill_op(cmyk) -> str:
-    """DeviceCMYK 文字填色算符（小寫 k）。"""
-    c, m, y, k = cmyk
-    return f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} k"
 
 
 def _pdf_text_string(s: str) -> str:
@@ -128,114 +119,6 @@ def _pdf_string(s: str) -> str:
 def _pdf_date(dt: datetime) -> str:
     off = dt.strftime("%z")  # astimezone() 保證帶時區，如 +0800
     return f"D:{dt.strftime('%Y%m%d%H%M%S')}{off[:3]}'{off[3:]}'"
-
-
-# ---------- 內容流 ----------
-
-class _Content:
-    def __init__(self):
-        self.prologue: list = []  # 圖形（path／影像）算符，置於文字塊（BT／ET）之前
-        self.ops = ["q", _fill_op(DEFAULT_TEXT_CMYK), "BT"]
-        self._cur = None
-        self._fill = DEFAULT_TEXT_CMYK  # 現行文字填色（預設暖黑 K92）
-        # 本頁實際發出的 DeviceCMYK 著色值（TAC 檢核產出側，Sprint 93）：預設填色
-        # 恆隨 prologue 發出故先入集
-        self.cmyk_used: set = {tuple(DEFAULT_TEXT_CMYK)}
-        # 印前標記與裁切標記的著色值另立帳本（Sprint 109）：標記落在 TrimBox 外、
-        # 裁切後不入成品，分帳讓墨量報告能標出來源。**這不是豁免**：檢查器一行
-        # 未動，超標仍照報 ok=False（見 ink.py 與 GAPS #42）。
-        self.mark_cmyk_used: set = set()
-
-    def set_fill(self, cmyk) -> None:
-        """切換文字填色（Sprint 76 色票）：與現行相同不發算符（預設輸出形態不變）；
-        `k` 為 DeviceCMYK 填色算符，於文字物件（BT 內）合法且不觸 preflight rg/RG。"""
-        cmyk = tuple(cmyk)
-        if cmyk != self._fill:
-            self.ops.append(_fill_op(cmyk))
-            self._fill = cmyk
-            self.cmyk_used.add(cmyk)
-
-    def _ledger(self, cmyk, is_mark: bool) -> None:
-        """記一筆著色值到內容帳本或標記帳本（Sprint 109 分帳，見 __init__ 註解）。"""
-        (self.mark_cmyk_used if is_mark else self.cmyk_used).add(tuple(cmyk))
-
-    def fill_rect(self, cmyk, x_ll: float, y_ll: float, w: float, h: float,
-                  *, is_mark: bool = False) -> None:
-        """DeviceCMYK 填色矩形（獨立 q…Q 狀態塊；Sprint 109 印前標記色塊）。
-
-        `k`（填色）＋`re`＋`f` 皆不觸 preflight 的 rg／RG 判定，且 `f` 不觸發
-        no-transparency 與 no-lzw（R2 spike 以 PyMuPDF 實測確認，X-1a 仍 12/12）。
-        """
-        c, m, y, k = cmyk
-        self._ledger(cmyk, is_mark)
-        self.prologue += [
-            "q",
-            f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} k",
-            f"{x_ll:.3f} {y_ll:.3f} {_fmt(w)} {_fmt(h)} re",
-            "f",
-            "Q",
-        ]
-
-    def stroke_rect(self, cmyk, line_width_pt: float,
-                    x_ll: float, y_ll: float, w: float, h: float,
-                    *, is_mark: bool = False) -> None:
-        """DeviceCMYK 描邊矩形（獨立 q…Q 狀態塊，狀態隔離；`K` 不觸 preflight rg/RG）。"""
-        c, m, y, k = cmyk
-        self._ledger(cmyk, is_mark)
-        self.prologue += [
-            "q",
-            f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
-            f"{_fmt(line_width_pt)} w",
-            f"{x_ll:.3f} {y_ll:.3f} {_fmt(w)} {_fmt(h)} re",
-            "S",
-            "Q",
-        ]
-
-    def stroke_line(self, cmyk, line_width_pt: float,
-                    x0: float, y0: float, x1: float, y1: float,
-                    dash_on_pt: float = 0.0, dash_off_pt: float = 0.0,
-                    *, is_mark: bool = False) -> None:
-        """DeviceCMYK 描邊線段（獨立 q…Q 狀態塊）。dash_on_pt>0 時掛 `d` dash 陣列，
-        dash 狀態隨 Q 還原不外洩（spike8 實證）；`d`/`m`/`l` 不觸 preflight rg/RG。"""
-        c, m, y, k = cmyk
-        self._ledger(cmyk, is_mark)
-        ops = [
-            "q",
-            f"{_fmt(c)} {_fmt(m)} {_fmt(y)} {_fmt(k)} K",
-            f"{_fmt(line_width_pt)} w",
-        ]
-        if dash_on_pt > 0:
-            ops.append(f"[ {_fmt(dash_on_pt)} {_fmt(dash_off_pt)} ] 0 d")
-        ops += [
-            f"{x0:.3f} {y0:.3f} m",
-            f"{x1:.3f} {y1:.3f} l",
-            "S",
-            "Q",
-        ]
-        self.prologue += ops
-
-    def draw_image(self, res_name: str, w: float, h: float,
-                   x_ll: float, y_ll: float) -> None:
-        """置入影像 XObject（獨立 q…Q，置文字塊 BT／ET 前）：cm 縮放單位方陣至 w×h、
-        平移到左下角 (x_ll, y_ll)。影像首列在上（PIL tobytes 語意），cm h>0 使影像正立。"""
-        self.prologue += [
-            "q",
-            f"{_fmt(w)} 0 0 {_fmt(h)} {x_ll:.3f} {y_ll:.3f} cm",
-            f"/{res_name} Do",
-            "Q",
-        ]
-
-    def show(self, res_name: str, code: int, x: float, y: float,
-             size_pt: float, rotated: bool) -> None:
-        key = (res_name, round(size_pt, 4))
-        if key != self._cur:
-            self.ops.append(f"/{res_name} {_fmt(size_pt)} Tf")
-            self._cur = key
-        tm = f"0 -1 1 0 {x:.3f} {y:.3f}" if rotated else f"1 0 0 1 {x:.3f} {y:.3f}"
-        self.ops.append(f"{tm} Tm <{code:04X}> Tj")
-
-    def finish(self) -> bytes:
-        return "\n".join(self.prologue + self.ops + ["ET", "Q"]).encode("latin-1")
 
 
 # ---------- 頁面寫出 ----------
@@ -300,11 +183,11 @@ class _PdfPageWriter:
             y = self.page_h_pt + self.origin_pt - pl.y_pt  # top-down → y-up
             content.show(font.res_name, code, x, y, pl.size_pt, pl.rotated)
 
-    def _footer(self, content: _Content, book_number: int, footer_texts: dict) -> None:
+    def _footer(self, content: _Content, sheet_face: int, footer_texts: dict) -> None:
         master, template = self.master, self.template
         page_w = mm_to_pt(template.page_width_mm)
-        page_odd = book_number % 2 == 1  # 奇偶 gate（pages 配置語意）
-        outer_right = is_right_page(book_number) or not master.mirror  # 書口側別
+        page_odd = sheet_face % 2 == 1  # 奇偶 gate（pages 配置語意＝實體左右頁）
+        outer_right = is_right_page(sheet_face) or not master.mirror  # 書口側別
         for item in master.footer.values():
             if item.pages == "odd" and not page_odd:
                 continue
@@ -324,7 +207,7 @@ class _PdfPageWriter:
             self._emit(content, key, horizontal_placements(
                 shaper, text, pen_x, item.baseline_from_top_pt, style.size_pt))
 
-    def _vertical_body(self, content: _Content, page, book_number: int) -> None:
+    def _vertical_body(self, content: _Content, page, sheet_face: int) -> None:
         master, template = self.master, self.template
         top_pt = mm_to_pt(master.margins.top_mm)
         for placed in page.placed:
@@ -332,7 +215,7 @@ class _PdfPageWriter:
             key, shaper = self._shaper_for(style)
             advance = style_advance_pt(style, master.grid)
             axis = line_axis_x_pt(
-                template, master, placed.slot, book_number,
+                template, master, placed.slot, sheet_face,
                 line_slots=style_line_slots(style, master.grid),
             )
             # 齊行：非段末行行首行尾雙錨定（縮排偏移用網格字距，內容用實效字距）
@@ -367,7 +250,7 @@ class _PdfPageWriter:
                 self._emit(content, use_key, pls)
                 content_i += cell.width
 
-    def _horizontal_body(self, content: _Content, page, book_number: int) -> None:
+    def _horizontal_body(self, content: _Content, page, sheet_face: int) -> None:
         """橫排 body（版權頁-CIP）：行由上而下、字由左而右，不齊行。
 
         幾何與 render._draw_horizontal_body 同源（同一組 left_x／baseline_y／advance）。
@@ -381,7 +264,7 @@ class _PdfPageWriter:
                 master, placed.slot, style.size_pt,
                 style_line_slots(style, master.grid),
             )
-            pen_x = horizontal_left_x_pt(master, book_number) + placed.line.start_slot * char_adv
+            pen_x = horizontal_left_x_pt(master, sheet_face) + placed.line.start_slot * char_adv
             for cell in placed.line.cells:
                 if cell.char_style:  # run 覆寫字型與級數
                     cstyle = template.character_styles[cell.char_style]
@@ -396,11 +279,11 @@ class _PdfPageWriter:
                         use_shaper, cell.text, pen_x, baseline_y, use_size))
                 pen_x += horizontal_cell_advance_pt(use_shaper, cell, use_size, char_adv)
 
-    def _frame(self, content: _Content, page, book_number: int) -> None:
+    def _frame(self, content: _Content, page, sheet_face: int) -> None:
         """主版向量框（v1 橫排 CIP 細框）：與 render._draw_frame 幾何同源，CMYK 描邊。"""
         n_lines = max(pl.slot for pl in page.placed) + 1
         rect = cip_frame_rect(
-            self.master, horizontal_left_x_pt(self.master, book_number),
+            self.master, horizontal_left_x_pt(self.master, sheet_face),
             n_lines, self.master.frame,
         )
         x_ll = self.origin_pt + rect.x0
@@ -408,10 +291,10 @@ class _PdfPageWriter:
         content.stroke_rect(rect.cmyk, rect.line_width_pt, x_ll, y_ll,
                             rect.x1 - rect.x0, rect.y1 - rect.y0)
 
-    def _rule(self, content: _Content, rule_breaks, book_number: int) -> None:
+    def _rule(self, content: _Content, rule_breaks, sheet_face: int) -> None:
         """主版向量線（v1 目錄天頭水平虛線）：篇名嵌線處斷開，
         與 render._draw_rule 幾何同源（rule_break_ranges＋toc_rule_segments），CMYK 描邊。"""
-        gaps = rule_break_ranges(self.template, self.master, rule_breaks, book_number)
+        gaps = rule_break_ranges(self.template, self.master, rule_breaks, sheet_face)
         for line in toc_rule_segments(mm_to_pt(self.template.page_width_mm),
                                       self.master.rule, gaps):
             y_up = self.page_h_pt + self.origin_pt - line.y0  # top-down → y-up（水平線 y0=y1）
@@ -420,12 +303,12 @@ class _PdfPageWriter:
                                 self.origin_pt + line.x1, y_up,
                                 line.dash_on_pt, line.dash_off_pt)
 
-    def _figure(self, content: _Content, book_number: int) -> None:
+    def _figure(self, content: _Content, sheet_face: int) -> None:
         """主版圖框保留區佔位框（v1 G 圖文版照片區）：承版心四邊淡虛線，與
         render._draw_figure 幾何同源（figure_slot_rect＋edges），CMYK 描邊；
         top-down → y-up 逐端點加出血偏移。有置入圖時改由 _image 畫實際照片取代。"""
         page_w = mm_to_pt(self.template.page_width_mm)
-        rect = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+        rect = figure_slot_rect(page_w, self.master, is_right_page(sheet_face),
                                 self.master.figure)
         for edge in figure_slot_edges(rect, self.master.figure):
             content.stroke_line(
@@ -434,7 +317,7 @@ class _PdfPageWriter:
                 self.origin_pt + edge.x1, self.page_h_pt + self.origin_pt - edge.y1,
                 edge.dash_on_pt, edge.dash_off_pt)
 
-    def _image(self, content: _Content, entry, book_number: int,
+    def _image(self, content: _Content, entry, sheet_face: int,
                page_number: int) -> None:
         """置入圖：等比縮放置中（contain），與 render._draw_image 幾何同源
         （fit_image_rect）；top-down 下緣 → y-up 左下角。
@@ -462,7 +345,7 @@ class _PdfPageWriter:
         emb = self._images[path]
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
-            slot = figure_slot_rect(page_w, self.master, is_right_page(book_number),
+            slot = figure_slot_rect(page_w, self.master, is_right_page(sheet_face),
                                     self.master.figure)
             rect = (slot.x0, slot.y0, slot.x1, slot.y1)
         box = fit_image_rect(rect[0], rect[1], rect[2], rect[3], emb.width, emb.height)
@@ -498,12 +381,12 @@ class _PdfPageWriter:
                 self._emit(content, key, pls)
                 content_i += cell.width
 
-    def _toc_marks(self, content: _Content, marks, book_number: int) -> None:
+    def _toc_marks(self, content: _Content, marks, sheet_face: int) -> None:
         """目錄條目記號：行軸垂直引導線（實線）＋直排逐位頁碼（底錨），
         幾何取 layout.TocEntryMark，與 render._draw_toc_marks 同源。"""
         toc = self.master.toc
         for m in marks:
-            axis = line_axis_x_pt(self.template, self.master, m.slot, book_number,
+            axis = line_axis_x_pt(self.template, self.master, m.slot, sheet_face,
                                   line_slots=m.line_slots)
             if m.leader_y1_pt > m.leader_y0_pt:  # 重疊守護（violations 已列不沉默）
                 content.stroke_line(
@@ -519,14 +402,14 @@ class _PdfPageWriter:
                 self._emit(content, key, tcy_placements(
                     shaper, digit, axis, cell_top, m.digit_size_pt, m.digit_advance_pt))
 
-    def build_page(self, page, footer_texts=None, book_number=None,
+    def build_page(self, page, footer_texts=None, sheet_face=None,
                    vertical: bool = True, toc_marks=(), rule_breaks=(),
                    images=(), frames=(), crop_marks: bool = False,
                    press_marks: bool = False) -> bytes:
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = self.template.masters[page.master]
-        if book_number is None:  # 預設書頁號＝版面頁號（first_page=1）
-            book_number = page.number
+        if sheet_face is None:  # 預設紙面號＝版面頁號（first_page=1）
+            sheet_face = page.number
         content = _Content()
         if crop_marks or press_marks:  # 標記環（trim 外，與內容不重疊；先 emit）
             emit_marks(
@@ -538,27 +421,27 @@ class _PdfPageWriter:
                 crop=crop_marks, press=press_marks, reg_cmyk=self.reg_cmyk)
         # 主版向量框（v1 cip-box 為橫排原件，幾何依橫排網格盒；底層裝飾先 emit）
         if not vertical and self.master.frame and page.placed:
-            self._frame(content, page, book_number)
+            self._frame(content, page, sheet_face)
         # 主版向量線（v1 toc-rule 為直排目錄原件，篇名嵌線處斷開；底層裝飾先 emit）
         if vertical and self.master.rule and page.placed:
-            self._rule(content, rule_breaks, book_number)
+            self._rule(content, rule_breaks, sheet_face)
         # 主版圖框保留區（photo-slot）：槽式圖取代佔位框；佔位框只看槽是否仍空
         # （rect 任意圖框不填槽，InDesign 空框導引語意，Sprint 54）
         slot_filled = any(rect is None for _p, _g, rect in images)
         if vertical and self.master.figure and page.placed and not slot_filled:
-            self._figure(content, book_number)
+            self._figure(content, sheet_face)
         for entry in images:  # 文件序＝繪製序
-            self._image(content, entry, book_number, page.number)
+            self._image(content, entry, sheet_face, page.number)
         if vertical:
-            self._vertical_body(content, page, book_number)
+            self._vertical_body(content, page, sheet_face)
         else:
-            self._horizontal_body(content, page, book_number)
+            self._horizontal_body(content, page, sheet_face)
         if toc_marks:  # 目錄條目頁碼＋引導線（marks 僅目錄主版產生）
-            self._toc_marks(content, toc_marks, book_number)
+            self._toc_marks(content, toc_marks, sheet_face)
         for placement in frames:  # 獨立文字框（自由佈局層，body 之上）
             self._text_frame(content, placement)
         if footer_texts:
-            self._footer(content, book_number, footer_texts)
+            self._footer(content, sheet_face, footer_texts)
         self.cmyk_used |= content.cmyk_used  # 全書著色值彙整（TAC 檢核產出側）
         self.mark_cmyk_used |= content.mark_cmyk_used  # 標記帳本（來源標示用）
         return content.finish()
@@ -669,13 +552,15 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         selected = [p for p in selected if p.number in wanted]
     contents = []
     for page in selected:
+        # 頁碼數字＝書頁號（封面翻開後起算）；側別與鏡像＝紙面號（Sprint 145 SSOT）
         book_number = book_number_for(page.number, first_page, layout.cover_pages)
+        sheet_face = sheet_face_for(page.number, first_page)
         texts = None  # 頁腳依該頁主版 gate；封面不編頁碼故一律不繪
         if (footer and page.number > layout.cover_pages  # 封面與補頁不編頁碼
                 and not page.blank and masters_by_page[page.number].footer):
             texts = {"number": str(book_number), "title": doc.title}
         contents.append(writer.build_page(
-            page, footer_texts=texts, book_number=book_number,
+            page, footer_texts=texts, sheet_face=sheet_face,
             vertical=page.vertical,  # 逐頁方向（節式混向，Sprint 53）
             toc_marks=layout.toc_marks.get(page.number, ()),
             rule_breaks=layout.rule_breaks.get(page.number, ()),

@@ -78,7 +78,7 @@ def test_export_cip_frame_two_backend_parity(template, tmp_path):
     x_ll, y_ll, w, h = _frame_re(content)
 
     master = template.masters["F-版權頁"]
-    rect = cip_frame_rect(master, horizontal_left_x_pt(master, book_number=1),
+    rect = cip_frame_rect(master, horizontal_left_x_pt(master, sheet_face=1),
                           n_lines=len(lines), frame=master.frame)
     page_h = mm_to_pt(template.page_height_mm)
     assert x_ll == pytest.approx(BLEED_PT + rect.x0, abs=0.3)

@@ -23,7 +23,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QListWidget, QListWidgetItem
 
 from cjkfolio.images import ImageError
-from cjkfolio.primitives import book_number_for
+from cjkfolio.primitives import book_number_for, sheet_face_for
 from cjkfolio.render import PageRenderer
 from editor.canvas import page_frame_placements, page_images, pil_to_qimage
 
@@ -88,7 +88,7 @@ class ThumbnailThread(QThread):
                                       blank=page.blank)
             pil_img = renderer.render_page(
                 page, footer_texts=footer,
-                book_number=book_number_for(page.number, 1, cover_pages),
+                sheet_face=sheet_face_for(page.number),  # 側別依紙面（Sprint 145）
                 vertical=vertical, frames=frames, images=images)
             self.page_ready.emit(
                 self._generation, page.number, pil_to_qimage(pil_img))
@@ -117,14 +117,23 @@ class PagePanel(QListWidget):
     （來源頁號, 插入位頁號）交回呼，由文件層搬節後全書重排、面板整份重建。故
     dropEvent 一律 ignore（讓 QDrag 收 IgnoreAction，Qt 不會自行刪列），插入線
     也自繪（IconMode 的內建 drop indicator 恆為 OnViewport，畫不出插入位）。
+
+    放下事件的遞送不賭 Qt 內部判斷（Sprint 145）：QListWidgetItem 預設旗標無
+    ItemIsDropEnabled，拖到縮圖上收不收是 Qt 依項旗標與位置的內部裁量，真視窗
+    可能整段不遞送 Drop（Owner：拖非節首頁遭拒卻無任何提示）。兩層補強：
+    （一）startDrag 起點守門：on_drag_start 回 False（不可搬的頁）就不啟動
+    Qt 拖曳，拒收原因由回呼當場提示；（二）dragEnter／dragMove 對來自本面板的
+    拖曳一律 acceptProposedAction，插入位本就由放下點座標換算（drop_row_at），
+    不需要 Qt 的可放判斷，明確接受使 Drop 確定遞送到 dropEvent。
     """
 
     def __init__(self, on_goto, on_context_menu=None, on_reorder=None,
-                 parent=None) -> None:
+                 on_drag_start=None, parent=None) -> None:
         super().__init__(parent)
         self._on_goto = on_goto
         self._on_context_menu = on_context_menu
         self._on_reorder = on_reorder
+        self._on_drag_start = on_drag_start  # (頁號)->bool；False＝不啟動拖曳
         self._drop_row = -1  # 拖曳途中的插入位（-1＝無）
         self.setMinimumWidth(THUMB_W + 34)  # icon＋捲軸與邊距（單欄下限）
         self.setViewMode(QListWidget.ViewMode.IconMode)
@@ -188,8 +197,27 @@ class PagePanel(QListWidget):
             self._drop_row = row
             self.viewport().update()
 
+    def startDrag(self, supported_actions) -> None:
+        """拖曳起點守門（Sprint 145）：不可搬的頁不啟動 Qt 拖曳。
+
+        currentRow＝按下的縮圖（QAbstractItemView 於 mousePress 設 current，
+        與 dropEvent 取來源同一基準）。拒收原因由回呼當場提示，不留到放下。
+        """
+        row = self.currentRow()
+        if (self._on_drag_start is not None and row >= 0
+                and not self._on_drag_start(row + 1)):
+            return
+        super().startDrag(supported_actions)
+
+    def dragEnterEvent(self, event) -> None:
+        super().dragEnterEvent(event)
+        if event.source() is self:  # 內部拖曳一律收（見類別說明）
+            event.acceptProposedAction()
+
     def dragMoveEvent(self, event) -> None:
         super().dragMoveEvent(event)
+        if event.source() is self:  # 縮圖項無 ItemIsDropEnabled 也收：插入位由
+            event.acceptProposedAction()  # 放下點換算，不靠 Qt 的可放判斷
         pos = event.position()
         self._set_drop_row(self.drop_row_at(pos.x(), pos.y()))
 

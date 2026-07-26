@@ -100,8 +100,7 @@ class CanvasQualityMixin:
         if not getattr(self, "_facing", False):
             return (self.page.number,)
         left, right = spread_pages(self.page.number,
-                                   len(self.layout_result.pages),
-                                   self.layout_result.cover_pages)
+                                   len(self.layout_result.pages))
         return tuple(n for n in (left, right) if n is not None)
 
     def _start_quality_render(self) -> None:
@@ -199,7 +198,7 @@ class PageImageThread(QThread):
         self._cancelled = True
 
     def run(self) -> None:
-        from cjkfolio.primitives import book_number_for
+        from cjkfolio.primitives import book_number_for, sheet_face_for
 
         t0 = time.perf_counter()
         renderer = PageRenderer(self._template, self._doc.master, dpi=self._dpi)
@@ -227,7 +226,7 @@ class PageImageThread(QThread):
             }
             pil_img = renderer.render_page(
                 page, footer_texts=footer,
-                book_number=book_number_for(number, 1, cover_pages),
+                sheet_face=sheet_face_for(number),  # 側別依紙面（Sprint 145）
                 vertical=getattr(page, "vertical", self._layout.vertical),
                 frames=frames, images=images)
             self.page_ready.emit(
