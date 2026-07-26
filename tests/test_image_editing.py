@@ -8,7 +8,9 @@ import pytest
 from cjkfolio.document import Document, Paragraph, PlacedImage
 from cjkfolio.image_editing import (
     MIN_IMAGE_SIZE_PT,
+    SNAP_TOLERANCE_PT,
     default_image_rect,
+    full_page_rect,
     handle_at_point,
     handle_rects,
     image_at_point,
@@ -19,6 +21,7 @@ from cjkfolio.image_editing import (
     resize_image,
     resize_rect,
     set_image_wrap,
+    snap_rect,
 )
 from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
@@ -345,3 +348,145 @@ def test_session_wrap_no_op_does_not_add_undo_step():
     assert session.set_image_wrap(0, wrap=True) is None
     session.undo()
     assert session.document.images[0].wrap is False  # 只回退一步即回到未繞排
+
+
+# --- 邊緣吸附與一鍵滿版（Sprint 147） -------------------------------------
+
+PAGE_W, PAGE_H = 419.53, 595.28   # 148×210mm 成品（templates/neizai-zhengli.json）
+BLEED_PT = 8.504                  # §9 四邊出血 3mm
+
+
+def test_snap_rect_pulls_both_axes_to_top_left_page_edges():
+    """Owner 需求：拖到最左上角時橫直兩軸同時貼齊（兩軸獨立判定即得此效果）。"""
+    rect, notes = snap_rect((2.0, -3.0, 202.0, 147.0), PAGE_W, PAGE_H)
+    assert rect == pytest.approx((0.0, 0.0, 200.0, 150.0))
+    assert notes == ("左緣貼齊頁左緣", "上緣貼齊頁上緣")
+
+
+def test_snap_rect_keeps_size_while_snapping():
+    """吸附是平移：兩軸各挪同一個量，寬高恆等於使用者拖出的框。"""
+    rect, _ = snap_rect((2.0, 300.0, 202.0, 450.0), PAGE_W, PAGE_H)
+    assert rect[2] - rect[0] == pytest.approx(200.0)
+    assert rect[3] - rect[1] == pytest.approx(150.0)
+
+
+def test_snap_rect_outside_tolerance_leaves_rect_untouched():
+    far = (60.0, 300.0, 260.0, 450.0)  # 離任何參考線都超過容差
+    rect, notes = snap_rect(far, PAGE_W, PAGE_H)
+    assert rect == pytest.approx(far)
+    assert notes == ()
+
+
+def test_snap_rect_snaps_right_and_bottom_edges():
+    rect, notes = snap_rect((PAGE_W - 198.0, PAGE_H - 148.0, PAGE_W + 2.0, PAGE_H - 2.0),
+                            PAGE_W, PAGE_H)
+    assert rect[2] == pytest.approx(PAGE_W)
+    assert rect[3] == pytest.approx(PAGE_H)
+    assert notes == ("右緣貼齊頁右緣", "下緣貼齊頁下緣")
+
+
+def test_snap_rect_bleed_lines_are_reference_lines_too():
+    """滿版出血稿的正確落點是出血線，故出血線同為參考線（近者勝）。"""
+    rect, notes = snap_rect((-7.0, 300.0, 193.0, 450.0), PAGE_W, PAGE_H,
+                            bleed_pt=BLEED_PT)
+    assert rect[0] == pytest.approx(-BLEED_PT)
+    assert notes == ("左緣貼齊出血左線",)
+
+
+def test_snap_rect_picks_nearest_line_when_both_in_range():
+    """頁緣與出血線同在容差內時取較近者（不讓遠線搶走使用者更靠近的目標）。"""
+    _, near_trim = snap_rect((-1.0, 300.0, 199.0, 450.0), PAGE_W, PAGE_H,
+                             bleed_pt=BLEED_PT, tol_pt=12.0)
+    assert near_trim == ("左緣貼齊頁左緣",)
+    _, near_bleed = snap_rect((-7.5, 300.0, 192.5, 450.0), PAGE_W, PAGE_H,
+                              bleed_pt=BLEED_PT, tol_pt=12.0)
+    assert near_bleed == ("左緣貼齊出血左線",)
+
+
+def test_snap_rect_does_not_pair_low_edge_with_high_line():
+    """左邊界貼到右頁緣＝把圖整個拖出版外，那不是對齊，故不交叉配對。"""
+    rect, notes = snap_rect((PAGE_W - 1.0, 300.0, PAGE_W + 199.0, 450.0),
+                            PAGE_W, PAGE_H)
+    assert rect[0] == pytest.approx(PAGE_W - 1.0)  # 原樣不動
+    assert notes == ()
+
+
+def test_snap_rect_zero_tolerance_disables_snapping():
+    """容差 0＝呼叫端關閉吸附（縮放中不吸、Owner 只要求移動時吸）。"""
+    rect, notes = snap_rect((1.0, 1.0, 201.0, 151.0), PAGE_W, PAGE_H, tol_pt=0.0)
+    assert rect == pytest.approx((1.0, 1.0, 201.0, 151.0))
+    assert notes == ()
+
+
+def test_snap_tolerance_default_is_about_two_millimetres():
+    assert SNAP_TOLERANCE_PT == pytest.approx(6.0)  # 2mm≈5.67pt，取 6pt
+
+
+def test_full_page_rect_fit_touches_two_edges_without_cropping():
+    """等比放大＝contain：長邊貼齊頁緣、短邊留白，整張圖都看得到。"""
+    rect = full_page_rect(360 / 270, PAGE_W, PAGE_H, mode="fit")
+    x0, y0, x1, y1 = rect
+    assert (x0, x1) == pytest.approx((0.0, PAGE_W))          # 寬邊貼齊左右頁緣
+    assert y0 > 0 and y1 < PAGE_H                            # 上下留白（不裁切）
+    assert (x1 - x0) / (y1 - y0) == pytest.approx(360 / 270)  # 恆等比
+
+
+def test_full_page_rect_fit_centres_on_page():
+    x0, y0, x1, y1 = full_page_rect(360 / 270, PAGE_W, PAGE_H, mode="fit")
+    assert (x0 + x1) / 2 == pytest.approx(PAGE_W / 2)
+    assert (y0 + y1) / 2 == pytest.approx(PAGE_H / 2)
+
+
+def test_full_page_rect_fill_covers_page_plus_bleed():
+    """整個鋪滿＝cover 到頁面＋四邊出血全被蓋住（溢出的部分裁切後即無白邊）。"""
+    x0, y0, x1, y1 = full_page_rect(360 / 270, PAGE_W, PAGE_H, mode="fill",
+                                    bleed_pt=BLEED_PT)
+    assert x0 <= -BLEED_PT + 1e-6 and x1 >= PAGE_W + BLEED_PT - 1e-6
+    assert y0 <= -BLEED_PT + 1e-6 and y1 >= PAGE_H + BLEED_PT - 1e-6
+    assert (x1 - x0) / (y1 - y0) == pytest.approx(360 / 270)  # 鋪滿也不變形
+
+
+def test_full_page_rect_fill_matches_measured_full_bleed_geometry():
+    """實測過的 fill 幾何（PNG 與 PDF 皆確認無白邊）：座標為負屬正常，不夾。"""
+    rect = full_page_rect(360 / 270, PAGE_W, PAGE_H, mode="fill", bleed_pt=BLEED_PT)
+    assert rect == pytest.approx((-198.43, -8.50, 617.96, 603.78), abs=0.01)
+
+
+def test_full_page_rect_fill_without_bleed_still_covers_page():
+    x0, y0, x1, y1 = full_page_rect(360 / 270, PAGE_W, PAGE_H, mode="fill")
+    assert x0 <= 1e-6 and x1 >= PAGE_W - 1e-6
+    assert y0 <= 1e-6 and y1 >= PAGE_H - 1e-6
+
+
+def test_full_page_rect_handles_portrait_source():
+    """直式來源時貼齊的軸對調（判定由寬高比決定，不預設橫式）。"""
+    fit = full_page_rect(0.5, PAGE_W, PAGE_H, mode="fit")
+    assert (fit[1], fit[3]) == pytest.approx((0.0, PAGE_H))  # 高邊貼齊上下頁緣
+    assert fit[0] > 0 and fit[2] < PAGE_W
+    fill = full_page_rect(0.5, PAGE_W, PAGE_H, mode="fill", bleed_pt=BLEED_PT)
+    assert fill[0] == pytest.approx(-BLEED_PT)               # 寬邊剛好蓋到出血線
+    assert fill[1] < -BLEED_PT                               # 高邊溢出（被裁）
+
+
+def test_full_page_rect_rejects_bad_inputs():
+    """讀不到來源寬高比就不猜（猜錯＝使用者看到的滿版是歪的），故一律快速失敗。"""
+    for fn in (lambda: full_page_rect(0.0, PAGE_W, PAGE_H),
+               lambda: full_page_rect(-1.5, PAGE_W, PAGE_H),
+               lambda: full_page_rect(1.5, 0.0, PAGE_H),
+               lambda: full_page_rect(1.5, PAGE_W, -595.28),
+               lambda: full_page_rect(1.5, PAGE_W, PAGE_H, mode="stretch"),
+               lambda: full_page_rect(1.5, PAGE_W, PAGE_H, bleed_pt=-1.0)):
+        with pytest.raises(ValueError):
+            fn()
+
+
+def test_session_resize_to_full_page_is_one_undo_step():
+    """一鍵滿版走既有 resize_image 入口＝一步 undo（不新增歷史種類）。"""
+    session = EditSession(_doc([PlacedImage("photo.png", 1,
+                                            (40.0, 100.0, 160.0, 220.0))]),
+                          load_template(TEMPLATE_PATH))
+    session.resize_image(0, full_page_rect(360 / 270, PAGE_W, PAGE_H, mode="fill",
+                                           bleed_pt=BLEED_PT))
+    assert session.document.images[0].rect[0] < 0  # 溢出頁面（滿版）
+    session.undo()
+    assert session.document.images[0].rect == (40.0, 100.0, 160.0, 220.0)

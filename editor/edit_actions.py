@@ -2,7 +2,7 @@
 
 輸入欄組字提交（body 插入／框插入／選取替換／空白文件第一字）、undo／redo
 統一歷史跟隨、鍵盤編輯（Backspace／Delete／Enter 分段、PgUp／PgDn 翻頁）、
-手動空行增刪（Sprint 141）。
+手動空行增刪（Sprint 141）、點選回填輸入欄與複製、標點快捷列插入（Sprint 146）。
 
 依賴 EditorWindow 提供：self.session／self.doc／self.page／self.cursor／
 self.frame_cursor／self.selection／self.layout_result／self._ime／
@@ -11,6 +11,7 @@ self._selection_char_count()／self._delete_selection()／
 self._remove_selected_image()／self._image_idx／self.statusBar()。
 """
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 
 from cjkfolio.editing import DocCursor, DocRange
 from cjkfolio.frame_editing import FrameCursor, FrameEditResult
@@ -18,6 +19,70 @@ from editor.canvas import resolve_hit
 
 
 class EditActionsMixin:
+    def _echo_to_ime(self, text: str) -> bool:
+        """把點到的字同步顯示於下方文字輸入欄（Sprint 146）；回傳是否真的回填。
+
+        Owner 需求：「點選文字，下方文字輸入欄要同步顯示該文字，這樣才可以複製文字
+        或標點符號快速在新位置貼上。」複製走旁邊的「複製」鈕（_copy_ime_text），
+        貼上就是在目標位置按 Ctrl+V 再 Enter。
+
+        空字格與無字可顯示者不覆寫欄位（回 False）：一格空白把剛回填的來源字清掉，
+        等於半路弄丟使用者要複製的東西。已知代價：打好還沒提交的字會被下一次點選
+        覆蓋，這是「同一個欄位既顯示來源又當待插入內容」的必然，故只在真有字時覆寫。
+
+        顯示的是畫布上那一格的字面（hit.text），與段內文原字可能不同一形
+        （半形括號在直排轉全形、三個點併成一枚省略號）；回填畫布形＝所見即所複製，
+        插回去後引擎照樣走同一條正規化路徑。
+
+        回填後整串選取（selectAll）：接著打字、按標點鈕或 Ctrl+V 都是「取代」而非
+        接在它後面，否則點了目標字格再貼上會連同回填的那個字一起插進去（多一字）。
+        要留著它就直接按「複製」，複製不看選取。
+        """
+        if not text or not text.strip():
+            return False
+        self._ime.setText(text)   # 觸發 _on_ime_preview；呼叫端隨後覆寫狀態列訊息
+        self._ime.selectAll()
+        return True
+
+    def _selection_text(self) -> str:
+        """拖曳選取範圍的文字；跨段回空字串（一行輸入欄表達不了段落分界，
+        硬把兩段接起來回填等於偷偷吃掉分段）。"""
+        s, e = self.selection.start, self.selection.end
+        if s.para_idx != e.para_idx:
+            return ""
+        return self.doc.paragraphs[s.para_idx].text[s.caret:e.caret]
+
+    def _copy_ime_text(self) -> None:
+        """「複製」鈕：文字輸入欄內容送進系統剪貼簿（空欄據實說，不靜默複製空字串）。"""
+        text = self._ime.text()
+        if not text:
+            self.statusBar().showMessage(
+                "文字輸入欄是空的（點畫布字格會把該字回填到欄裡，再按此鈕複製）")
+            return
+        QApplication.clipboard().setText(text)
+        self._ime.setFocus()
+        self.statusBar().showMessage(
+            f"已複製「{text}」到剪貼簿；到新位置點字格後 Ctrl+V 貼進輸入欄，按 Enter 插入")
+
+    def _insert_punct(self, left: str, right: str = "") -> None:
+        """標點快捷列回呼（Sprint 146）：於文字輸入欄游標處插入標點，成對者游標落中間。
+
+        只動輸入欄不動文件：提交仍是 Enter，故 undo／reflow／游標跟隨全部沿用既有
+        路徑。焦點交回輸入欄＝接著按 Enter 是提交，不是再觸發同一顆按鈕。
+
+        用 QLineEdit.insert 而非自行切字串：它自帶「有選取就取代選取」的標準語意，
+        故點字格回填（整串選取）後按標點鈕是換掉那個字，與打字一致。
+        """
+        self._ime.insert(left + right)
+        if right:  # 成對：游標退回兩枚之間，接著打的字就在括號內
+            self._ime.setCursorPosition(self._ime.cursorPosition() - len(right))
+        self._ime.setFocus()
+        self.statusBar().showMessage(
+            f"已把 {left}{right} 送進文字輸入欄"
+            f"（游標在{'兩枚之間' if right else '其後'}）；"
+            "可接著打字，按 Enter 插入文件"
+        )
+
     def _on_ime_preview(self, text: str) -> None:
         """組字中預覽插入目標（不變更文件；提交在 Enter）。"""
         if not text:

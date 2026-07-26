@@ -168,12 +168,19 @@ class WindowChromeMixin:
             library_menu.addAction(action)
 
         image_menu = self.menuBar().addMenu("圖片")
-        for label, handler in (
-            ("置入圖片（放在頁面中央）…", lambda: self._place_image_dialog()),
-            ("選取圖片的文繞圖設定…", lambda: self._edit_image_wrap()),
-            ("移除選取的圖片", self._remove_selected_image),
+        for label, key, handler in (  # 一鍵滿版兩模式（Sprint 147）：本 app 無工具列，
+            # 故圖片指令一律在此選單，配快捷鍵補「一鍵」的手感
+            ("置入圖片（放在頁面中央）…", None, lambda: self._place_image_dialog()),
+            ("選取圖片的文繞圖設定…", None, lambda: self._edit_image_wrap()),
+            ("一鍵滿版：等比放大（不裁切）", "Ctrl+Shift+F",
+             lambda: self._fill_page_image("fit")),
+            ("一鍵滿版：整個鋪滿（含出血，溢出裁切）", "Ctrl+Shift+B",
+             lambda: self._fill_page_image("fill")),
+            ("移除選取的圖片", None, self._remove_selected_image),
         ):
             action = QAction(label, self)
+            if key is not None:
+                action.setShortcut(QKeySequence(key))
             action.triggered.connect(handler)
             image_menu.addAction(action)
 

@@ -14,6 +14,9 @@
   亮）、「版面」選單（上一頁／下一頁／首末頁／Ctrl+J 跳頁）＋狀態列「頁 N／M」。
   檔案面（Sprint 126）：新建／開啟／儲存／另存（.doc.json）、標題未存標記 *、
   關閉確認；髒判定＝document 引用同一性（undo 回存檔點自動轉乾淨）。
+  取字面（Sprint 146）：點字格或拖曳選取 → 該字同步回填下方文字輸入欄＋「複製」鈕
+  送剪貼簿（到新位置 Ctrl+V 再 Enter 即貼上）；輸入欄上方常用標點快捷列，
+  點按送進輸入欄（成對標點游標落中間），提交仍是 Enter。
 
 誠實範圍（honest-planning R3）：
   [實作]（離屏 smoke_check.py 已驗）＝上列全部功能邏輯。
@@ -39,10 +42,12 @@ from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QGraphicsRectItem,
     QGraphicsScene,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -84,6 +89,7 @@ from editor.nav_actions import NavActionsMixin  # noqa: E402
 from editor.page_order_actions import PageOrderActionsMixin  # noqa: E402
 from editor.page_size_actions import PageSizeActionsMixin  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
+from editor.punct_panel import PunctBar  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
 from editor.window_chrome import WindowChromeMixin  # noqa: E402
 
@@ -147,15 +153,27 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         self._ime = QLineEdit()
         self._ime.setPlaceholderText(
             "文字輸入欄：在此打字（注音／倉頡／拼音）按 Enter 插入；"
-            "空白文件直接開始，點畫布字格可改插入位置"
+            "點畫布字格＝改插入位置並同步顯示該字（按「複製」可貼到新位置）"
         )
+        self._ime.setClearButtonEnabled(True)  # 貼上前一鍵清空（Sprint 146）
         self._ime.textChanged.connect(self._on_ime_preview)
         self._ime.returnPressed.connect(self._on_ime_commit)
+
+        # 標點快捷列（Sprint 146）：按鈕送字進輸入欄，提交仍是 Enter（見 punct_panel 檔頭）
+        self._punct_bar = PunctBar(self._insert_punct)
+        copy_btn = QPushButton("複製")
+        copy_btn.setToolTip("把文字輸入欄的內容複製到剪貼簿（點畫布字格即回填該字）")
+        copy_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 否則 Enter 會再觸發本鈕
+        copy_btn.clicked.connect(self._copy_ime_text)
+        ime_row = QHBoxLayout()
+        ime_row.addWidget(self._ime)
+        ime_row.addWidget(copy_btn)
 
         central = QWidget()
         box = QVBoxLayout(central)
         box.addWidget(self.view)
-        box.addWidget(self._ime)
+        box.addWidget(self._punct_bar)
+        box.addLayout(ime_row)
         self.setCentralWidget(central)
 
         self._page_label = QLabel("頁 −／−")  # 頁碼指示器（Sprint 125，_sync_page_panel 更新）
@@ -413,9 +431,12 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         if hit.para_idx is not None and hit.span is not None:
             s, e = hit.span
             src = self.doc.paragraphs[hit.para_idx].text[s:e]
+        # 同步顯示於輸入欄（Sprint 146）：回填了就說，沒回填也說，不讓欄位悄悄變動
+        echo_note = ("已回填輸入欄（按「複製」可貼到新位置）" if self._echo_to_ime(hit.text)
+                     else "此格無字可回填，輸入欄內容保留")
         self.statusBar().showMessage(
             f"游標｜段 {hit.para_idx}｜字 {hit.span}＝「{hit.text}」｜"
-            f"樣式 {hit.style}／{hit.kind}｜段內文切片「{src}」"
+            f"樣式 {hit.style}／{hit.kind}｜段內文切片「{src}」｜{echo_note}"
         )
         self._draw_highlight(item.rect())
 
@@ -428,10 +449,12 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         if hit.span is not None:
             s, e = hit.span
             src = self.doc.text_frames[hit.source_idx].text[s:e]
+        echo_note = ("已回填輸入欄" if self._echo_to_ime(hit.text)  # Sprint 146
+                     else "此格無字可回填")
         self.statusBar().showMessage(
             f"框游標｜框 {hit.frame_idx}（文字來源框 {hit.source_idx}）｜"
             f"字 {hit.span}＝「{hit.text}」｜樣式 {hit.style}／{hit.kind}｜"
-            f"來源切片「{src}」｜組字按 Enter 插入框內"
+            f"來源切片「{src}」｜{echo_note}｜組字按 Enter 插入框內"
         )
         self._draw_highlight(item.rect())
 
@@ -476,10 +499,15 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
             span = DocSpan(DocCursor(hit.para_idx, hit.span[0]),
                            DocCursor(a_para, a_span[1]))
         self._set_selection(span)
+        # 選取的字一併回填輸入欄（Sprint 146）：整句整詞也複製得走；跨段回填會吃掉
+        # 段落分界，故 _selection_text 回空字串＝不回填並據實說明
+        echo_note = ("已回填輸入欄（按「複製」可貼到新位置）"
+                     if self._echo_to_ime(self._selection_text())
+                     else "跨段選取不回填輸入欄（一行欄位表達不了段落分界）")
         self.statusBar().showMessage(
             f"選取 段{span.start.para_idx} 字位{span.start.caret} 〜 "
             f"段{span.end.para_idx} 字位{span.end.caret}"
-            f"（{self._selection_char_count()} 字）｜"
+            f"（{self._selection_char_count()} 字）｜{echo_note}｜"
             "Backspace 刪除選取、點字元樣式套用至選取、組字 Enter 替換選取"
         )
 
@@ -642,7 +670,18 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
             "     寬度，確認縮放錨點與拖曳手感、狀態列百分比跟隨。\n"
             "  11. 頁面導航：左側「頁面」面板點縮圖跳頁（目前頁藍色高亮）、\n"
             "     「版面」選單上一頁／下一頁／第一頁／最後一頁、Ctrl+J 跳至頁碼，\n"
-            "     確認縮圖清晰可辨、點選跳頁順手、狀態列「頁 N／M」跟隨。\n\n"
+            "     確認縮圖清晰可辨、點選跳頁順手、狀態列「頁 N／M」跟隨。\n"
+            "  12. 取字面（Sprint 146）：點一個字格，確認下方輸入欄同步顯示該字；\n"
+            "     按「複製」→ 到新位置點字格 → Ctrl+V 貼進欄裡 → Enter，確認貼上；\n"
+            "     拖曳選取數字（同一段內）確認整串回填；點標點快捷列各鈕，確認標點\n"
+            "     進欄且焦點回到欄位（接著按 Enter 是插入，不是又按到按鈕）、成對\n"
+            "     標點的游標落在兩枚之間、直排頁面上的標點字形與位置正確。\n"
+            "  13. 封面圖片（Sprint 147）：拖圖框往左上角推，確認靠近頁緣（或出血線）\n"
+            "     時自動吸附貼齊、狀態列指名吸到哪幾條線；滑鼠移到圖的四個角，確認\n"
+            "     游標變成對角縮放箭頭（右下角為 ↖↘）再拖曳放大；「圖片」選單\n"
+            "     「一鍵滿版：等比放大」（Ctrl+Shift+F）＝不裁切、長邊貼齊頁緣，\n"
+            "     「整個鋪滿」（Ctrl+Shift+B）＝蓋滿頁面與 3mm 出血、溢出部分裁切，\n"
+            "     兩者皆會在狀態列報實效 ppi，低於 300 時據實警示（不阻擋）。\n\n"
             "尚未實作（[Shell]，後續工程）：\n"
             "  直排畫布內嵌 IME 即點即打（現以下方輸入欄＋Enter 代替）、\n"
             "  跨段選取套段落樣式、框內拖曳選取。",

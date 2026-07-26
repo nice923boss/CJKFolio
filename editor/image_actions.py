@@ -27,9 +27,28 @@ from PySide6.QtWidgets import (
     QLineEdit,
 )
 
-from cjkfolio.image_editing import default_image_rect, resize_rect
-from cjkfolio.images import ImageError, open_placed
+from cjkfolio.image_editing import (
+    SNAP_TOLERANCE_PT,
+    default_image_rect,
+    full_page_rect,
+    resize_rect,
+    snap_rect,
+)
+from cjkfolio.images import (
+    MIN_IMAGE_PPI,
+    ImageError,
+    effective_ppi,
+    meets_ppi,
+    open_placed,
+)
+from cjkfolio.press_marks import BLEED_MM
 from cjkfolio.render import mm_to_pt
+
+# 一鍵滿版兩模式的畫面用字（判定層只認 "fit"／"fill"，措辭留在 UI 層）
+FULL_PAGE_LABELS = {
+    "fit": "等比放大到頁內滿版（不裁切）",
+    "fill": "整個鋪滿頁面與出血（溢出裁切）",
+}
 
 
 class WrapDialog(QDialog):
@@ -81,7 +100,7 @@ class ImageActionsMixin:
     _image_drag = None      # 拖曳中狀態 dict：mode／origin／rect／handle／moved
     _image_outline = None   # 選取外框 item
     _image_preview = None   # 拖曳預覽框 item
-    _image_aspect = None    # {解析後路徑: 寬高比}，等比縮放取來源影像比例
+    _image_size = None      # {解析後路徑: (寬 px, 高 px)}，等比縮放與滿版取來源尺寸
 
     # --- 座標與來源影像 ---------------------------------------------------
 
@@ -91,23 +110,45 @@ class ImageActionsMixin:
 
         return DPI / 72.0
 
+    def _page_size_pt(self) -> tuple:
+        """成品頁面尺寸 (寬, 高) pt（吸附參考線與一鍵滿版的畫布邊界）。"""
+        return (mm_to_pt(self.template.page_width_mm),
+                mm_to_pt(self.template.page_height_mm))
+
+    def _snap_tolerance_pt(self) -> float:
+        """吸附半徑（pt）＝螢幕上恆定的距離，故除以縮放倍率。
+
+        吸附是滑鼠手感而非紙上尺寸：放大到 400% 時 6pt 在畫面上有 50px 寬，會搶走
+        使用者刻意留的細微間距；縮到 30% 時 6pt 只剩 4px，等於吸不到。除以倍率後
+        兩端都是同一段畫面距離（100% 時約 12px）。
+        """
+        zoom = self.view.zoom_factor()
+        if zoom <= 0:  # ZOOM_MIN 為正故理論上不發生，保底不讓除法炸
+            return SNAP_TOLERANCE_PT
+        return SNAP_TOLERANCE_PT / zoom
+
     def _image_base_dir(self) -> Path:
         """置入圖相對路徑的基準＝文件所在目錄（與匯出、渲染同一規則）。"""
         return self._doc_path.parent
 
-    def _image_source_aspect(self, idx: int):
-        """第 idx 張圖的來源寬高比；讀不到回 None（縮放退為自由拉框）。"""
+    def _image_source_size(self, idx: int):
+        """第 idx 張圖的來源像素尺寸 (寬, 高)；讀不到回 None（缺圖不擋流程）。"""
         placed = self.doc.images[idx]
         resolved = str((self._image_base_dir() / placed.path).resolve())
-        if self._image_aspect is None:
-            self._image_aspect = {}
-        if resolved not in self._image_aspect:
+        if self._image_size is None:
+            self._image_size = {}
+        if resolved not in self._image_size:
             try:
                 img = open_placed(resolved)
             except ImageError:
                 return None
-            self._image_aspect[resolved] = img.width / img.height
-        return self._image_aspect[resolved]
+            self._image_size[resolved] = (img.width, img.height)
+        return self._image_size[resolved]
+
+    def _image_source_aspect(self, idx: int):
+        """第 idx 張圖的來源寬高比；讀不到回 None（縮放退為自由拉框）。"""
+        size = self._image_source_size(idx)
+        return None if size is None else size[0] / size[1]
 
     # --- 置入 -------------------------------------------------------------
 
@@ -178,10 +219,16 @@ class ImageActionsMixin:
 
     def _on_image_move(self, scene_pos) -> None:
         """拖曳途中：只畫虛線預覽框（不動文件，故不產生 undo 步）。"""
-        if self._image_drag is None:
+        drag = self._image_drag
+        if drag is None:
             return
-        self._image_drag["moved"] = True
+        drag["moved"] = True
         self._draw_image_preview(self._dragged_rect(scene_pos))
+        if drag["mode"] == "move":  # 吸附當場回報吸到哪幾條線（不讓框沉默跳位）
+            notes = drag["notes"]
+            self.statusBar().showMessage(
+                ("已吸附：" + "、".join(notes)) if notes
+                else "拖曳中｜靠近頁緣或出血線會自動吸附對齊")
 
     def _on_image_release(self) -> None:
         """放開左鍵：把預覽框提交為一步編輯（未實際移動則什麼都不做）。"""
@@ -200,14 +247,20 @@ class ImageActionsMixin:
             self.session.resize_image(self._image_idx, rect)
             verb = "縮放"
         self._rebuild()
+        snapped = ("｜已吸附：" + "、".join(drag["notes"])) if drag["notes"] else ""
         self.statusBar().showMessage(
             f"已{verb}圖 {self._image_idx} → 圖框 "
             f"({rect[0]:.1f}, {rect[1]:.1f}, {rect[2]:.1f}, {rect[3]:.1f}) pt"
-            "（Ctrl+Z 一步回原）"
+            f"{snapped}（Ctrl+Z 一步回原）"
         )
 
     def _dragged_rect(self, scene_pos) -> tuple:
-        """拖曳中的新圖框（同時存進 _image_drag["pending"] 供放開時提交）。"""
+        """拖曳中的新圖框（同時存進 _image_drag["pending"] 供放開時提交）。
+
+        移動時經 snap_rect 吸附到頁緣與出血線（Sprint 147）；縮放不吸附，因為拖角
+        的目標是尺寸，吸了會讓使用者拖不出貼近邊緣的自訂尺寸（Owner 要的是「移到
+        最左上角邊緣」自動對齊）。吸附說明存進 drag["notes"] 供狀態列據實回報。
+        """
         drag = self._image_drag
         scale = self._image_scale()
         x_pt, y_pt = scene_pos.x() / scale, scene_pos.y() / scale
@@ -215,10 +268,14 @@ class ImageActionsMixin:
         if drag["mode"] == "move":
             dx = x_pt - drag["origin"][0]
             dy = y_pt - drag["origin"][1]
-            rect = (x0 + dx, y0 + dy, x1 + dx, y1 + dy)
+            page_w, page_h = self._page_size_pt()
+            rect, drag["notes"] = snap_rect(
+                (x0 + dx, y0 + dy, x1 + dx, y1 + dy), page_w, page_h,
+                bleed_pt=mm_to_pt(BLEED_MM), tol_pt=self._snap_tolerance_pt())
         else:
             rect = resize_rect(drag["rect"], drag["handle"], x_pt, y_pt,
                                aspect=self._image_source_aspect(self._image_idx))
+            drag["notes"] = ()
         drag["pending"] = rect
         return rect
 
@@ -265,6 +322,55 @@ class ImageActionsMixin:
         item.setZValue(z)
         self.scene.addItem(item)
         return item
+
+    # --- 一鍵滿版（Sprint 147） -------------------------------------------
+
+    def _fill_page_image(self, mode: str = "fit") -> None:
+        """把選取圖一鍵放大到整頁（封面滿版圖不必手拖四角對邊）。
+
+        mode="fit"＝等比放大到頁內可容的最大尺寸（整張圖都看得到，短邊留白）；
+        mode="fill"＝等比鋪滿頁面與四邊出血（無白邊，溢出的部分送印時被裁掉）。
+        兩者都經既有 session.resize_image 提交＝一步 undo。
+
+        放大必然拉低實效解析度，故一律回報放大後的實效 ppi，低於 §9 下限時據實
+        警示但不擋（同 resolution_warnings 慣例：印廠是否接受由使用者決定）。
+        """
+        if self._image_idx is None or self._image_idx >= len(self.doc.images):
+            self.statusBar().showMessage("先點選一張置入圖，再用一鍵滿版")
+            return
+        if mode not in FULL_PAGE_LABELS:  # 呼叫端傳錯（選單只給兩個值）
+            self.statusBar().showMessage(f"未知的滿版模式「{mode}」")
+            return
+        idx = self._image_idx
+        placed = self.doc.images[idx]
+        if placed.rect is None:  # 槽式圖由主版 figure 保留區定位，無座標可放大
+            self.statusBar().showMessage(
+                f"圖 {idx}「{placed.path}」是槽式圖（由主版保留區定位），無法一鍵滿版")
+            return
+        size = self._image_source_size(idx)
+        if size is None:  # 讀不到來源就不猜寬高比（猜錯＝滿版是歪的）
+            self.statusBar().showMessage(
+                f"讀不到「{placed.path}」的像素尺寸，無法算等比滿版尺寸")
+            return
+        px_w, px_h = size
+        page_w, page_h = self._page_size_pt()
+        rect = full_page_rect(px_w / px_h, page_w, page_h, mode=mode,
+                              bleed_pt=mm_to_pt(BLEED_MM))
+        if placed.rect == rect:  # 已在該尺寸：不塞一步空 undo
+            self.statusBar().showMessage(
+                f"圖 {idx}「{placed.path}」已是{FULL_PAGE_LABELS[mode]}，未變更")
+            return
+        self.session.resize_image(idx, rect)
+        self._rebuild()
+        ppi = effective_ppi(px_w, rect[2] - rect[0])
+        warn = "" if meets_ppi(ppi) else (
+            f"，低於 §9 下限 {MIN_IMAGE_PPI:.0f}ppi（放大後畫質不足，"
+            "送印前請換高解析來源）")
+        self.statusBar().showMessage(
+            f"圖 {idx}「{placed.path}」已{FULL_PAGE_LABELS[mode]} → 圖框 "
+            f"({rect[0]:.1f}, {rect[1]:.1f}, {rect[2]:.1f}, {rect[3]:.1f}) pt"
+            f"｜實效 {ppi:.0f}ppi{warn}（Ctrl+Z 一步回原）"
+        )
 
     # --- 繞排參數（Sprint 103） -------------------------------------------
 

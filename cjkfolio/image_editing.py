@@ -18,6 +18,8 @@ from .images import MIN_IMAGE_PPI, PT_PER_INCH
 MIN_IMAGE_SIZE_PT = 12.0  # 圖框最小邊長：拖成零寬框後即無法再點選，不給拖到那一步
 HANDLE_SIZE_PT = 8.0      # 角控制點邊長（畫布以此邊長的方塊呈現與命中）
 CORNERS = ("nw", "ne", "sw", "se")
+SNAP_TOLERANCE_PT = 6.0   # 吸附半徑（約 2mm）：拖到此距離內即貼齊參考線
+FULL_PAGE_MODES = ("fit", "fill")  # 一鍵滿版的兩種模式（等比放大／鋪滿含出血）
 
 
 def normalize_rect(rect, label: str = "圖框") -> tuple:
@@ -196,3 +198,85 @@ def resize_rect(rect, handle: str, x_pt: float, y_pt: float, *,
         w = max(w, min_pt)
         h = max(h, min_pt)
     return normalize_rect((fixed_x, fixed_y, fixed_x + sx * w, fixed_y + sy * h))
+
+
+def _axis_snap(lo: float, hi: float, span_pt: float, bleed_pt: float,
+               tol_pt: float, names: tuple) -> tuple:
+    """單軸的吸附量與說明：回 (位移 pt, 說明字串)；沒吸到回 (0.0, "")。
+
+    參考線分兩類：低側線（頁緣 0、出血 −bleed）只收框的低側邊界，高側線（頁緣
+    span、出血 span+bleed）只收高側邊界。刻意不交叉配對（讓左邊界貼到右頁緣即把
+    圖整個拖出版外，那不是對齊）。多條線同時在容差內取最近者；等距時取先列者
+    （頁緣優先於出血線，兩者相距 bleed_pt 故僅 bleed_pt=0 時同位）。
+    """
+    if tol_pt <= 0:  # 呼叫端關閉吸附（0 或負值）：原框原樣回去
+        return 0.0, ""
+    lo_name, hi_name = names
+    lines = [(lo, 0.0, f"{lo_name}緣貼齊頁{lo_name}緣"),
+             (hi, span_pt, f"{hi_name}緣貼齊頁{hi_name}緣")]
+    if bleed_pt > 0:  # bleed_pt=0 時出血線與頁緣重合，不重複列同一條線
+        lines += [(lo, -bleed_pt, f"{lo_name}緣貼齊出血{lo_name}線"),
+                  (hi, span_pt + bleed_pt, f"{hi_name}緣貼齊出血{hi_name}線")]
+    best = None
+    for edge, line, note in lines:
+        delta = line - edge
+        if abs(delta) <= tol_pt and (best is None or abs(delta) < abs(best[0])):
+            best = (delta, note)
+    return best if best is not None else (0.0, "")
+
+
+def snap_rect(rect, page_w_pt: float, page_h_pt: float, *, bleed_pt: float = 0.0,
+              tol_pt: float = SNAP_TOLERANCE_PT) -> tuple:
+    """拖曳中的圖框吸附到最近的頁面參考線；回傳 (新框, 吸附說明 tuple)。
+
+    Owner 真視窗需求：「封面將圖片移到最左上角邊緣時，要有吸附自動對齊邊緣的功能」。
+    滿版封面圖的正確落點是頁緣或出血線，而那條線在螢幕上肉眼對不準（差 1pt 在
+    150dpi 畫布上約 2px），故由此層吸附。
+
+    **只挪位置、不改尺寸**：兩軸各挪同一個量，寬高恆等於原框（平移語意），故吸附
+    後仍是使用者拖的那個框，不會偷偷改變圖的大小。兩軸獨立判定＝拖到左上角時橫
+    直兩軸同時貼齊（Owner 要的「最左上角邊緣」即此）。
+
+    參考線＝頁緣（trim，0 與 page_w／page_h）與出血線（−bleed 與 page+bleed）兩組：
+    前者是版面對齊，後者是滿版出血稿的正確落點（§9 四邊出血 3mm）。bleed_pt=0
+    即只有頁緣一組。說明字串供呈現層據實顯示吸到哪幾條線（不沉默改動使用者的框）。
+    """
+    x0, y0, x1, y1 = rect
+    dx, x_note = _axis_snap(x0, x1, page_w_pt, bleed_pt, tol_pt, ("左", "右"))
+    dy, y_note = _axis_snap(y0, y1, page_h_pt, bleed_pt, tol_pt, ("上", "下"))
+    notes = tuple(note for note in (x_note, y_note) if note)
+    return (x0 + dx, y0 + dy, x1 + dx, y1 + dy), notes
+
+
+def full_page_rect(aspect: float, page_w_pt: float, page_h_pt: float, *,
+                   mode: str = "fit", bleed_pt: float = 0.0) -> tuple:
+    """一鍵滿版的圖框：置中於頁面，恆等比（Owner「可選等比放大或是整個鋪滿」）。
+
+    mode="fit"（等比放大）＝等比放到頁內可容的最大尺寸：長邊貼齊兩側頁緣、短邊
+    留白，**完整不裁切**（同 fit_image_rect 的 contain 精神）。
+    mode="fill"（整個鋪滿）＝等比放到「頁面＋四邊出血」全被蓋滿的最小尺寸：
+    **溢出的部分被裁掉**（PNG 於畫布邊界自然裁切、PDF 落在 MediaBox 的出血區內，
+    裁切後即滿版無白邊），這是滿版封面送印的正確做法。
+
+    兩模式都要來源影像的寬高比：圖在框內恆 contain 置中（fit_image_rect），框比不
+    合影像比就會在框內留白，那不是滿版。呼叫端讀不到來源尺寸時不得代為猜比例
+    （猜錯＝使用者看到的滿版是歪的），故 aspect 必填且須為正。
+
+    回傳的框刻意不夾 MIN_IMAGE_SIZE_PT：整頁尺寸恆遠大於最小邊長，夾了只是死碼。
+    """
+    if aspect <= 0:
+        raise ValueError(f"寬高比須為正，得到 {aspect}")
+    if page_w_pt <= 0 or page_h_pt <= 0:
+        raise ValueError(f"頁面尺寸須為正 pt，得到 {page_w_pt}×{page_h_pt}")
+    if mode not in FULL_PAGE_MODES:
+        raise ValueError(f"未知的滿版模式 {mode!r}，須為 {FULL_PAGE_MODES}")
+    if bleed_pt < 0:
+        raise ValueError(f"出血須為 ≥0 的 pt，得到 {bleed_pt}")
+    grow = 2 * bleed_pt if mode == "fill" else 0.0  # 等比放大不含出血（不裁切）
+    box_w = page_w_pt + grow
+    box_h = page_h_pt + grow
+    # fill 取兩軸較大者（cover：兩軸皆蓋滿，短軸溢出被裁）、fit 取較小者（contain）
+    w = (max if mode == "fill" else min)(box_w, box_h * aspect)
+    h = w / aspect
+    cx, cy = page_w_pt / 2, page_h_pt / 2  # 恆以頁面中心對齊（出血四邊對稱）
+    return (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)

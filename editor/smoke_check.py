@@ -65,6 +65,7 @@ from editor.smoke_master import check_master  # noqa: E402
 from editor.smoke_page_order import check_page_order  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
+from editor.smoke_punct import check_punct  # noqa: E402
 from editor.smoke_sheet_padding import check_sheet_padding  # noqa: E402
 from editor.smoke_spread import check_spread  # noqa: E402
 from editor.smoke_view import check_view  # noqa: E402
@@ -742,6 +743,9 @@ def main() -> int:
     # C43 裝訂補頁（Sprint 144，抽於 editor/smoke_sheet_padding.py）
     check_sheet_padding(EditorWindow, PAIBAN)
 
+    # C44 點字回填與標點快捷列（Sprint 146，抽於 editor/smoke_punct.py）
+    check_punct(EditorWindow, PAIBAN, ROOT / "samples" / "cover.doc.json")
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -754,6 +758,8 @@ def main() -> int:
         "＋框字格互動層＋app session 接線（IME 入框、undo／redo 統一歷史）＋AI 設定面板"
         "＋樣式面板＋拖曳範圍選取＋樣式管理＋改名與色票＋AI 指派校正＋模版庫面板"
         "＋preflight 面板＋背景執行緒與快取＋X-4 與 ICC 選取＋字型授權分區＋畫布置圖 UI"
+        "（拖到頁緣與出血線自動吸附而尺寸不變／容差是螢幕距離故縮放後同步縮小／四角控制點"
+        "游標為對角縮放形狀／一鍵滿版等比與鋪滿兩模式，鋪滿蓋滿四邊出血且 ppi 不足據實警示）"
         "＋文繞圖參數 UI（畫布所見即繞排所得）＋AI 指派背景執行緒（段序失效守門）"
         "＋AI 指派整理目次（條目三欄人工校正／書首生成目次節／頁數等於獨立重算／一步回退）"
         "＋稿件匯入（txt／md／docx 落到現行模版樣式，壞稿不進畫布）"
@@ -791,6 +797,9 @@ def main() -> int:
         "＋書眉與頁碼（對話框只回改過的欄位而沒動就按確定不佔 undo ／mm↔pt 換算／頁碼"
         "元素停用文字欄／以目前頁主版為對象／批次套多主版仍只一步／封面無頁腳據實拒收）"
         "＋裝訂補頁（含封面總數補足 4 的倍數＝末紙面單頁封底／補頁不編頁碼不參與拖曳／明說 0 者開檔不補）"
+        "＋點字回填與標點快捷列（點字格或同段選取即回填輸入欄並整串選取／複製鈕進剪貼簿／"
+        "貼上取代回填後 Enter 落在點選位置之後／10 單枚＋8 成對皆在引擎標點常數內／成對游標"
+        "落中間／按完焦點回輸入欄／破折號塑形為寬 2 連字／跨段據實不回填／框字格同樣可回填提交）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

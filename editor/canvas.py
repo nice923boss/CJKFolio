@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Iterator, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
+from PySide6.QtGui import QBrush, QColor, QCursor, QImage, QPixmap
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene
 
 from cjkfolio.document import Document
@@ -32,6 +32,20 @@ from cjkfolio.layout import (
 from cjkfolio.primitives import book_number_for, sheet_face_for
 from cjkfolio.render import PageRenderer, line_axis_x_pt, mm_to_pt
 from cjkfolio.styles import Template
+
+
+# Owner 需求（Sprint 147）：「滑鼠移動到圖片右下角，滑鼠也要改成可拖拉的圖示來示意
+# 可以放大」。控制點本身全透明看不見，故游標形狀就是它唯一的存在提示；取作業系統的
+# 對角縮放游標（↖↘／↗↙）＝與各繪圖軟體一致，且方向對得上該角能拖的走向。
+# QGraphicsItem.setCursor 由 Qt 於 hover 時自動套用（不需選取、不需自寫 hover 事件）。
+# 存 CursorShape 而非 QCursor 實例：QCursor 屬 GUI 資源，模組載入時（QApplication
+# 之前）不建構，交由 setCursor 當場轉換。
+HANDLE_CURSOR_SHAPES = {
+    "nw": Qt.CursorShape.SizeFDiagCursor,  # ↖↘
+    "se": Qt.CursorShape.SizeFDiagCursor,
+    "ne": Qt.CursorShape.SizeBDiagCursor,  # ↗↙
+    "sw": Qt.CursorShape.SizeBDiagCursor,
+}
 
 
 @dataclass(frozen=True)
@@ -253,12 +267,14 @@ def build_page_scene(
     items: list = []
 
     def add_item(x: float, y: float, w: float, h: float, key: tuple,
-                 z: float = 1) -> None:
+                 z: float = 1, cursor=None) -> None:
         item = QGraphicsRectItem(x + x_offset, y, w, h)
         item.setPen(Qt.NoPen)
         item.setBrush(QBrush(QColor(0, 0, 0, 0)))  # 全透明但保填充形狀（hit 區域）
         item.setZValue(z)
         item.setData(0, key)
+        if cursor is not None:  # 滑到此區的游標形狀（Sprint 147，只有圖角控制點用）
+            item.setCursor(QCursor(cursor))
         scene.addItem(item)
         items.append(item)
 
@@ -268,7 +284,8 @@ def build_page_scene(
         rect = doc.images[idx].rect
         for name, (hx0, hy0, hx1, hy1) in handle_rects(rect).items():
             add_item(hx0 * scale, hy0 * scale, (hx1 - hx0) * scale,
-                     (hy1 - hy0) * scale, ("image-handle", idx, name), z=5)
+                     (hy1 - hy0) * scale, ("image-handle", idx, name), z=5,
+                     cursor=HANDLE_CURSOR_SHAPES[name])
     # 整框拖曳的命中區（Sprint 136）：**z=0.5 刻意低於字格**，故框內點在字上仍
     # 得字游標（打字為主要操作，不可被搬框攔胡），點在框內空白處才選中整個框。
     for placement in frames:
