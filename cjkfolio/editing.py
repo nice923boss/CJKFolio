@@ -544,6 +544,42 @@ def set_section_master(
     return replace(document, paragraphs=new_paras)
 
 
+def apply_page_starts(doc: Document, template: Template) -> Document:
+    """把「樣式宣告 starts_page」的段標成節首＝自該段起新頁（Sprint 141）。
+
+    章名大標之類的章首樣式排在前一章的內文後面（截圖：頁 78「第八章｜完美謀殺」
+    與內文同頁）不合書冊慣例。分頁在本專案只有一個機制：Paragraph.master 節首
+    標記（同名主版亦強制分頁，見 layout._sections），故本函式把該段的 master 設成
+    「該段所在節現行的主版名」＝換頁但不換主版。
+
+    §4.4 分工鐵律：換不換頁是模版的宣告（ParagraphStyle.starts_page），不從樣式名
+    或字級反推，也不由 AI 給數字。本函式只忠實執行模版宣告。
+
+    只加不減：已自帶 master 的段（使用者手動指派的部扉、個案扉頁等節首）原樣不動；
+    段 0 跳過（首節主版存 doc.master，段 0 補標記會多切一個空節）。樣式名不存在於
+    模版時跳過該段（純文件層不驗樣式存在性，由 layout_with_wrap 守門，同
+    change_paragraph_style 慣例）。無任何變更回原物件。
+
+    反向清除（樣式改回內文後把自動加的節首收回）不做：文件模型沒有記錄「這個節首
+    是自動加的還是使用者手動指派的」，清除會誤刪手動節首。見 GAPS #96。
+    """
+    paras = list(doc.paragraphs)
+    current = doc.master  # 該段所在節現行的主版名（節首標記逐段更新）
+    changed = False
+    for idx, para in enumerate(paras):
+        if para.master is not None:
+            current = para.master
+            continue  # 已是節首＝已換頁，不重複標記
+        if idx == 0:
+            continue  # 首節主版存 doc.master，無節首標記可設
+        style = template.paragraph_styles.get(para.style)
+        if style is None or not style.starts_page:
+            continue
+        paras[idx] = replace(para, master=current)
+        changed = True
+    return replace(doc, paragraphs=tuple(paras)) if changed else doc
+
+
 def apply_para_style(
     doc: Document, template: Template, cursor: DocCursor, style: str
 ) -> EditResult:
@@ -655,6 +691,73 @@ def apply_merge(doc: Document, template: Template, para_idx: int) -> EditResult:
         document=new_doc, layout=new_layout, cursor=new_cursor, address=address
     )
 
+
+
+def insert_blank_paragraph(doc: Document, para_idx: int) -> Document:
+    """在第 para_idx 段之前插入一個空段＝手動空一行（Sprint 141）。
+
+    空段承目標段的段落樣式，不帶 page_no／master／目錄身分（不切節、不進目錄）。
+    它在流排裡沒有任何字格（engine.flow_pages 的 cells 迴圈對空段不產出
+    PlacedLine），但照樣吃掉一個 para_gap_slots 的行槽，後續內容因此整體下移一行。
+
+    用途＝模版沒宣告 starts_page（或 AI 沒指派到該樣式）時，手動把標題推到下一頁
+    的備援手段。因為空段畫布上點不到，移除得走 remove_blank_paragraph（配對提供，
+    否則插了就只剩 Ctrl+Z 能收回）。
+
+    para_idx 越界 raise IndexError（空文件無段可插，恆越界）。
+    """
+    if not 0 <= para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    blank = Paragraph(text="", style=doc.paragraphs[para_idx].style)
+    new_paras = (
+        doc.paragraphs[:para_idx] + (blank,) + doc.paragraphs[para_idx:]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
+def remove_blank_paragraph(doc: Document, para_idx: int) -> Document:
+    """移除第 para_idx 段（須為空段），回傳新 Document（Sprint 141）。
+
+    只吃空段：非空段 raise ValueError（誤刪整段內文是不可接受的沉默破壞，且畫布上
+    看不見空段，使用者是憑選單而非目視在下這個指令）。para_idx 越界 raise IndexError。
+    帶節首標記的空段照樣可移除：那是使用者手動指派的節首，本函式回報式移除，
+    分頁效果隨之消失屬預期。
+    """
+    if not 0 <= para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    if doc.paragraphs[para_idx].text:
+        raise ValueError(f"段 {para_idx} 不是空段，不移除（避免誤刪內文）")
+    new_paras = doc.paragraphs[:para_idx] + doc.paragraphs[para_idx + 1:]
+    return replace(doc, paragraphs=new_paras)
+
+
+def apply_insert_blank(doc: Document, template: Template, para_idx: int) -> EditResult:
+    """完整編輯回路：插空段 → 全文 reflow → 反查新游標畫布落點。
+
+    新游標＝原目標段（插入後索引 +1）段首；空段本身無字格，游標不落在它上面。
+    """
+    new_doc = insert_blank_paragraph(doc, para_idx)
+    new_layout = layout_with_wrap(new_doc, template)
+    new_cursor = DocCursor(para_idx + 1, 0)
+    return EditResult(document=new_doc, layout=new_layout, cursor=new_cursor,
+                      address=locate_cell(new_layout, new_cursor))
+
+
+def apply_remove_blank(doc: Document, template: Template, para_idx: int) -> EditResult:
+    """完整編輯回路：移除空段 → 全文 reflow → 反查新游標畫布落點。
+
+    新游標＝遞補到 para_idx 的下一段段首；移除的是末段時退回前一段段首。
+    """
+    new_doc = remove_blank_paragraph(doc, para_idx)
+    new_layout = layout_with_wrap(new_doc, template)
+    idx = min(para_idx, len(new_doc.paragraphs) - 1)
+    new_cursor = DocCursor(max(idx, 0), 0)
+    return EditResult(document=new_doc, layout=new_layout, cursor=new_cursor,
+                      address=locate_cell(new_layout, new_cursor))
 
 
 def rename_paragraph_style_refs(doc: Document, old: str, new: str) -> Document:

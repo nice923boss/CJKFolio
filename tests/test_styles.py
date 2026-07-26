@@ -228,17 +228,26 @@ def test_frame_pad_v_parsing():
 
 # ---------- 向量裝飾線（Sprint 15：目錄水平虛線） ----------
 
+TOC_RULE_DICT = {  # 移除前 neizai-zhengli.json 的 D-目錄 rule 原值（Sprint 141）
+    "kind": "toc-rule", "cmyk": [0, 0, 0, 0.57], "line_width_pt": 1.0,
+    "dash_on_pt": 3.0, "dash_off_pt": 2.0, "y_from_top_pt": 122.46,
+    "break_before_pt": 28.5, "break_after_pt": 3.9,
+}
+
+
 def test_master_rule_parsing(template):
-    r = template.masters["D-目錄"].rule
+    """rule 區塊解析成 RuleSpec；產品模版自 Sprint 141 起一律不宣告 rule。"""
+    r = template_from_dict(_template_with_rule(TOC_RULE_DICT)).masters["D-目錄"].rule
     assert isinstance(r, RuleSpec)
     assert r.kind == "toc-rule"
     assert r.cmyk == (0.0, 0.0, 0.0, 0.57)  # 灰 K57（參考書 p003 實測 RGB 0.427 推導）
     assert r.line_width_pt == 1.0
     assert r.dash_on_pt == 3.0 and r.dash_off_pt == 2.0  # 實測 dash pattern [3 2]
     assert r.y_from_top_pt == pytest.approx(122.46)  # 實測天頭下位置
-    # 非目錄主版無虛線（None）
+    # 未宣告 rule 的主版為 None；D-目錄 於 Sprint 141 依 Owner 指示移除虛線後同列
     assert template.masters["A-內文版"].rule is None
     assert template.masters["F-版權頁"].rule is None
+    assert template.masters["D-目錄"].rule is None
 
 
 def _template_with_rule(rule_dict):

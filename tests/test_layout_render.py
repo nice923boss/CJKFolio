@@ -324,7 +324,7 @@ def test_preface_layout_title_slot0_body_slot5(template):
 
 # ---------- 目錄章名條目黑 W5 勘誤（Sprint 24） ----------
 
-def test_toc_entry_black_w5_corrected(template):
+def test_toc_entry_black_w5_corrected(template, toc_rule_template):
     """目錄帶頁碼章名條目勘誤（p002/p003 一手量測，Sprint 24）：真書章名
     ＝黑體 W5 11.5pt（對映思源黑體 Medium），非楷 W3 9.5pt（後者為不帶頁碼
     摘要層，v1 不建模）；黑字距 12.08 下 head_offset 2 槽＝章名首字頂 132.12
@@ -339,7 +339,8 @@ def test_toc_entry_black_w5_corrected(template):
     adv = style_advance_pt(entry, master.grid)
     entry_top = master.margins.top_mm * PT + entry.head_offset_chars * adv
     assert entry_top == pytest.approx(132.12, abs=0.1)  # 真書章名 top_y 135.15
-    assert entry_top > master.rule.y_from_top_pt  # 章名在虛線 122.46 下（不穿線）
+    # 章名在虛線 122.46 下（不穿線）；虛線 y 取回歸模版（Sprint 141 產品模版已移除 rule）
+    assert entry_top > toc_rule_template.masters["D-目錄"].rule.y_from_top_pt
 
 
 # ---------- C 個案扉頁大標置位（Sprint 25） ----------

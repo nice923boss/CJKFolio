@@ -174,8 +174,9 @@
    "size_pt": 21.9,
    "indent_chars": 0,
    "para_gap_slots": 1,
+   "starts_page": true,
    "source_font": "DFMingStd-W7",
-   "note": "十章章扉；§4.2 原記明體W9，全書掃描修正為 W7"
+   "note": "十章章扉；§4.2 原記明體W9，全書掃描修正為 W7。starts_page＝章一律起新頁（Sprint 141）"
   },
   "封面書名-明體W9": {
    "font_family": "思源宋體 TC",
@@ -402,21 +403,7 @@
     "base_size_pt": 11.5
    },
    "mirror": true,
-   "rule": {
-    "kind": "toc-rule",
-    "cmyk": [
-     0,
-     0,
-     0,
-     0.57
-    ],
-    "line_width_pt": 1.0,
-    "dash_on_pt": 3.0,
-    "dash_off_pt": 2.0,
-    "y_from_top_pt": 122.46,
-    "break_before_pt": 28.5,
-    "break_after_pt": 3.9
-   },
+   "rule_note": "Sprint 141 依 Owner 指示移除天頭虛線（原 toc-rule：K57、1.0pt、dash 3/2、y 122.46pt、篇名處斷開 28.5/3.9）。rule 為選配欄位，缺此區塊即不畫線；機制本身保留於 primitives/styles/render/pdf_writer，另有模版可用",
    "toc": {
     "page_no_style": "頁碼數字-GillSans",
     "page_no_bottom_pt": 490.0,

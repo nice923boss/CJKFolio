@@ -112,8 +112,11 @@ def make_toc_doc(entries):
 
 
 @needs_fonts
-def test_export_toc_rule_dash_stroke_before_text(template, tmp_path):
-    """目錄虛線：dash 算符＋灰 K 描邊（d/m/l/S/K）在 BT 之前、q…Q 隔離、無 rg/RG。"""
+def test_export_toc_rule_dash_stroke_before_text(toc_rule_template, tmp_path):
+    """目錄虛線：dash 算符＋灰 K 描邊（d/m/l/S/K）在 BT 之前、q…Q 隔離、無 rg/RG。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     out = tmp_path / "toc.pdf"
     export_pdf(make_toc_doc(["安放與整理的十個提問"]), template, out, footer=False)
     pdf = fitz.open(str(out))
@@ -130,8 +133,11 @@ def test_export_toc_rule_dash_stroke_before_text(template, tmp_path):
 
 
 @needs_fonts
-def test_export_toc_rule_two_backend_parity(template, tmp_path):
-    """虛線 m/l 座標＝render 幾何助手（toc_rule_line）＋出血偏移，兩後端同源。"""
+def test_export_toc_rule_two_backend_parity(toc_rule_template, tmp_path):
+    """虛線 m/l 座標＝render 幾何助手（toc_rule_line）＋出血偏移，兩後端同源。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     out = tmp_path / "toc-parity.pdf"
     export_pdf(make_toc_doc(["把回憶放回原位的方法"]), template, out, footer=False)
     pdf = fitz.open(str(out))
@@ -153,9 +159,12 @@ def test_export_toc_rule_two_backend_parity(template, tmp_path):
 
 
 @needs_fonts
-def test_export_toc_rule_preflight_green(template, tmp_path):
-    """加虛線後目錄 PDF 仍過全部 X-1a 機械規則（color-cmyk-only 不退步）。"""
+def test_export_toc_rule_preflight_green(toc_rule_template, tmp_path):
+    """加虛線後目錄 PDF 仍過全部 X-1a 機械規則（color-cmyk-only 不退步）。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
     from cjkfolio.preflight import check_pdfx1a
+    template = toc_rule_template
     out = tmp_path / "tocx.pdf"
     export_pdf(make_toc_doc([
         "安放與整理的十個提問",
@@ -265,9 +274,12 @@ def make_toc_doc_with_part(part, entries_with_pages):
 
 
 @needs_fonts
-def test_export_toc_rule_break_two_backend_parity(template, tmp_path):
+def test_export_toc_rule_break_two_backend_parity(toc_rule_template, tmp_path):
     """篇名嵌線斷開：PDF 虛線分兩段，端點＝rule_break_ranges＋toc_rule_segments
-    手推＋出血偏移（兩後端同源）。"""
+    手推＋出血偏移（兩後端同源）。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     from cjkfolio.layout import layout_document
     from cjkfolio.primitives import toc_rule_segments
     from cjkfolio.render import rule_break_ranges
@@ -297,9 +309,12 @@ def test_export_toc_rule_break_two_backend_parity(template, tmp_path):
 
 
 @needs_fonts
-def test_export_toc_rule_break_preflight_green(template, tmp_path):
-    """篇名嵌線斷開後目錄 PDF 仍過全部 X-1a 機械規則。"""
+def test_export_toc_rule_break_preflight_green(toc_rule_template, tmp_path):
+    """篇名嵌線斷開後目錄 PDF 仍過全部 X-1a 機械規則。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
     from cjkfolio.preflight import check_pdfx1a
+    template = toc_rule_template
     out = tmp_path / "toc-breakx.pdf"
     export_pdf(make_toc_doc_with_part("把日子放回原位", [
         ("安放與整理的十個提問", "17"),

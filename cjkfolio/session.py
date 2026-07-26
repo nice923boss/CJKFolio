@@ -30,7 +30,10 @@ from .editing import (
     apply_delete,
     apply_delete_span,
     apply_insert,
+    apply_insert_blank,
     apply_merge,
+    apply_page_starts,
+    apply_remove_blank,
     apply_para_style,
     apply_replace,
     apply_replace_span,
@@ -220,6 +223,16 @@ class EditSession:
     def merge(self, para_idx: int) -> EditResult:
         return self._commit(apply_merge(self._document, self._template, para_idx))
 
+    def insert_blank(self, para_idx: int) -> EditResult:
+        """在第 para_idx 段前插入空段（手動空一行，Sprint 141）；入統一 undo 歷史。"""
+        return self._commit(
+            apply_insert_blank(self._document, self._template, para_idx))
+
+    def remove_blank(self, para_idx: int) -> EditResult:
+        """移除第 para_idx 空段（Sprint 141）；非空段 ValueError，狀態不變不入歷史。"""
+        return self._commit(
+            apply_remove_blank(self._document, self._template, para_idx))
+
     def apply_style(self, drange: DocRange, char_style: Optional[str]) -> EditResult:
         return self._commit(
             apply_style(self._document, self._template, drange, char_style)
@@ -245,8 +258,13 @@ class EditSession:
         送出的三件事（樣式、目錄條目宣告、生成目錄節）若分三次 session 呼叫就變成
         三步 undo，違反本方法「單一 undo 步」的對外承諾。三者依序作用於同一份中介
         文件，最後只 commit 一次。生成失敗（如無條目、模版未宣告 auto_toc）拋
-        TocError（ValueError 子類），此時狀態完全不變、不入歷史。"""
+        TocError（ValueError 子類），此時狀態完全不變、不入歷史。
+
+        改派後隨即補章首分頁（Sprint 141 apply_page_starts）：順序必須在生成目錄
+        之前，否則目錄的兩趟穩定分頁算的是「還沒換頁」的頁碼，印出來的目錄頁碼
+        會整批偏掉。"""
         document = change_paragraph_styles(self._document, assignments)
+        document = apply_page_starts(document, self._template)
         if toc_entries:
             document = change_paragraph_toc_entries(document, toc_entries)
         if generate_toc:

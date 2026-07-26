@@ -36,17 +36,19 @@ def check_nav(EditorWindow, doc_path) -> None:
     assert win._page_panel.count() == total
     assert win._page_panel.currentRow() == 0
 
-    # 版面選單六項與快捷鍵（findChildren：QAction.menu() wrapper 不可靠，C26 教訓）
+    # 版面選單八項與快捷鍵（findChildren：QAction.menu() wrapper 不可靠，C26 教訓）
     menu = next(
         m for m in win.menuBar().findChildren(QMenu) if m.title() == "版面")
     acts = [a for a in menu.actions() if not a.isSeparator()]
     assert [a.text() for a in acts] == \
-        ["上一頁", "下一頁", "第一頁", "最後一頁", "跳至頁碼…", "成品尺寸…"], \
+        ["上一頁", "下一頁", "第一頁", "最後一頁", "跳至頁碼…",
+         "在游標段前插入空行", "移除游標段前的空行", "成品尺寸…"], \
         f"版面選單項異常：{[a.text() for a in acts]}"
     keys = {a.text(): [s.toString() for s in a.shortcuts()] for a in acts}
     assert keys["上一頁"] == ["PgUp"] and keys["下一頁"] == ["PgDown"], keys
     assert keys["第一頁"] == ["Ctrl+Home"] and keys["最後一頁"] == ["Ctrl+End"], keys
     assert keys["跳至頁碼…"] == ["Ctrl+J"], keys
+    assert keys["在游標段前插入空行"] == ["Ctrl+Shift+Return"], keys
 
     # 跳頁核心：清游標、指示器與高亮跟隨、clamp、同頁短路
     win.cursor = (0, 0)
@@ -89,7 +91,7 @@ def check_nav(EditorWindow, doc_path) -> None:
     for w in (win, win_blank):  # 退出安全：執行緒收工（closeEvent 同路徑）
         w._shutdown_thumbnails()
     print(
-        f"C27 頁面導航與縮圖面板：指示器＋版面選單五項＋面板 {total} 項點選跳頁"
+        f"C27 頁面導航與縮圖面板：指示器＋版面選單八項＋面板 {total} 項點選跳頁"
         f"＋高亮跟隨，首輪縮圖 {elapsed:.2f}s、編輯後重渲染 {elapsed2:.2f}s"
         f"（世代 {win._thumb_generation}，翻頁不觸發）"
     )

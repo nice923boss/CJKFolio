@@ -1,7 +1,8 @@
 """編輯輸入回路（Sprint 123 自 editor/app.py 依行數紀律分檔，同 Sprint 78 慣例）：
 
 輸入欄組字提交（body 插入／框插入／選取替換／空白文件第一字）、undo／redo
-統一歷史跟隨、鍵盤編輯（Backspace／Delete／Enter 分段、PgUp／PgDn 翻頁）。
+統一歷史跟隨、鍵盤編輯（Backspace／Delete／Enter 分段、PgUp／PgDn 翻頁）、
+手動空行增刪（Sprint 141）。
 
 依賴 EditorWindow 提供：self.session／self.doc／self.page／self.cursor／
 self.frame_cursor／self.selection／self.layout_result／self._ime／
@@ -261,6 +262,61 @@ class EditActionsMixin:
         self.statusBar().showMessage(
             f"已刪 段{hit.para_idx} 字位 [{start}, {end}) → 游標 字位{res.cursor.caret}")
         return True
+
+    def _cursor_para_idx(self):
+        """游標所在段索引（空行增刪共用）；無可用 body 游標時提示並回 None。"""
+        if self.frame_cursor is not None:
+            self.statusBar().showMessage("空行只作用於內文段落（文字框為單段）")
+            return None
+        if self.cursor is None:
+            self.statusBar().showMessage("先點一個字格選游標，再插入或移除空行")
+            return None
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None:
+            self.statusBar().showMessage("此字格無文件游標（拉丁串／空格），無法定位段落")
+            return None
+        return hit.para_idx
+
+    def _insert_blank_line(self) -> None:
+        """在游標段前插入一個空行（Sprint 141）：模版未宣告 starts_page、或 AI 沒指派
+        到章首樣式時，手動把標題推到下一頁的備援。
+
+        空行在畫布上沒有字格可點，故頁數變化一律報進狀態列（不然按了像沒反應），
+        移除另走「移除本段前的空行」。"""
+        idx = self._cursor_para_idx()
+        if idx is None:
+            return
+        before = len(self.layout_result.pages)
+        res = self.session.insert_blank(idx)
+        self._follow_body_address(res)
+        after = len(self.layout_result.pages)
+        page_no = self.page.number if self.page is not None else "?"
+        self.statusBar().showMessage(
+            f"已在段{idx}前插入空行 → 該段現落於頁 {page_no}"
+            f"（全書 {before} 頁{'→ ' + str(after) + ' 頁' if after != before else '不變'}）；"
+            "Ctrl+Z 一步回原")
+
+    def _remove_blank_line(self) -> None:
+        """移除游標段前的空行（Sprint 141）；前一段非空段則不動任何內容並據實說明。"""
+        idx = self._cursor_para_idx()
+        if idx is None:
+            return
+        if idx == 0:
+            self.statusBar().showMessage("本段已是第一段，前面沒有空行可移除")
+            return
+        before = len(self.layout_result.pages)
+        try:
+            res = self.session.remove_blank(idx - 1)
+        except ValueError:
+            self.statusBar().showMessage(
+                f"段{idx} 前面不是空行（未移除任何內容；空行才可由此移除）")
+            return
+        self._follow_body_address(res)
+        after = len(self.layout_result.pages)
+        page_no = self.page.number if self.page is not None else "?"
+        self.statusBar().showMessage(
+            f"已移除段{idx}前的空行 → 該段現落於頁 {page_no}"
+            f"（全書 {before} 頁{'→ ' + str(after) + ' 頁' if after != before else '不變'}）")
 
     def _split_at_cursor(self) -> bool:
         """Enter＝body 游標處分段（session.split）；文字框為單段不分段。"""

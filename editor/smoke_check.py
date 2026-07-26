@@ -59,6 +59,7 @@ from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
 from editor.smoke_ai import check_ai_assign, check_ai_toc  # noqa: E402
 from editor.smoke_blank import check_blank  # noqa: E402
+from editor.smoke_blank_line import check_blank_line  # noqa: E402
 from editor.smoke_book import check_book
 from editor.smoke_cover import check_cover
 from editor.smoke_page_size import check_page_size, check_press_config  # noqa: E402
@@ -734,6 +735,9 @@ def main() -> int:
     check_page_size(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
     check_press_config(EditorWindow, DOC)
 
+    # C40 手動空行增刪（Sprint 141，抽於 editor/smoke_blank_line.py）
+    check_blank_line(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -777,6 +781,8 @@ def main() -> int:
         "／改小紙張溢出項據實列出不阻擋／成品 MediaBox 與 TrimBox 經 PyMuPDF 讀回）"
         "＋印前設定（設定選單總墨量上限與 PDF/X 形態／缺檔回保守預設／面板 round-trip"
         "只寫本機檔／轉存對話框以印前設定起始且上限確實送達 export_pdf）"
+        "＋手動空行增刪（無游標／文字框／段 0／前段非空四道守門不動文件／插入後目標段"
+        "下移一槽與游標跟隨／狀態列報頁數變化／移除復原／undo 一步回原）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

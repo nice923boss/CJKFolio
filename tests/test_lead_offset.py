@@ -147,9 +147,12 @@ def test_toc_lead_offset_shifts_leader_start_not_page_anchor(template):
     assert on.leader_y1_pt == pytest.approx(off.leader_y1_pt)      # 線終錨頁碼頂
 
 
-def test_toc_lead_offset_syncs_rule_break_crossing(template):
+def test_toc_lead_offset_syncs_rule_break_crossing(toc_rule_template):
     """穿線判定 line_top 同步 lead_offset：條目上移跨越虛線 y → 產 RuleBreak；
-    下移維持不穿（判定跟隨 body 實際位置，Sprint 30 正題）。"""
+    下移維持不穿（判定跟隨 body 實際位置，Sprint 30 正題）。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     base = layout_document(_toc_doc(), _entry_lead(template, 0.0))
     assert base.rule_breaks == {}  # 縮退條目（lead 歸零基準）在虛線下、不穿
     up = layout_document(_toc_doc(), _entry_lead(template, -12.0))  # 上移使框頂穿線

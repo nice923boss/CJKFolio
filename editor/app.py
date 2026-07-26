@@ -643,8 +643,11 @@ def main(argv=None) -> int:
     doc_path = argv[1] if len(argv) > 1 else None  # 無參數＝從零開始（Sprint 123）
     app = QApplication.instance() or QApplication(argv[:1])
     win = EditorWindow(doc_path)
-    win.resize(760, 900)
-    win.show()
+    win.resize(760, 900)  # 使用者按「還原」時退回的尺寸（最大化前的幾何）
+    # 開窗即滿版（Sprint 141）：左右兩側各常駐一個 dock（頁面縮圖、樣式面板），
+    # 760px 下畫布只剩百餘 px，開窗就得手動拉寬。showEvent 的整頁 fit 走
+    # QTimer.singleShot，於最大化後的視口量測，故 fit 結果跟著放大。
+    win.showMaximized()
     return app.exec()
 
 

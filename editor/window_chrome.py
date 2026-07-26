@@ -85,6 +85,14 @@ class WindowChromeMixin:
         goto_action.setShortcut(QKeySequence("Ctrl+J"))  # InDesign 慣例
         goto_action.triggered.connect(self._prompt_goto_page)
         layout_menu.addAction(goto_action)
+        layout_menu.addSeparator()  # 手動空行推行（Sprint 141）：章名沒換頁時的備援
+        blank_add = QAction("在游標段前插入空行", self)
+        blank_add.setShortcut(QKeySequence("Ctrl+Shift+Return"))
+        blank_add.triggered.connect(self._insert_blank_line)
+        layout_menu.addAction(blank_add)
+        blank_del = QAction("移除游標段前的空行", self)  # 空行畫布上點不到，故配對提供
+        blank_del.triggered.connect(self._remove_blank_line)
+        layout_menu.addAction(blank_del)
         layout_menu.addSeparator()
         trim_action = QAction("成品尺寸…", self)  # 換開本（Sprint 140 甲）
         trim_action.triggered.connect(lambda: self._page_size_dialog())

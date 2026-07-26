@@ -146,12 +146,20 @@ class AiActionsMixin:
         if not assignments and not toc_entries and not generate_toc:
             self.statusBar().showMessage("未採用任何建議（文件未變更）")
             return None
+        # 套用前先數會被自動換頁的段（Sprint 141）：session 會替宣告 starts_page 的
+        # 樣式補節首標記，全書頁數因此跳動。不報出來，使用者只會看到頁數莫名變多
+        page_starts = sum(
+            1 for idx, name in assignments.items()
+            if idx > 0 and self.doc.paragraphs[idx].master is None
+            and getattr(self.template.paragraph_styles.get(name), "starts_page", False))
         try:
             res = self.session.apply_para_styles(
                 assignments, toc_entries, generate_toc=generate_toc)
         except (KeyError, ValueError, IndexError) as err:
             return f"無法套用：{err}"
         parts = [f"AI 批次改派 {len(assignments)} 段"]
+        if page_starts:
+            parts.append(f"其中 {page_starts} 段依模版宣告自動起新頁")
         if toc_entries:
             parts.append(f"目次條目 {len(toc_entries)} 段")
         if generate_toc:

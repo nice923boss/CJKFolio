@@ -88,8 +88,11 @@ def make_toc_doc(entries):
 
 
 @needs_fonts
-def test_render_toc_rule_dashed_gray_full_width(template, tmp_path):
-    """目錄天頭虛線：y 於實測 122.46pt、斷續（dash 生效）、灰值（K57 非純黑）、貫穿頁寬。"""
+def test_render_toc_rule_dashed_gray_full_width(toc_rule_template, tmp_path):
+    """目錄天頭虛線：y 於實測 122.46pt、斷續（dash 生效）、灰值（K57 非純黑）、貫穿頁寬。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     doc = make_toc_doc(["安放與整理的十個提問", "把回憶放回原位的方法"])
     result = render_document(doc, template, tmp_path, dpi=200, footer=False)
     assert result.violations == []
@@ -255,9 +258,12 @@ def make_toc_doc_with_part(part, entries_with_pages):
     })
 
 
-def test_layout_rule_breaks_crossing_line_only(template):
+def test_layout_rule_breaks_crossing_line_only(toc_rule_template):
     """穿線行（行首字頂高於虛線 y）產 RuleBreak：部名（不縮退）穿線、
-    條目（head_offset 縮退）不穿（幾何判定，非樣式白名單）。"""
+    條目（head_offset 縮退）不穿（幾何判定，非樣式白名單）。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     doc = make_toc_doc_with_part("把日子放回原位", [("安放與整理的十個提問", "17")])
     layout = layout_document(doc, template)
     assert layout.violations == []
@@ -295,9 +301,12 @@ def test_layout_rule_breaks_empty_without_rule_master(template):
 
 
 @needs_fonts
-def test_render_toc_rule_breaks_at_part_title(template, tmp_path):
+def test_render_toc_rule_breaks_at_part_title(toc_rule_template, tmp_path):
     """篇名嵌線著墨驗證：虛線在部名行槽±斷開邊距內無線墨、兩側續畫；
-    部名字墨存在於虛線之上（穿線視覺）。"""
+    部名字墨存在於虛線之上（穿線視覺）。
+
+    吃回歸模版：產品模版自 Sprint 141 起不宣告 rule（見 tests/conftest.py）。"""
+    template = toc_rule_template
     from cjkfolio.render import rule_break_ranges
     doc = make_toc_doc_with_part("把日子放回原位", [("安放與整理的十個提問", "17")])
     layout = layout_document(doc, template)
