@@ -32,14 +32,16 @@ THUMB_W = 106           # 占位圖尺寸取 A5 @18dpi 整數化；實際 icon �
 THUMB_H = 149
 
 
-def thumbnail_footer(page_number: int, cover_pages: int, title: str):
-    """縮圖的頁腳內容；封面回 None（不編頁碼）。
+def thumbnail_footer(page_number: int, cover_pages: int, title: str,
+                     blank: bool = False):
+    """縮圖的頁腳內容；封面與裝訂補頁回 None（不編頁碼）。
 
     Sprint 132 的書頁號位移原漏了本處（Gate 3 只掃到兩後端、wrap、toc 與主畫布
     五處）：縮圖直接拿版面頁號當書頁號，帶封面時整份縮圖的頁碼會比實際大 1，
     且封面縮圖會印出頁碼。Sprint 133 補上並以純函式釘死。
+    blank＝裝訂補頁（Sprint 144，LayoutPage.blank）：空白頁不編頁碼，同封面。
     """
-    if page_number <= cover_pages:
+    if page_number <= cover_pages or blank:
         return None
     return {"number": str(book_number_for(page_number, 1, cover_pages)),
             "title": title or ""}
@@ -82,7 +84,8 @@ class ThumbnailThread(QThread):
                 image_error_pages += 1
             vertical = getattr(page, "vertical", self._layout.vertical)
             cover_pages = self._layout.cover_pages
-            footer = thumbnail_footer(page.number, cover_pages, self._doc.title)
+            footer = thumbnail_footer(page.number, cover_pages, self._doc.title,
+                                      blank=page.blank)
             pil_img = renderer.render_page(
                 page, footer_texts=footer,
                 book_number=book_number_for(page.number, 1, cover_pages),

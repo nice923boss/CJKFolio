@@ -31,8 +31,8 @@ def _has_cancel(menu: QMenu) -> bool:
 def check_master(EditorWindow, chapter_path, paiban_path) -> None:
     # ── 多節樣張 chapter-opening：頁 1 首節 B-部扉、頁 2 節首（段 2）A-內文版 ──
     win = EditorWindow(str(chapter_path))
-    pages = win.layout_result.pages
-    assert len(pages) == 2, f"樣張應 2 頁，得 {len(pages)}"
+    pages = [p for p in win.layout_result.pages if not p.blank]  # 補頁不計（S144）
+    assert len(pages) == 2, f"樣張應 2 頁內文，得 {len(pages)}"
     masters_order = list(win.template.masters)
     assert len(masters_order) == 8, masters_order  # A〜G＋H-封面（Sprint 132）
 
@@ -72,7 +72,11 @@ def check_master(EditorWindow, chapter_path, paiban_path) -> None:
 
     # ── 單節多頁真稿 paiban-xiaoji-ch1：節內乾淨起頁升節首＋跨頁續段守門 ──
     win2 = EditorWindow(str(paiban_path))
-    assert len(win2.layout_result.pages) == 11
+
+    def body_pages() -> int:
+        return sum(1 for p in win2.layout_result.pages if not p.blank)
+
+    assert body_pages() == 11
 
     # 頁 2 為節內乾淨起頁（起始段 5，非續段、非節首）：升為新節首、延續至下一節首
     assert win2._page_start_para(2) == 5
@@ -86,7 +90,7 @@ def check_master(EditorWindow, chapter_path, paiban_path) -> None:
     assert win2.page.number == 2, f"升節首後未留在右鍵頁，得頁 {win2.page.number}"
     win2.session.undo()
     assert win2.doc.paragraphs[5].master is None
-    assert len(win2.layout_result.pages) == 11, "undo 後未回 11 頁"
+    assert body_pages() == 11, "undo 後未回 11 頁內文"
 
     # 頁 3 為跨頁續段開頭（起始段延續自前頁）：指派項停用、僅提示、無主版可選、無取消節首
     assert win2._page_start_para(3) is None

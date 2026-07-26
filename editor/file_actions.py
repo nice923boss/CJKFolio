@@ -33,6 +33,7 @@ from cjkfolio.document import (
 )
 from cjkfolio.session import EditSession
 from editor.blank_doc import blank_document
+from editor.book_binding import with_binding
 
 DOC_SUFFIX = ".doc.json"
 FILE_FILTER = f"CJKFolio 文件 (*{DOC_SUFFIX})"
@@ -139,7 +140,8 @@ class FileActionsMixin:
                 f"{'、'.join(unknown)}（目前文件未變動）")
             return False
         try:
-            session = EditSession(doc, self.template)
+            # with_binding＝未宣告裝訂補頁者補足 4 的倍數（Sprint 144）
+            session = EditSession(with_binding(doc), self.template)
         except KeyError as err:  # 其餘引用缺失（字元樣式／主版），重排快速失敗
             self.statusBar().showMessage(
                 f"無法開啟「{path.name}」：{err}（目前文件未變動）")
@@ -156,7 +158,8 @@ class FileActionsMixin:
             self.statusBar().showMessage("已取消新建")
             return
         template = self.session.template
-        session = EditSession(blank_document(template, self.doc.template), template)
+        session = EditSession(
+            with_binding(blank_document(template, self.doc.template)), template)
         # 未命名不落地：僅沿用現行目錄當置入圖／preflight 相對基準（Sprint 123）
         self._adopt_session(session, self._doc_path.with_name(f"未命名{DOC_SUFFIX}"))
         self.statusBar().showMessage(

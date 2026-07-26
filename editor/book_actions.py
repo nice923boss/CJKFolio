@@ -26,6 +26,7 @@ from cjkfolio.book import BookError, assemble_book, load_book
 from cjkfolio.document import unknown_style_refs
 from cjkfolio.session import EditSession
 from cjkfolio.toc import assemble_book_with_toc, toc_items
+from editor.book_binding import with_binding
 from editor.file_actions import DOC_SUFFIX
 
 BOOK_FILTER = "書冊清單 (*.json)"
@@ -83,7 +84,7 @@ class BookActionsMixin:
                 f"{'、'.join(unknown)}（目前文件未變動）")
             return False
         try:
-            session = EditSession(doc, self.template)
+            session = EditSession(with_binding(doc), self.template)
         except KeyError as err:  # 字元樣式／主版等其餘引用缺失，重排快速失敗
             self.statusBar().showMessage(
                 f"無法組裝書冊「{manifest.name}」：{err}（目前文件未變動）")

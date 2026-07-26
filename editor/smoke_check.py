@@ -18,9 +18,9 @@
   C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
   C16 以後的各項（preflight 面板、畫布置圖、縮放平移、頁面導航、檔案生命週期、
      轉存 PDF、尋找取代、文件資訊、對頁檢視、主版指派、書冊、封面、預覽畫質、
-     文字框整框增刪移、成品尺寸與印前設定、手動空行、頁面拖曳重排、書眉與頁碼）
-     實作各自抽於 editor/smoke_*.py（本檔逾 800 行上限），逐項驗證內容見各該檔
-     docstring；本檔只負責註冊與彙總，避免同一份清單兩處維護而失準。
+     文字框整框增刪移、成品尺寸與印前設定、手動空行、頁面拖曳重排、書眉與頁碼、
+     裝訂補頁）實作各自抽於 editor/smoke_*.py（本檔逾 800 行上限），逐項驗證內容
+     見各該檔 docstring；本檔只負責註冊與彙總，避免同一清單兩處維護而失準。
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -65,6 +65,7 @@ from editor.smoke_master import check_master  # noqa: E402
 from editor.smoke_page_order import check_page_order  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
+from editor.smoke_sheet_padding import check_sheet_padding  # noqa: E402
 from editor.smoke_spread import check_spread  # noqa: E402
 from editor.smoke_view import check_view  # noqa: E402
 from editor.canvas import (  # noqa: E402
@@ -77,6 +78,8 @@ from editor.canvas import (  # noqa: E402
 )
 
 DOC = ROOT / "samples" / "case-divider.doc.json"
+CHAPTER = ROOT / "samples" / "chapter-opening.doc.json"   # 兩節 2 頁樣張
+PAIBAN = ROOT / "samples" / "paiban-xiaoji-ch1.doc.json"  # 41 段 11 頁真樣張
 TEMPLATE = ROOT / "templates" / "neizai-zhengli.json"
 DPI = 150
 
@@ -281,14 +284,14 @@ def main() -> int:
         assert fwin.doc.text_frames[0].text == head_before[1:], "Backspace 未刪框游標字"
         fwin._on_undo()
         assert fwin.doc.text_frames[0].text == head_before
-    win2 = EditorWindow(str(ROOT / "samples" / "chapter-opening.doc.json"))  # 2 頁樣張
-    assert win2.page.number == 1 and len(win2.layout_result.pages) == 2
-    win2._on_key(key_event(Qt.Key.Key_PageDown))
-    assert win2.page.number == 2, "PgDn 未換頁"
-    win2._on_key(key_event(Qt.Key.Key_PageDown))
-    assert win2.page.number == 2, "末頁 PgDn 應停留"
+    win2 = EditorWindow(str(CHAPTER))  # 兩節 2 頁樣張
+    total2 = len(win2.layout_result.pages)  # 4＝2 頁內容＋2 頁裝訂補頁（Sprint 144）
+    assert win2.page.number == 1 and total2 == 4, total2
+    for _ in range(total2):                 # 多按一次驗末頁停留
+        win2._on_key(key_event(Qt.Key.Key_PageDown))
+    assert win2.page.number == total2, "PgDn 未換頁或末頁未停留"
     win2._on_key(key_event(Qt.Key.Key_PageUp))
-    assert win2.page.number == 1, "PgUp 未回頁"
+    assert win2.page.number == total2 - 1, "PgUp 未回頁"
     print(
         "C8 畫布鍵盤編輯：Backspace 刪字（body＋框，undo 可回）、Enter 分段、"
         "PgUp／PgDn 換頁（含首末頁停留）"
@@ -691,10 +694,10 @@ def main() -> int:
     check_view(EditorWindow, DOC)
 
     # C27 頁面導航與縮圖面板（Sprint 125，抽於 editor/smoke_nav.py）
-    check_nav(EditorWindow, ROOT / "samples" / "chapter-opening.doc.json")
+    check_nav(EditorWindow, CHAPTER)
 
     # C28 檔案生命週期（Sprint 126，抽於 editor/smoke_file.py）
-    check_file(EditorWindow, ROOT / "samples" / "chapter-opening.doc.json")
+    check_file(EditorWindow, CHAPTER)
 
     # C29 轉存 PDF 介面（Sprint 127，抽於 editor/smoke_export.py）
     check_export(EditorWindow, DOC)
@@ -706,14 +709,10 @@ def main() -> int:
     check_info(EditorWindow, DOC)
 
     # C32 對頁檢視（Sprint 129 甲4，抽於 editor/smoke_spread.py）
-    check_spread(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_spread(EditorWindow, PAIBAN)
 
     # C33 主版指派介面（Sprint 130 丁1，抽於 editor/smoke_master.py）
-    check_master(
-        EditorWindow,
-        ROOT / "samples" / "chapter-opening.doc.json",
-        ROOT / "samples" / "paiban-xiaoji-ch1.doc.json",
-    )
+    check_master(EditorWindow, CHAPTER, PAIBAN)
 
     # C34 書冊管理介面（Sprint 131 丁2，抽於 editor/smoke_book.py）
     check_book(EditorWindow, DOC, ROOT)
@@ -722,24 +721,26 @@ def main() -> int:
     check_cover(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.md", ROOT)
 
     # C36 預覽畫質（Sprint 133，抽於 editor/smoke_quality.py）
-    check_quality(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_quality(EditorWindow, PAIBAN)
 
     # C38 文字框整框增刪移（Sprint 136，抽於 editor/smoke_frame_box.py）
     check_frame_box(EditorWindow, ROOT)
 
     # C39 成品尺寸與印前設定（Sprint 140，抽於 editor/smoke_page_size.py）
-    check_page_size(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_page_size(EditorWindow, PAIBAN)
     check_press_config(EditorWindow, DOC)
 
     # C40 手動空行增刪（Sprint 141，抽於 editor/smoke_blank_line.py）
-    check_blank_line(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_blank_line(EditorWindow, PAIBAN)
 
     # C41 頁面拖曳重排（Sprint 142，抽於 editor/smoke_page_order.py）
-    check_page_order(EditorWindow, ROOT / "samples" / "chapter-opening.doc.json",
-                     ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_page_order(EditorWindow, CHAPTER, PAIBAN)
 
     # C42 書眉與頁碼改字挪位置（Sprint 142，抽於 editor/smoke_footer.py）
-    check_footer(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+    check_footer(EditorWindow, PAIBAN)
+
+    # C43 裝訂補頁（Sprint 144，抽於 editor/smoke_sheet_padding.py）
+    check_sheet_padding(EditorWindow, PAIBAN)
 
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
@@ -764,10 +765,9 @@ def main() -> int:
         "＋轉存 PDF 介面（檔案選單轉存項＋Ctrl+E＋空白守門＋背景 export_pdf 真產出"
         "成品／PyMuPDF 讀回驗／X-4 未選 ICC 擋 accept／取消與重入據實提示）"
         "＋尋找／取代（編輯選單 Ctrl+F／Ctrl+H＋純函式 find_matches＋真樣本命中頁定位"
-        "高亮＋取代單一 undo 步＋全部取代 N 步復原）＋文件資訊（工具選單字數統計：總字數"
-        "／段數／頁數／樣式用量）"
-        "＋對頁檢視（檢視選單勾選項＋Ctrl+3＋右翻書偶右奇左併排＋目前頁偏移後全命中"
-        "＋點對頁跳頁＋頁1 單邊＋純檢視不改版面頁數）"
+        "高亮＋取代單一 undo 步＋全部取代 N 步復原）＋文件資訊（字數／段數／頁數／樣式用量）"
+        "＋對頁檢視（檢視選單勾選項＋Ctrl+3＋右翻書偶右奇左併排＋目前頁偏移後全命中＋點"
+        "對頁跳頁＋頁1 單邊＋翻開封面後恆兩頁寬而封面自身單頁＋純檢視不改版面頁數）"
         "＋主版指派介面（頁面面板右鍵八主版著作序＋勾選跟隨 page.master＋既有節首頁換節"
         "主版＋節內乾淨起頁升新節首延續至下一節首＋取消節首併回前節＋跨頁續段起頁停用提示）"
         "＋書冊管理介面（檔案選單組裝書冊項＋自動目錄書冊組裝＝獨立 assemble_book_with_toc"
@@ -790,6 +790,7 @@ def main() -> int:
         "節首頁／一步 undo ／原位放下不佔 undo ／封面不參與／非節首頁拒收並指名節首頁）"
         "＋書眉與頁碼（對話框只回改過的欄位而沒動就按確定不佔 undo ／mm↔pt 換算／頁碼"
         "元素停用文字欄／以目前頁主版為對象／批次套多主版仍只一步／封面無頁腳據實拒收）"
+        "＋裝訂補頁（內文頁數補足 4 的倍數／補頁不編頁碼不參與拖曳／明說 0 者開檔不補）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

@@ -301,6 +301,14 @@ def document_from_dict(data) -> "Document":
             raise DocumentError("使用 meta.cover 需 schema document@2")
         if not (isinstance(cover, str) and cover):
             raise DocumentError(f"meta.cover 需為非空字串（封面主版名），得到 {cover!r}")
+    sheet_pages = meta.get("sheet_pages")
+    if sheet_pages is not None:
+        if schema == SCHEMA_V1:
+            raise DocumentError("使用 meta.sheet_pages 需 schema document@2")
+        if isinstance(sheet_pages, bool) or not isinstance(sheet_pages, int) \
+                or sheet_pages < 0:
+            raise DocumentError(
+                f"meta.sheet_pages 需為非負整數（0＝不補頁），得到 {sheet_pages!r}")
     return Document(
         title=str(meta.get("title", "")),
         template=str(meta.get("template", "")),
@@ -310,6 +318,7 @@ def document_from_dict(data) -> "Document":
         images=_images_from_list(raw_images),
         text_frames=_frames_from_list(raw_frames),
         cover=cover,
+        sheet_pages=sheet_pages,
     )
 
 
@@ -326,6 +335,11 @@ class Document:
     # 封面，內容用既有 images／text_frames 掛版面頁 1；頁碼自封面翻開後起算
     # （primitives.book_number_for）。None＝無封面，既有行為完全不變。
     cover: Optional[str] = None
+    # 裝訂補頁單位（@2 相容擴充選配，Sprint 144）：一張紙對折成的頁數（4＝對折一次
+    # 得 4 面）。內文頁數非此數的倍數就湊不成整數張紙，不足者由 layout_document 於
+    # 末尾補空白頁。None＝未宣告（程式庫不補頁；編輯器開檔時視為
+    # editor.book_binding.SHEET_PAGES）、0＝使用者明說不補。
+    sheet_pages: Optional[int] = None
 
 
 def _paragraph_to_dict(p: Paragraph) -> dict:
@@ -359,6 +373,9 @@ def document_to_dict(doc: Document) -> dict:
             "master": doc.master,
             "language": doc.language,
             **({"cover": doc.cover} if doc.cover else {}),
+            # 0（明說不補）與 None（未宣告）語意不同，故不用真值判斷
+            **({"sheet_pages": doc.sheet_pages}
+               if doc.sheet_pages is not None else {}),
         },
         "paragraphs": [_paragraph_to_dict(p) for p in doc.paragraphs],
     }

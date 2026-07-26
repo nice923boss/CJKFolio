@@ -29,7 +29,7 @@ def check_nav(EditorWindow, doc_path) -> None:
     app = QApplication.instance()
     win = EditorWindow(str(doc_path))  # chapter-opening 2 頁樣張
     total = len(win.layout_result.pages)
-    assert total == 2, f"樣張應 2 頁，得 {total}"
+    assert total == 4, f"2 頁樣張補足 4 的倍數應 4 頁，得 {total}"  # Sprint 144
 
     # 頁碼指示器初值＋面板 item 數與目前頁高亮
     assert win._page_label.text() == f"頁 1／{total}", win._page_label.text()
@@ -56,11 +56,13 @@ def check_nav(EditorWindow, doc_path) -> None:
     assert win.page.number == 2 and win.cursor is None, "跳頁未清游標"
     assert win._page_label.text() == f"頁 2／{total}"
     assert win._page_panel.currentRow() == 1, "面板高亮未跟隨"
-    win._goto_page(99)  # clamp 到末頁＝現頁 → 短路不重繪
-    assert win.page.number == 2
+    win._goto_page(99)  # clamp 到末頁（末頁為裝訂補頁亦照跳，Sprint 144）
+    assert win.page.number == total, f"clamp 未到末頁，得 {win.page.number}"
+    win._goto_page(99)  # 再跳一次＝現頁 → 短路不重繪
+    assert win.page.number == total
     win._page_panel.itemClicked.emit(win._page_panel.item(0))  # 面板真點擊訊號
     assert win.page.number == 1, "面板點選未跳頁"
-    assert "頁 1/2" in win.statusBar().currentMessage()
+    assert f"頁 1/{total}" in win.statusBar().currentMessage()
 
     # 背景縮圖首輪：等 all_done，縮圖像素上牆（角落紙白，非 #e6e6e6 占位灰）
     elapsed = _wait_thumbs(win, app)

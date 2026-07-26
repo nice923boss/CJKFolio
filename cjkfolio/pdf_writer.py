@@ -671,7 +671,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     for page in selected:
         book_number = book_number_for(page.number, first_page, layout.cover_pages)
         texts = None  # 頁腳依該頁主版 gate；封面不編頁碼故一律不繪
-        if footer and page.number > layout.cover_pages and masters_by_page[page.number].footer:
+        if (footer and page.number > layout.cover_pages  # 封面與補頁不編頁碼
+                and not page.blank and masters_by_page[page.number].footer):
             texts = {"number": str(book_number), "title": doc.title}
         contents.append(writer.build_page(
             page, footer_texts=texts, book_number=book_number,

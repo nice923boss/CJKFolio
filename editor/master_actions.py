@@ -58,7 +58,10 @@ class MasterActionsMixin:
         menu = QMenu(self)
         assign_menu = menu.addMenu(f"指派主版（頁 {page_number}）")
         if start_para is None:
-            hint = assign_menu.addAction("本頁以跨頁段落開頭，請於段落起始頁指派")
+            # 無內文行者（封面、裝訂補頁、純圖頁）不是「跨頁續段」，據實分開說
+            hint = assign_menu.addAction(
+                "本頁以跨頁段落開頭，請於段落起始頁指派" if page.placed
+                else "本頁無內文行，無法指派主版（主版按節指派，節以段落切分）")
             hint.setEnabled(False)
             return menu
         for name in self.template.masters:      # 依模版著作序（A→G）

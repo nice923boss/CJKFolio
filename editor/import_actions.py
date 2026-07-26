@@ -11,6 +11,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog
 
+from editor.book_binding import with_binding
 from editor.import_core import FILE_DIALOG_FILTER, import_manuscript
 
 
@@ -36,9 +37,11 @@ class ImportActionsMixin:
             # 模版 id 取自目前文件的宣告（編輯器同時只持一份模版）
             # cover：書該有封面（Owner Sprint 132 回饋），模版有宣告封面主版才建，
             # 未宣告的模版照舊直接自內文首頁起（不硬造主版）。
-            incoming = import_manuscript(
+            # with_binding：匯入的新稿同開檔一樣是要裝訂成冊的書，內文頁數補足
+            # 4 的倍數（Sprint 144；import_manuscript 造的是全新文件，不承舊稿宣告）
+            incoming = with_binding(import_manuscript(
                 path, self.session.template, self.doc.template,
-                cover=bool(self.session.template.default_cover))
+                cover=bool(self.session.template.default_cover)))
         except (OSError, ValueError, UnicodeDecodeError) as err:
             self.statusBar().showMessage(f"無法匯入「{path.name}」：{err}")
             return

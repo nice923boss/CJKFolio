@@ -543,8 +543,9 @@ def render_document(doc, template: Template, out_dir, dpi: int = 150,
         # 書頁號（鏡像與頁腳奇偶依此）；帶封面時頁碼自封面翻開後起算
         book_number = book_number_for(page.number, first_page, layout.cover_pages)
         texts = None
-        is_cover = page.number <= layout.cover_pages  # 封面不編頁碼（不繪頁腳）
-        if footer and not is_cover and masters_by_page[page.number].footer:
+        # 封面與裝訂補頁（Sprint 144）不編頁碼（不繪頁腳）
+        no_folio = page.number <= layout.cover_pages or page.blank
+        if footer and not no_folio and masters_by_page[page.number].footer:
             texts = {
                 "number": str(book_number),
                 "title": doc.title,

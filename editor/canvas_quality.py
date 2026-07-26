@@ -220,7 +220,8 @@ class PageImageThread(QThread):
                 images = ()
                 image_errors += 1
             cover_pages = self._layout.cover_pages
-            footer = None if number <= cover_pages else {  # 封面不編頁碼
+            # 封面與裝訂補頁（Sprint 144）不編頁碼
+            footer = None if number <= cover_pages or page.blank else {
                 "number": str(book_number_for(number, 1, cover_pages)),
                 "title": self._doc.title or "",
             }

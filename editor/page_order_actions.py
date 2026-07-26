@@ -48,6 +48,11 @@ class PageOrderActionsMixin:
         if src_page <= layout.cover_pages:
             self.statusBar().showMessage("封面頁固定在最前，不參與拖曳重排")
             return
+        if layout.pages[src_page - 1].blank:  # 裝訂補頁（Sprint 144）
+            self.statusBar().showMessage(
+                "裝訂補頁不參與拖曳重排：它是湊足 4 的倍數用的空白頁，"
+                "隨內文頁數自動增減")
+            return
         heads = self._section_head_pages()
         if src_page not in heads:
             head = max(h for h in heads if h <= src_page)

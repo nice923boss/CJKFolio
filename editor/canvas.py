@@ -229,7 +229,8 @@ def build_page_scene(
     # （Sprint 132）。畫布原直接用版面頁號＝隱含 first_page=1 且無封面。
     book_number = book_number_for(page.number, first_page, layout.cover_pages)
     renderer = PageRenderer(template, doc.master, dpi=base_dpi)
-    footer = None if page.number <= layout.cover_pages else {  # 封面不編頁碼
+    no_folio = page.number <= layout.cover_pages or page.blank  # 封面與補頁不編頁碼
+    footer = None if no_folio else {
         "number": str(book_number), "title": doc.title or ""}
     vertical = getattr(page, "vertical", layout.vertical)  # 逐頁方向（Sprint 53）
     frames = page_frame_placements(template, doc, layout, page)

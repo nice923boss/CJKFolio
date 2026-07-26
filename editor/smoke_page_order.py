@@ -14,6 +14,11 @@ from PySide6.QtGui import QDropEvent
 from editor.page_panel import drop_index
 
 
+def _masters(win) -> list:
+    """逐頁主版；裝訂補頁不計（Sprint 144：它承末頁主版，不代表任何節）。"""
+    return [p.master for p in win.layout_result.pages if not p.blank]
+
+
 def _drop_at(panel, x: float, y: float) -> None:
     """對面板送一次放下事件（QDropEvent 的 position 即 viewport 座標）。"""
     from PySide6.QtCore import QMimeData
@@ -37,15 +42,14 @@ def check_page_order(EditorWindow, chapter_path, paiban_path) -> None:
 
     # ── 兩節樣張 chapter-opening：頁 1＝B-部扉節、頁 2＝A-內文版節 ──
     win = EditorWindow(str(chapter_path))
-    assert [p.master for p in win.layout_result.pages] == ["B-部扉", "A-內文版"]
+    assert _masters(win) == ["B-部扉", "A-內文版"], _masters(win)
     assert win._section_head_pages() == [1, 2], win._section_head_pages()
 
     # 面板放下（來源列＝頁 2、放下點在所有縮圖之上＝插到最前）：走真 dropEvent
     panel = win._page_panel
     panel.setCurrentRow(1)
     _drop_at(panel, 0.0, -1000.0)
-    assert [p.master for p in win.layout_result.pages] == ["A-內文版", "B-部扉"], \
-        [p.master for p in win.layout_result.pages]
+    assert _masters(win) == ["A-內文版", "B-部扉"], _masters(win)
     assert win.doc.master == "A-內文版", "新首節主版須升格為 doc.master"
     assert win.page.number == 1, f"搬後未跳到新節首頁，得頁 {win.page.number}"
     msg = win.statusBar().currentMessage()
@@ -53,7 +57,7 @@ def check_page_order(EditorWindow, chapter_path, paiban_path) -> None:
 
     # 一步 undo 回原序（與文字、樣式編輯共用同一條歷史）
     win.session.undo()
-    assert [p.master for p in win.layout_result.pages] == ["B-部扉", "A-內文版"]
+    assert _masters(win) == ["B-部扉", "A-內文版"]
     assert win.doc.master == "B-部扉"
 
     # 放回原位：不佔 undo 步、據實提示
@@ -67,15 +71,15 @@ def check_page_order(EditorWindow, chapter_path, paiban_path) -> None:
 
     win.session.replace_document(with_cover(win.doc, win.template))
     assert win.layout_result.cover_pages == 1
-    before = [p.master for p in win.layout_result.pages]
+    before = _masters(win)
     win._reorder_pages(1, 3)
     assert "封面頁固定在最前" in win.statusBar().currentMessage()
-    assert [p.master for p in win.layout_result.pages] == before, "封面拖曳不應改版面"
+    assert _masters(win) == before, "封面拖曳不應改版面"
     assert win._section_head_pages() == [2, 3], win._section_head_pages()
 
     # ── 單節多頁真稿 paiban-xiaoji-ch1：非節首頁拒收並指名該搬哪一頁 ──
     win2 = EditorWindow(str(paiban_path))
-    assert len(win2.layout_result.pages) == 11
+    assert len(_masters(win2)) == 11
     assert win2._section_head_pages() == [1], win2._section_head_pages()
     doc_before = win2.doc
     win2._reorder_pages(3, 1)
@@ -83,10 +87,17 @@ def check_page_order(EditorWindow, chapter_path, paiban_path) -> None:
     assert "頁 3 不是節首" in msg2 and "請改拖頁 1" in msg2, msg2
     assert win2.doc is doc_before, "拒收時文件不得變動"
 
+    # 裝訂補頁不參與（Sprint 144）：末尾補的空白頁隨內文頁數自動增減，不是可搬的節
+    blank_no = next(p.number for p in win2.layout_result.pages if p.blank)
+    win2._reorder_pages(blank_no, 1)
+    msg3 = win2.statusBar().currentMessage()
+    assert "裝訂補頁不參與拖曳重排" in msg3, msg3
+    assert win2.doc is doc_before, "拒收時文件不得變動"
+
     for w in (win, win2):  # 退出安全：縮圖執行緒收工（closeEvent 同路徑）
         w._shutdown_thumbnails()
     print(
         "C41 頁面拖曳重排：插入位換算（單欄／多欄）＋面板 dropEvent 交回呼＋搬節後"
         "逐頁主版與 doc.master 跟隨＋跳到新節首頁＋一步 undo 回原序＋原位放下不佔"
-        "undo＋封面頁不參與＋非節首頁拒收並指名節首頁"
+        "undo＋封面頁不參與＋非節首頁拒收並指名節首頁＋裝訂補頁拒收"
     )

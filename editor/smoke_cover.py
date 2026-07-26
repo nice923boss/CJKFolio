@@ -18,7 +18,8 @@ def check_cover(EditorWindow, md_path, ROOT) -> None:
 
     # ── 匯入預設建封面（editor 路徑，Owner 需求） ──
     win = EditorWindow(str(ROOT / "samples" / "paiban-xiaoji-ch1.doc.json"))
-    before = len(win.layout_result.pages)
+    # 內文頁數一律不計裝訂補頁（Sprint 144：末尾補到 4 的倍數，見 C42）
+    before = sum(1 for p in win.layout_result.pages if not p.blank)
     win._import_manuscript_dialog(str(md_path))
     doc = win.doc
     assert doc.cover == "H-封面", f"匯入未建封面：{doc.cover}"
@@ -30,17 +31,20 @@ def check_cover(EditorWindow, md_path, ROOT) -> None:
     assert "封面 1 頁＋內文" in msg, msg  # 頁數分開報（總數會與頁碼對不上）
 
     # 內文分頁不因封面改變（封面只多一頁，內容逐頁不動）
-    body_pages = pages[1:]
+    body_pages = [p for p in pages[1:] if not p.blank]
     assert len(body_pages) == 11, f"內文應 11 頁，得 {len(body_pages)}"
     assert before == 11, before
+    assert sum(1 for p in pages if p.blank) == 1, "11 頁內文應補 1 頁湊足 12"
 
     # ── 頁碼指示器與跳頁：書頁語意 ──
     win._goto_page(1)
     assert win._page_label.text() == "封面", win._page_label.text()
+    # 總數含裝訂補頁（12＝11 內文＋1 補頁）：使用者要的就是「成冊那疊紙的頁數」，
+    # 補頁實體上翻得到，故算頁數但不印頁碼（Sprint 144）
     win._goto_page(2)
-    assert win._page_label.text() == "頁 1／11", win._page_label.text()
+    assert win._page_label.text() == "頁 1／12", win._page_label.text()
     win._goto_page(12)
-    assert win._page_label.text() == "頁 11／11", win._page_label.text()
+    assert win._page_label.text() == "頁 11／12", win._page_label.text()
 
     # ── 側別回歸：加封面不使內文側別翻轉 ──
     # 封面書頁號 0＝偶＝右頁（右翻書封面在右）；內文首頁書頁號 1＝奇＝左頁，

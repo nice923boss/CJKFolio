@@ -55,6 +55,7 @@ from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_actions import AiActionsMixin  # noqa: E402
 from editor.blank_doc import blank_document  # noqa: E402
 from editor.book_actions import BookActionsMixin  # noqa: E402
+from editor.book_binding import with_binding  # noqa: E402
 from editor.edit_actions import EditActionsMixin  # noqa: E402
 from editor.export_actions import ExportActionsMixin  # noqa: E402
 from editor.find_actions import FindActionsMixin  # noqa: E402
@@ -107,11 +108,13 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         template = load_template(str(TEMPLATE))
         if doc_path is None:  # 從零開始（Sprint 123）：未命名空白文件，匯入或打字起步
             self.session = EditSession(
-                blank_document(template, TEMPLATE.stem), template)
+                with_binding(blank_document(template, TEMPLATE.stem)), template)
             # 檔案不存在，僅取 parent 當置入圖／preflight 的相對路徑基準
             self._doc_path = ROOT / "未命名.doc.json"
         else:
-            self.session = EditSession(load_document(str(doc_path)), template)
+            # with_binding＝未宣告裝訂補頁者補足 4 的倍數（Sprint 144，編輯器層預設）
+            self.session = EditSession(
+                with_binding(load_document(str(doc_path))), template)
             self._doc_path = Path(doc_path)  # 置入圖相對路徑基準（preflight 匯出用）
         pages = self.layout_result.pages
         self.page = pages[0] if pages else None  # None＝空白文件畫空紙面（Sprint 123）
@@ -263,14 +266,24 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         可互動字格（keys 原樣入 item_map，編輯行為不變）；另一頁整頁改標
         ("facing", 頁號)＝點它跳頁（不進 item_map，單頁 hit-test 路徑永遠看不到其
         keys，故既有 C1〜C31 命中邏輯零影響）。純檢視：不改版面、不影響匯出。
+
+        空白側畫空紙面（Sprint 144，Owner 回饋「翻開來的目次就應該要是對頁檢視的
+        狀態，而不是單一頁面」）：帶封面的書冊，書頁1 的右鄰是封二、末偶頁的左鄰是
+        封三，實體上都翻得到那一面，故畫一張空紙使對頁恆為兩頁寬。封面自身例外（同
+        一回饋「目前封面是單獨一頁是正確」），不帶封面的文件也維持原本單邊顯示。
         """
         pages = self.layout_result.pages
-        left_no, right_no = spread_pages(self.page.number, len(pages),
-                                         self.layout_result.cover_pages)
+        cover_pages = self.layout_result.cover_pages
+        left_no, right_no = spread_pages(self.page.number, len(pages), cover_pages)
         page_w_px = self.template.page_width_mm / 25.4 * DPI
+        blank_facing = cover_pages > 0 and self.page.number > cover_pages
         item_map: dict = {}
         for pg_no, x_off in ((left_no, 0.0), (right_no, page_w_px)):
             if pg_no is None:  # 該側空白（頁1 左單邊、末偶頁右單邊）
+                if blank_facing:  # 空紙面：無 data(0) 故點擊不命中任何字格
+                    scene.addRect(x_off, 0, page_w_px,
+                                  self.template.page_height_mm / 25.4 * DPI,
+                                  QPen(QColor("#c8c8c8")), QBrush(QColor("white")))
                 continue
             pg = pages[pg_no - 1]
             try:

@@ -12,10 +12,10 @@ from editor.canvas import resolve_hit
 
 
 def check_blank_line(EditorWindow, doc_path) -> None:
-    win = EditorWindow(str(doc_path))  # 41 段 11 頁樣張
+    win = EditorWindow(str(doc_path))  # 41 段 11 頁樣張（＋1 頁裝訂補頁＝12）
     paras0 = len(win.doc.paragraphs)
     pages0 = len(win.layout_result.pages)
-    assert (paras0, pages0) == (41, 11), f"樣張應 41 段 11 頁，得 {paras0} 段 {pages0} 頁"
+    assert (paras0, pages0) == (41, 12), f"樣張應 41 段 12 頁，得 {paras0} 段 {pages0} 頁"
 
     # 守門一：無游標不插入（開窗即未選字格）
     assert win.cursor is None, "開窗不該自帶游標"
