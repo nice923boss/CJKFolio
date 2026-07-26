@@ -73,12 +73,14 @@ from editor.canvas_quality import (  # noqa: E402
 )
 from editor.canvas_view import CanvasView  # noqa: E402
 from editor.file_actions import FileActionsMixin  # noqa: E402
+from editor.footer_actions import FooterActionsMixin  # noqa: E402
 from editor.frame_box_actions import FrameBoxActionsMixin  # noqa: E402
 from editor.image_actions import ImageActionsMixin  # noqa: E402
 from editor.import_actions import ImportActionsMixin  # noqa: E402
 from editor.info_actions import InfoActionsMixin  # noqa: E402
 from editor.master_actions import MasterActionsMixin  # noqa: E402
 from editor.nav_actions import NavActionsMixin  # noqa: E402
+from editor.page_order_actions import PageOrderActionsMixin  # noqa: E402
 from editor.page_size_actions import PageSizeActionsMixin  # noqa: E402
 from editor.preflight_actions import PreflightActionsMixin  # noqa: E402
 from editor.style_actions import StyleActionsMixin  # noqa: E402
@@ -95,7 +97,8 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
                    ExportActionsMixin, ImageActionsMixin, FrameBoxActionsMixin,
                    ImportActionsMixin,
                    EditActionsMixin, FindActionsMixin, InfoActionsMixin,
-                   NavActionsMixin, MasterActionsMixin, BookActionsMixin,
+                   NavActionsMixin, MasterActionsMixin, PageOrderActionsMixin,
+                   FooterActionsMixin, BookActionsMixin,
                    PageSizeActionsMixin, FileActionsMixin, QMainWindow):
     def __init__(self, doc_path) -> None:
         super().__init__()

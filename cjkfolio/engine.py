@@ -59,6 +59,21 @@ _PRESENTATION_FORMS = {
     "︿": "〈", "﹀": "〉", "︻": "【", "︼": "】",
 }
 
+# 破折號（Sprint 142）：U+2014 EM DASH／U+2015 HORIZONTAL BAR。連續兩枚須**一起
+# 塑形**才連得起來，單枚逐格塑形會在接縫留缺口（量測 spikes 見 devlog：內建
+# Source Han Serif TC 的 vert 單枚 gid 58918 墨高 858/1000，字槽上下各留 0.071 em，
+# 兩格相鄰即中間空 0.142 em）。兩枚一起塑形取得連字 gid 65053，yadv −2000、
+# 墨高 1858/2000＝一條連續的兩格長線，正是 CLREQ 破折號佔兩格的形態。
+_DASHES = frozenset("—―")
+
+# 直排半形括號 → 全形（Sprint 142）：ASCII 括號在字型裡沒有 vert 直排字形，
+# 直排會維持半形直立（真稿末段「(完)」即此形態），且不在禁則字集內＝不吃行首
+# 行尾規則。轉全形後走與其他全形約物同一條路（vert 字形、禁則、擠壓）。
+# 只在直排轉；橫排的 ascii 括號屬 latin run（_is_run_char 收走），不經此表。
+_VERTICAL_BRACKETS = {
+    "(": "（", ")": "）", "[": "〔", "]": "〕", "{": "｛", "}": "｝",
+}
+
 
 @dataclass(frozen=True)
 class Cell:
@@ -186,6 +201,16 @@ def _flush_latin(run: str, out: list, char_style, vertical: bool, offsets,
     if not run:
         return
     end = start + len(run)
+    if vertical and len(run) >= 2 and set(run) == {"."}:
+        # 純句點串＝省略號的鍵盤代打（真稿 92 處，如「我...我想跟」）。列標記
+        # 「1.」與小數「2.0」含數字，不落此分支。走 latin 的話會被 _draw_rotated_latin
+        # 以 asc+desc 字條置中，句點墨跡貼基線＝旋轉後偏左（使用者回報的病灶）；
+        # 轉標準省略號 U+2026 走 cjk 字槽，vert 字形墨跡 ink_x=[−56,56] 自然置中。
+        # 三點一枚（U+2026 本身即三點），不足三點者進位為一枚。
+        for k in range(ceil(len(run) / 3)):
+            lo, hi = start + k * 3, min(start + (k + 1) * 3, end)
+            out.append(Cell("…", "cjk", 1, char_style, _span(offsets, lo, hi)))
+        return
     if vertical and _TCY_NUMERIC.fullmatch(run):
         out.append(Cell(run, "tcy", 1, char_style, _span(offsets, start, end)))
     elif vertical and run.isalpha() and run.isupper():
@@ -226,7 +251,11 @@ def tokenize(text: str, char_style=None, vertical: bool = True, offsets=None) ->
     cells: list = []
     run = ""
     run_start = 0
+    skip_next = False  # 破折號成對時吃掉下一枚
     for i, ch in enumerate(text):
+        if skip_next:
+            skip_next = False
+            continue
         if _is_run_char(ch, vertical):
             if not run:
                 run_start = i
@@ -236,8 +265,17 @@ def tokenize(text: str, char_style=None, vertical: bool = True, offsets=None) ->
         run = ""
         if ch in (" ", "　"):
             cells.append(Cell(ch, "space", 1, char_style, _span(offsets, i, i + 1)))
+        elif (vertical and ch in _DASHES and i + 1 < len(text)
+                and text[i + 1] in _DASHES):
+            # 成對破折號＝一格兩枚一起塑形（連字），佔兩個字槽（見 _DASHES 註）。
+            # 只吃兩枚：三枚以上時前兩枚成對、餘下者續判，字格總寬與逐字時相同，
+            # 故斷行容量與頁數不因本合併而變。
+            cells.append(Cell(text[i:i + 2], "cjk", 2, char_style,
+                              _span(offsets, i, i + 2)))
+            skip_next = True
         else:
-            cells.append(Cell(ch, "cjk", 1, char_style, _span(offsets, i, i + 1)))
+            cells.append(Cell(_VERTICAL_BRACKETS.get(ch, ch) if vertical else ch,
+                              "cjk", 1, char_style, _span(offsets, i, i + 1)))
     _flush_latin(run, cells, char_style, vertical, offsets, run_start)
     return cells
 

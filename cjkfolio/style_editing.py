@@ -21,6 +21,7 @@ from typing import Mapping, Optional
 from .styles import (
     CHARACTER_STYLE_FIELDS,
     COLOR_FIELDS,
+    FOOTER_ITEM_FIELDS,
     PARAGRAPH_STYLE_FIELDS,
     CharacterStyle,
     ColorSwatch,
@@ -309,6 +310,44 @@ def set_color(template: Template, name: str, changes: Mapping) -> Template:
     if new_swatch == swatch:
         return template
     return replace(template, colors={**template.colors, name: new_swatch})
+
+
+def set_footer_item(template: Template, master_name: str, item_name: str,
+                    changes: Mapping, *, all_masters: bool = False) -> Template:
+    """改書眉／頁碼元素的字面文字與位置，回傳新 Template（原模版不可變）。
+
+    Owner 需求（Sprint 142）：AI 指派錯了要能手動改右下角固定書名的文字、挪位置，
+    並一次挪完所有主版。故 changes 只開 FOOTER_ITEM_FIELDS 三欄：text（字面覆寫，
+    空白＝清掉回文件書名）、baseline_from_top_pt、outer_offset_pt。改 style 或 pages
+    屬版型結構（換字元樣式、改奇偶頁），不在此開放。
+
+    all_masters=True 套用到所有含同名元素的主版（批次移動位置）；False 只改指定主版。
+    未知主版或未知元素 KeyError（同 set_*_style 慣例）；不可編輯欄位 TemplateError；
+    空變更或等值變更 no-op 回原物件（不推 undo 步）。
+    """
+    coerced = {}
+    for key, value in changes.items():
+        if key not in FOOTER_ITEM_FIELDS:
+            raise TemplateError(
+                f"masters[{master_name}].footer[{item_name}] 不可編輯的欄位：{key}")
+        coerced[key] = FOOTER_ITEM_FIELDS[key](value)
+    template.masters[master_name].footer[item_name]  # 未知主版／元素快速失敗
+    if not coerced:
+        return template
+    masters, changed = {}, False
+    for mname, master in template.masters.items():
+        item = master.footer.get(item_name)
+        if item is None or (not all_masters and mname != master_name):
+            masters[mname] = master
+            continue
+        new_item = replace(item, **coerced)
+        if new_item == item:
+            masters[mname] = master
+            continue
+        masters[mname] = replace(
+            master, footer={**master.footer, item_name: new_item})
+        changed = True
+    return replace(template, masters=masters) if changed else template
 
 
 def remove_color(template: Template, name: str) -> Template:

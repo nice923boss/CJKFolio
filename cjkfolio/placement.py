@@ -68,6 +68,20 @@ def _cluster_char(text: str, cluster: int) -> str:
     return text[cluster] if 0 <= cluster < len(text) else ""
 
 
+def _cluster_text(text: str, infos, j: int) -> str:
+    """glyph j 的來源字元（連字時涵蓋整個 cluster；ToUnicode 用）。
+
+    塑形可能把多枚字元併成一枚字形（成對破折號的連字，Sprint 142），此時
+    text[cluster] 只取得第一枚，PDF 抽字會少一枚。cluster 在 ttb／ltr 這類
+    forward 方向單調遞增，故 glyph j 的來源區間＝[cluster_j, cluster_{j+1})。
+    """
+    lo = infos[j].cluster
+    if not 0 <= lo < len(text):
+        return ""
+    hi = infos[j + 1].cluster if j + 1 < len(infos) else len(text)
+    return text[lo:max(hi, lo + 1)]
+
+
 def ttb_char_placements(shaper, ch: str, axis_x_pt: float, cell_top_pt: float,
                         size_pt: float) -> list:
     """單一 CJK 字直排（vert）置於字槽：行軸置中、槽頂對齊（同 render._draw_ttb_char）。"""
@@ -75,9 +89,9 @@ def ttb_char_placements(shaper, ch: str, axis_x_pt: float, cell_top_pt: float,
     infos, poss = shaper.shape(ch, "ttb")
     out = []
     pen_x, pen_y = axis_x_pt, cell_top_pt
-    for info, pos in zip(infos, poss):
+    for j, (info, pos) in enumerate(zip(infos, poss)):
         out.append(GlyphPlacement(
-            info.codepoint, _cluster_char(ch, info.cluster),
+            info.codepoint, _cluster_text(ch, infos, j),
             pen_x + pos.x_offset * sf, pen_y - pos.y_offset * sf, size_pt,
         ))
         pen_x += pos.x_advance * sf

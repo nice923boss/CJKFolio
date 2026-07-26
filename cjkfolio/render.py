@@ -298,7 +298,7 @@ class PageRenderer:
                 continue
             if item.pages == "even" and page_odd:
                 continue
-            text = footer_texts.get(item.source, "")
+            text = item.text or footer_texts.get(item.source, "")  # 字面覆寫優先
             if not text:
                 continue
             style = template.character_styles[item.style]

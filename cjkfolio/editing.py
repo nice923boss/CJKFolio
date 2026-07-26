@@ -13,13 +13,20 @@ layout_document 的結果（wrap=False 為預設，既有輸出零變更）。
 游標座標系：DocCursor.caret＝段 text（normalize 前原字串）半開座標 [0, len]，
 與 Cell.span（Sprint 18 provenance）同座標系；插字與反查全在此座標系閉環。
 本檔為純文件編輯函式層；EditSession（undo／redo 會談控制器）自 Sprint 67 依行數
-紀律分檔移至 cjkfolio/session.py。
+紀律分檔移至 cjkfolio/session.py，節與分頁三函式（set_section_master／move_section／
+apply_page_starts）自 Sprint 142 同理移至 cjkfolio/section_editing.py（本檔再匯出）。
 """
 from dataclasses import dataclass, replace
 from typing import Optional
 
 from .document import Document, Paragraph, Run
 from .layout import LayoutResult
+# 節與分頁編輯（Sprint 142 依行數紀律分檔）在此再匯出，既有 import 路徑不變
+from .section_editing import (  # noqa: F401
+    apply_page_starts,
+    move_section,
+    set_section_master,
+)
 from .wrap import layout_with_wrap
 from .styles import Template
 
@@ -497,85 +504,6 @@ def change_paragraph_toc_entries(doc: Document, entries) -> Document:
         if (para.toc_title, para.toc_level) == (title, level):
             continue  # 等值 no-op
         paras[para_idx] = replace(para, toc_title=title, toc_level=level)
-        changed = True
-    return replace(doc, paragraphs=tuple(paras)) if changed else doc
-
-
-def set_section_master(
-    document: Document, para_idx: int, master: Optional[str]
-) -> Document:
-    """指派第 para_idx 段起的節式主版，回傳新 Document（不可變）。
-
-    節式主版模型（Sprint 51／52）：主版按「節」指派，非逐頁自由套。三種情形：
-
-    - para_idx==0 且段 0 無自帶 master：改的是首節預設主版 doc.master（寫回
-      meta.master），不設段落標記（首節主版存 doc.master，無節首標記可設）。
-    - para_idx==0 且段 0 自帶 master（自蓋首節）：改段 0 的節首標記；清成 None
-      即退回 doc.master 預設（有前設可承，不 raise）。
-    - para_idx>0：設 Paragraph.master 節首標記＝自該段起新開一頁並切主版
-      （None＝承前節，清標記併回前節）。同名亦強制分頁的語意由版面層處理，本
-      函式只管文件模型。
-
-    系統邊界快速失敗：para_idx 越界 raise IndexError；首節（段 0 無自帶 master）
-    清成 None（無前節可承）raise ValueError。等值為 no-op 回原物件。主版名是否存
-    在於模版不在此驗（純文件層），由 session 全文重排守門（raise KeyError，同
-    change_paragraph_style 慣例）。
-    """
-    if not 0 <= para_idx < len(document.paragraphs):
-        raise IndexError(
-            f"para_idx {para_idx} 超出段落範圍 0..{len(document.paragraphs) - 1}"
-        )
-    para = document.paragraphs[para_idx]
-    if para_idx == 0 and para.master is None:
-        # 首節：主版存於 doc.master（無節首標記可設；清 None 無前節可承）
-        if master is None:
-            raise ValueError("首節主版不得清除（無前節可承）")
-        if document.master == master:  # 主版無變化 no-op
-            return document
-        return replace(document, master=master)
-    if para.master == master:  # 節首標記無變化 no-op
-        return document
-    new_para = replace(para, master=master)
-    new_paras = (
-        document.paragraphs[:para_idx]
-        + (new_para,)
-        + document.paragraphs[para_idx + 1 :]
-    )
-    return replace(document, paragraphs=new_paras)
-
-
-def apply_page_starts(doc: Document, template: Template) -> Document:
-    """把「樣式宣告 starts_page」的段標成節首＝自該段起新頁（Sprint 141）。
-
-    章名大標之類的章首樣式排在前一章的內文後面（截圖：頁 78「第八章｜完美謀殺」
-    與內文同頁）不合書冊慣例。分頁在本專案只有一個機制：Paragraph.master 節首
-    標記（同名主版亦強制分頁，見 layout._sections），故本函式把該段的 master 設成
-    「該段所在節現行的主版名」＝換頁但不換主版。
-
-    §4.4 分工鐵律：換不換頁是模版的宣告（ParagraphStyle.starts_page），不從樣式名
-    或字級反推，也不由 AI 給數字。本函式只忠實執行模版宣告。
-
-    只加不減：已自帶 master 的段（使用者手動指派的部扉、個案扉頁等節首）原樣不動；
-    段 0 跳過（首節主版存 doc.master，段 0 補標記會多切一個空節）。樣式名不存在於
-    模版時跳過該段（純文件層不驗樣式存在性，由 layout_with_wrap 守門，同
-    change_paragraph_style 慣例）。無任何變更回原物件。
-
-    反向清除（樣式改回內文後把自動加的節首收回）不做：文件模型沒有記錄「這個節首
-    是自動加的還是使用者手動指派的」，清除會誤刪手動節首。見 GAPS #96。
-    """
-    paras = list(doc.paragraphs)
-    current = doc.master  # 該段所在節現行的主版名（節首標記逐段更新）
-    changed = False
-    for idx, para in enumerate(paras):
-        if para.master is not None:
-            current = para.master
-            continue  # 已是節首＝已換頁，不重複標記
-        if idx == 0:
-            continue  # 首節主版存 doc.master，無節首標記可設
-        style = template.paragraph_styles.get(para.style)
-        if style is None or not style.starts_page:
-            continue
-        paras[idx] = replace(para, master=current)
         changed = True
     return replace(doc, paragraphs=tuple(paras)) if changed else doc
 

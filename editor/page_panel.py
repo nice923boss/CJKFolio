@@ -19,7 +19,7 @@
 import time
 
 from PySide6.QtCore import Qt, QSize, QThread, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QListWidget, QListWidgetItem
 
 from cjkfolio.images import ImageError
@@ -93,21 +93,47 @@ class ThumbnailThread(QThread):
             self._generation, time.perf_counter() - t0, image_error_pages)
 
 
+def drop_index(bands, x: float, y: float) -> int:
+    """插入位＝流序上排在放下點之前的縮圖數（純函式，離屏可驗）。
+
+    bands＝各縮圖的 (top, bottom, 中心 x)，依流序。IconMode 會換行成多欄，故先比
+    列帶（整項在放下點上方＝在前）、同列帶內再比欄位（中心在放下點左側＝在前）。
+    放下點落在所有縮圖之後回 len(bands)＝搬到最末。
+    """
+    return sum(1 for top, bottom, cx in bands
+               if bottom < y or (top <= y and cx < x))
+
+
 class PagePanel(QListWidget):
     """縮圖列表：icon 上、「頁 N」下（IconMode）；點選＝跳頁回呼。
 
     只有真點擊（itemClicked）觸發跳頁；程式面 set_current 不觸發，
     不會與 _rebuild 互相遞迴。
+
+    拖曳重排（Sprint 142，給 on_reorder 才開）：本面板不動 Qt 的模型，只把
+    （來源頁號, 插入位頁號）交回呼，由文件層搬節後全書重排、面板整份重建。故
+    dropEvent 一律 ignore（讓 QDrag 收 IgnoreAction，Qt 不會自行刪列），插入線
+    也自繪（IconMode 的內建 drop indicator 恆為 OnViewport，畫不出插入位）。
     """
 
-    def __init__(self, on_goto, on_context_menu=None, parent=None) -> None:
+    def __init__(self, on_goto, on_context_menu=None, on_reorder=None,
+                 parent=None) -> None:
         super().__init__(parent)
         self._on_goto = on_goto
         self._on_context_menu = on_context_menu
+        self._on_reorder = on_reorder
+        self._drop_row = -1  # 拖曳途中的插入位（-1＝無）
         self.setMinimumWidth(THUMB_W + 34)  # icon＋捲軸與邊距（單欄下限）
         self.setViewMode(QListWidget.ViewMode.IconMode)
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.setMovement(QListWidget.Movement.Static)
+        if on_reorder is None:
+            self.setMovement(QListWidget.Movement.Static)
+        else:
+            # Static 會連拖曳一起關掉（QListView::setMovement 內設 dragEnabled），
+            # 故改 Snap；順序必須在 setDragDropMode 之前，否則旗標被蓋回去。
+            self.setMovement(QListWidget.Movement.Snap)
+            self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+            self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setWrapping(True)
         self.setIconSize(QSize(THUMB_W, THUMB_H))
         self.setUniformItemSizes(True)
@@ -123,6 +149,70 @@ class PagePanel(QListWidget):
         if row < 0:
             return
         self._on_context_menu(row + 1, self.viewport().mapToGlobal(pos))
+
+    # ---------- 拖曳重排 ----------
+
+    def _row_rect(self, row: int):
+        """第 row 列的 viewport 矩形；越界回 None。"""
+        if 0 <= row < self.count():
+            return self.visualItemRect(self.item(row))
+        return None
+
+    def drop_row_at(self, x: float, y: float) -> int:
+        """放下點（viewport 座標）對應的插入位（0..頁數）。"""
+        bands = []
+        for row in range(self.count()):
+            r = self.visualItemRect(self.item(row))
+            bands.append((r.top(), r.bottom(), r.center().x()))
+        return drop_index(bands, x, y)
+
+    def _marker_line(self):
+        """插入線兩端點 (x1, y1, x2, y2)：單欄畫上緣橫線、多欄畫前緣直線。"""
+        n = self.count()
+        if not 0 <= self._drop_row <= n or n == 0:
+            return None
+        tail = self._drop_row >= n  # 放到最末：畫在末項的後緣
+        rect = self._row_rect(n - 1 if tail else self._drop_row)
+        prev = self._row_rect((n - 1 if tail else self._drop_row) - 1)
+        if prev is not None and prev.top() == rect.top():  # 與前項同列帶＝多欄
+            x = rect.right() if tail else rect.left()
+            return (x, rect.top(), x, rect.bottom())
+        y = rect.bottom() if tail else rect.top()
+        return (rect.left(), y, rect.right(), y)
+
+    def _set_drop_row(self, row: int) -> None:
+        if row != self._drop_row:
+            self._drop_row = row
+            self.viewport().update()
+
+    def dragMoveEvent(self, event) -> None:
+        super().dragMoveEvent(event)
+        pos = event.position()
+        self._set_drop_row(self.drop_row_at(pos.x(), pos.y()))
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_drop_row(-1)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        """把（來源頁號, 插入位頁號）交回呼；Qt 的內建搬移一律不執行。"""
+        pos = event.position()
+        dst = self.drop_row_at(pos.x(), pos.y())
+        src = self.currentRow()
+        self._set_drop_row(-1)
+        event.ignore()  # 搬的是文件的節，不是清單的列（見類別說明）
+        if self._on_reorder is not None and src >= 0:
+            self._on_reorder(src + 1, dst + 1)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        line = self._marker_line()
+        if line is None:
+            return
+        painter = QPainter(self.viewport())
+        painter.setPen(QPen(QColor("#0a66c2"), 3))
+        painter.drawLine(*line)
+        painter.end()
 
     def sizeHint(self) -> QSize:
         """dock 初始寬取單欄縮圖寬（QListView 預設 sizeHint 約 256px，會把

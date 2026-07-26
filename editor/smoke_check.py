@@ -16,22 +16,11 @@
   C13 改名入口＋色票面板（Sprint 78）：改名全書同步、色票新增／改值／刪除守門
   C14 AI 指派校正 UI（Sprint 79）：逐段確認與批次改派（單一 undo 步）、警告不沉默
   C15 模版庫面板（Sprint 80）：清單套用整份模版（壞檔守門）＋草稿併入入口
-  C16〜C18 preflight 面板三分區／背景執行緒與快取／X-4 與 ICC 選取、C23 字型授權分區
-     （Sprint 87〜112，實作抽於 editor/smoke_preflight.py：本檔逾 800 行上限）
-  C19 畫布置圖 UI（Sprint 102，實作抽於 editor/smoke_images.py）：拖放置入、
-     拖曳移動、拖角等比縮放、Delete 移除，各一步 undo；缺圖不炸
-  C38 文字框整框增刪移（Sprint 136，實作抽於 editor/smoke_frame_box.py）：框空白
-     處選整框、拖框邊移動與拖角改大小、Delete 與「刪到最後一字」移除整框、新增
-     文字框、滿版圖蓋住書名框時的選單入口與邊帶疊序
-  C26 畫布縮放平移（Sprint 124，實作抽於 editor/smoke_view.py）：檢視選單與
-     快捷鍵、Ctrl+滾輪／Shift+滾輪、開窗整頁 fit、重繪保留視角、拖曳平移
-  C27 頁面導航與縮圖面板（Sprint 125，實作抽於 editor/smoke_nav.py）：頁碼
-     指示器、版面選單、面板點選跳頁、背景縮圖渲染與世代守門
-  C28 檔案生命週期（Sprint 126，實作抽於 editor/smoke_file.py）：儲存／另存
-     ／開啟／新建、髒標記與關閉確認、round-trip 與守門
-  C29 轉存 PDF 介面（Sprint 127，實作抽於 editor/smoke_export.py）：檔案選單
-     轉存項＋Ctrl+E、空白守門、背景 export_pdf 真產出成品（PyMuPDF 讀回驗）、
-     X-4 未選 ICC 擋 accept、取消與重入據實提示
+  C16 以後的各項（preflight 面板、畫布置圖、縮放平移、頁面導航、檔案生命週期、
+     轉存 PDF、尋找取代、文件資訊、對頁檢視、主版指派、書冊、封面、預覽畫質、
+     文字框整框增刪移、成品尺寸與印前設定、手動空行、頁面拖曳重排、書眉與頁碼）
+     實作各自抽於 editor/smoke_*.py（本檔逾 800 行上限），逐項驗證內容見各該檔
+     docstring；本檔只負責註冊與彙總，避免同一份清單兩處維護而失準。
 視覺對位與 IME 直排輸入需真視窗與 Owner 鍵盤實測（GAPS #19），非本驗證範圍。
 """
 import json
@@ -68,10 +57,12 @@ from editor.smoke_images import check_images, check_wrap_ui  # noqa: E402
 from editor.smoke_import import check_import  # noqa: E402
 from editor.smoke_file import check_file  # noqa: E402
 from editor.smoke_export import check_export  # noqa: E402
+from editor.smoke_footer import check_footer  # noqa: E402
 from editor.smoke_find import check_find  # noqa: E402
 from editor.smoke_frame_box import check_frame_box  # noqa: E402
 from editor.smoke_info import check_info  # noqa: E402
 from editor.smoke_master import check_master  # noqa: E402
+from editor.smoke_page_order import check_page_order  # noqa: E402
 from editor.smoke_nav import check_nav  # noqa: E402
 from editor.smoke_preflight import check_preflight  # noqa: E402
 from editor.smoke_spread import check_spread  # noqa: E402
@@ -738,6 +729,13 @@ def main() -> int:
     # C40 手動空行增刪（Sprint 141，抽於 editor/smoke_blank_line.py）
     check_blank_line(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
 
+    # C41 頁面拖曳重排（Sprint 142，抽於 editor/smoke_page_order.py）
+    check_page_order(EditorWindow, ROOT / "samples" / "chapter-opening.doc.json",
+                     ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+
+    # C42 書眉與頁碼改字挪位置（Sprint 142，抽於 editor/smoke_footer.py）
+    check_footer(EditorWindow, ROOT / "samples" / "paiban-xiaoji-ch1.doc.json")
+
     # 退出安全：各 C 建的視窗其縮圖執行緒可能仍在跑（QThread 運行中被銷毀
     # 會 abort），統一收攏後才收尾
     for widget in QApplication.instance().topLevelWidgets():
@@ -783,6 +781,10 @@ def main() -> int:
         "只寫本機檔／轉存對話框以印前設定起始且上限確實送達 export_pdf）"
         "＋手動空行增刪（無游標／文字框／段 0／前段非空四道守門不動文件／插入後目標段"
         "下移一槽與游標跟隨／狀態列報頁數變化／移除復原／undo 一步回原）"
+        "＋頁面拖曳重排（面板放下換算插入位／搬整節後逐頁主版與 doc.master 跟隨／跳新"
+        "節首頁／一步 undo ／原位放下不佔 undo ／封面不參與／非節首頁拒收並指名節首頁）"
+        "＋書眉與頁碼（對話框只回改過的欄位而沒動就按確定不佔 undo ／mm↔pt 換算／頁碼"
+        "元素停用文字欄／以目前頁主版為對象／批次套多主版仍只一步／封面無頁腳據實拒收）"
         "（IME 直排組字、視覺對位與拖曳手感待 Owner 真視窗）"
     )
     return 0

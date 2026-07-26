@@ -43,6 +43,7 @@ from .editing import (
     change_paragraph_styles,
     change_paragraph_toc_entries,
     locate_cell,
+    move_section,
     rename_char_style_refs,
     rename_paragraph_style_refs,
     set_section_master,
@@ -81,6 +82,7 @@ from .style_editing import (
     rename_paragraph_style,
     set_character_style,
     set_color,
+    set_footer_item,
     set_paragraph_style,
 )
 from .style_editing import add_color as add_color_swatch
@@ -283,6 +285,15 @@ class EditSession:
         return self._commit_pair(
             set_section_master(self._document, para_idx, master), self._template)
 
+    def move_section(self, src_index: int, dst_index: int):
+        """把整節搬到另一個節序位置入單一 undo 步（Sprint 142 頁面拖曳重排）。
+
+        節序（非版面頁號）由呼叫端換算：頁面是流排結果，可搬的最小完整單位是節。
+        原位放下＝等值 no-op 回 None（不推一步看不出差別的 undo）。節序越界由
+        move_section IndexError 快速失敗、狀態不變不入歷史。"""
+        return self._commit_pair(
+            move_section(self._document, src_index, dst_index), self._template)
+
     def replace_document(self, document: Document):
         """整份換文件（Sprint 107 稿件匯入）：游標歸零，入統一 undo 歷史。
 
@@ -381,6 +392,16 @@ class EditSession:
         字元樣式變更不動斷行、由渲染層取新定義。"""
         return self._commit_template(
             set_character_style(self._template, name, changes))
+
+    def update_footer_item(self, master_name: str, item_name: str,
+                           changes: Mapping, *, all_masters: bool = False):
+        """改書眉／頁碼的字面文字與位置（Sprint 142）：入統一 undo 歷史，一步可還原。
+
+        all_masters=True＝批次挪所有含同名元素的主版，仍只推一步 undo（Owner 眼中
+        是一次操作）。書眉不參與斷行幾何，重排仍照 _commit_template 紀律先跑一次。"""
+        return self._commit_template(set_footer_item(
+            self._template, master_name, item_name, changes,
+            all_masters=all_masters))
 
     def add_para_style(self, name: str, decl: Mapping):
         """新增段落樣式（Sprint 69）：入統一 undo 歷史，新樣式立即可套用。"""

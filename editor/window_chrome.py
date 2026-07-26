@@ -97,6 +97,9 @@ class WindowChromeMixin:
         trim_action = QAction("成品尺寸…", self)  # 換開本（Sprint 140 甲）
         trim_action.triggered.connect(lambda: self._page_size_dialog())
         layout_menu.addAction(trim_action)
+        footer_action = QAction("書眉與頁碼…", self)  # 改字與挪位置（Sprint 142）
+        footer_action.triggered.connect(lambda: self._footer_dialog())
+        layout_menu.addAction(footer_action)
 
         view_menu = self.menuBar().addMenu("檢視")
         for label, keys, handler in (
@@ -123,8 +126,9 @@ class WindowChromeMixin:
         tools_menu.addAction(info_action)
 
         page_dock = QDockWidget("頁面", self)  # 縮圖面板（Sprint 125）
-        self._page_panel = PagePanel(
-            self._goto_page, on_context_menu=self._page_context_menu)
+        self._page_panel = PagePanel(       # 拖曳重排（Sprint 142）：搬的是整節
+            self._goto_page, on_context_menu=self._page_context_menu,
+            on_reorder=self._reorder_pages)
         page_dock.setWidget(self._page_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, page_dock)
 

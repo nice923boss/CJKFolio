@@ -27,6 +27,17 @@ def _opt_str(value) -> Optional[str]:
     return None if value is None else str(value)
 
 
+def _footer_text(value) -> Optional[str]:
+    """書眉字面覆寫正規化：缺、null、空白字串一律回 None（＝照 source 取文件值）。
+
+    單一「無覆寫」表示法，讓編輯層清空欄位與模版沒寫此鍵得到同一個模型。
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 class TemplateError(ValueError):
     """模版 JSON 不合 schema。"""
 
@@ -210,6 +221,16 @@ class FooterItem:
     baseline_from_top_pt: float
     outer_offset_pt: float  # 文字靠書口側的邊到頁面書口邊的距離
     pages: str = "all"      # "all" | "odd" | "even"
+    text: Optional[str] = None  # 字面覆寫（Sprint 142）；None＝照 source 取文件值
+
+
+# 書眉可編輯欄位（載入與 style_editing.set_footer_item 共用型別轉換，同上方樣式慣例）。
+# style／source／pages 不在此：換字元樣式或改奇偶頁屬版型結構，非 Owner 的「改字、挪位置」。
+FOOTER_ITEM_FIELDS: Mapping[str, Callable] = {
+    "text": _footer_text,
+    "baseline_from_top_pt": float,
+    "outer_offset_pt": float,
+}
 
 
 KNOWN_FRAME_KINDS = frozenset({"cip-box"})  # v1 只有 CIP 細框
@@ -378,6 +399,7 @@ def _footer_item(name: str, d: dict, ctx: str) -> FooterItem:
         baseline_from_top_pt=float(_require(d, "baseline_from_top_pt", ctx)),
         outer_offset_pt=float(_require(d, "outer_offset_pt", ctx)),
         pages=str(d.get("pages", "all")),
+        text=_footer_text(d.get("text")),
     )
 
 
@@ -642,13 +664,16 @@ def _swatch_to_dict(swatch: ColorSwatch) -> dict:
 
 
 def _footer_item_to_dict(item: FooterItem) -> dict:
-    return {
+    out = {
         "style": item.style,
         "source": item.source,
         "baseline_from_top_pt": item.baseline_from_top_pt,
         "outer_offset_pt": item.outer_offset_pt,
         "pages": item.pages,
     }
+    if item.text is not None:  # 無覆寫時不寫此鍵（既有模版原樣往返）
+        out["text"] = item.text
+    return out
 
 
 def _frame_to_dict(f: FrameSpec) -> dict:

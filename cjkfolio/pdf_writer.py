@@ -290,7 +290,8 @@ class _PdfPageWriter:
         font = self._font_for(key)
         for pl in placements:
             if pl.gid == 0:  # 缺字不沉默：以 .notdef 輸出並警告
-                label = f"字元 {pl.ch!r}（U+{ord(pl.ch):04X}）" if pl.ch else "未知字元"
+                # pl.ch 可能是整個 cluster（連字，Sprint 142），取首枚報碼位
+                label = f"字元 {pl.ch!r}（U+{ord(pl.ch[0]):04X}）" if pl.ch else "未知字元"
                 msg = f"{label} 在 {Path(key[0]).name} 無字形，以 .notdef 輸出"
                 if msg not in self.notdef_warnings:
                     self.notdef_warnings.append(msg)
@@ -309,7 +310,7 @@ class _PdfPageWriter:
                 continue
             if item.pages == "even" and page_odd:
                 continue
-            text = footer_texts.get(item.source, "")
+            text = item.text or footer_texts.get(item.source, "")  # 字面覆寫優先
             if not text:
                 continue
             style = template.character_styles[item.style]
