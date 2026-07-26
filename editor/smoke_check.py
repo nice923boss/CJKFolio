@@ -294,7 +294,8 @@ def main() -> int:
         "PgUp／PgDn 換頁（含首末頁停留）"
     )
 
-    # C9 AI 設定面板（Sprint 63）：三欄位 round-trip、金鑰遮罩、壞檔警示不 crash
+    # C9 AI 設定面板（Sprint 63）：欄位 round-trip、金鑰遮罩、壞檔警示不 crash
+    # Sprint 143 加驗每分鐘請求上限（預設值帶入＋改值存得回設定檔）
     from PySide6.QtWidgets import QLineEdit
 
     from cjkfolio.ai_config import load_ai_config
@@ -305,13 +306,16 @@ def main() -> int:
         dlg = AiConfigDialog(config_path=cfg_path)
         assert dlg._api_key.echoMode() == QLineEdit.EchoMode.Password, "金鑰欄未遮罩"
         assert dlg.current_config().base_url == "" and not dlg._notice.text()
+        assert dlg._rpm.value() == 40, "每分鐘請求上限未帶入預設值"
         dlg._base_url.setText("http://localhost:8000/v1")
         dlg._api_key.setText("測試金鑰-abc")
         dlg._model.setText("qwen3-32b")
+        dlg._rpm.setValue(25)  # Sprint 143：限額因供應商而異，故做成欄位
         dlg._on_save()
         saved = load_ai_config(cfg_path)
         assert (saved.base_url, saved.api_key, saved.model) == (
             "http://localhost:8000/v1", "測試金鑰-abc", "qwen3-32b"), "面板儲存 round-trip 失敗"
+        assert saved.requests_per_minute == 25, "每分鐘請求上限未存進設定檔"
         dlg2 = AiConfigDialog(config_path=cfg_path)  # 既有值帶入
         assert dlg2.current_config() == saved
         cfg_path.write_text("{壞 JSON", encoding="utf-8")
@@ -324,7 +328,8 @@ def main() -> int:
         dlg4 = AiConfigDialog(config_path=DEFAULT_CONFIG_PATH)
         cfg4 = dlg4.current_config()
         real_loaded = f"；R5 真實設定檔載入欄位非空數＝{sum(bool(v) for v in (cfg4.base_url, cfg4.api_key, cfg4.model))}/3（值零輸出）"
-    print(f"C9 AI 設定面板：round-trip 三欄位全對、金鑰遮罩、壞檔警示不含值{real_loaded}")
+    print(f"C9 AI 設定面板：round-trip 三欄位全對、每分鐘請求上限預設 40 且改 25 存得回"
+          f"、金鑰遮罩、壞檔警示不含值{real_loaded}")
 
     # C10 樣式面板（Sprint 64）：點選套段落／字元樣式至游標段／游標字、undo 可回
     hit10 = resolve_hit(win.doc, win.page, *win.cursor)  # C5 游標在內文「試」

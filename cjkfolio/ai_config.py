@@ -1,4 +1,4 @@
-"""AI 設定檔層（Sprint 56，§4.4 LLM 介接）：Base URL／API Key／Model 三欄位。
+"""AI 設定檔層（Sprint 56，§4.4 LLM 介接）：Base URL／API Key／Model 與送出速率上限。
 
 金鑰紅線（§4.4／GAPS #6）：
 - 預設一律空值；設定只存本機檔（慣例路徑 local/ai-config.local.json，local/
@@ -6,13 +6,18 @@
 - 錯誤訊息不回帶欄位值（金鑰不入 log）。
 - 未設定（缺檔＝空值）不擋流程：AI 為選配增強，核心排版與手動指派完全可用。
 
-面板 UI（真視窗三欄位）屬 Phase 2 編輯器工程；本層為其資料面。
+requests_per_minute（Sprint 143）：每分鐘送出上限，服務端的限額因供應商而異，
+故做成設定而非寫死常數（0＝不節流，給無限額的自架 endpoint）。
+
+面板 UI（真視窗欄位）屬 Phase 2 編輯器工程；本層為其資料面。
 """
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-_FIELDS = ("base_url", "api_key", "model")
+# 欄位 → 型別（載入守門用）；預設值以 AiConfig 的欄位預設為唯一真相。
+_FIELDS = {"base_url": str, "api_key": str, "model": str, "requests_per_minute": int}
+_TYPE_NAMES = {str: "字串", int: "整數"}
 
 
 class AiConfigError(ValueError):
@@ -24,13 +29,15 @@ class AiConfig:
     base_url: str = ""
     api_key: str = ""
     model: str = ""
+    requests_per_minute: int = 40
 
 
 def load_ai_config(path) -> AiConfig:
     """讀取本機 AI 設定：缺檔回全空預設（不擋流程）；壞檔明確錯誤（不沉默）。
 
-    未知鍵容忍（向前相容）；缺鍵補空字串。錯誤訊息只含欄位名與型別，
-    不回帶欄位值（金鑰紅線）。
+    未知鍵容忍（向前相容）；缺鍵補該欄位預設（Sprint 143 前寫的設定檔沒有
+    requests_per_minute，補預設 40 而非 0，否則舊檔會靜默變成不節流）。
+    錯誤訊息只含欄位名與型別，不回帶欄位值（金鑰紅線）。
     """
     p = Path(path)
     if not p.exists():
@@ -41,19 +48,25 @@ def load_ai_config(path) -> AiConfig:
         raise AiConfigError(f"讀取 AI 設定檔失敗 {p}：{e}") from e
     if not isinstance(data, dict):
         raise AiConfigError(f"AI 設定檔 {p} 需為 JSON 物件")
+    defaults = AiConfig()
     values = {}
-    for key in _FIELDS:
-        v = data.get(key, "")
-        if not isinstance(v, str):
+    for key, want in _FIELDS.items():
+        v = data.get(key, getattr(defaults, key))
+        # 真布林是 int 的子類，True 會被當成每分鐘 1 次；型別一律取精確相等
+        if type(v) is not want:
             raise AiConfigError(
-                f"AI 設定檔 {p} 欄位 {key} 需為字串（得到 {type(v).__name__}）"
+                f"AI 設定檔 {p} 欄位 {key} 需為{_TYPE_NAMES[want]}"
+                f"（得到 {type(v).__name__}）"
             )
         values[key] = v
+    if values["requests_per_minute"] < 0:
+        raise AiConfigError(
+            f"AI 設定檔 {p} 欄位 requests_per_minute 需為 ≥0 整數（0＝不節流）")
     return AiConfig(**values)
 
 
 def save_ai_config(cfg: AiConfig, path) -> None:
-    """寫入本機 AI 設定（建立父目錄；只序列化三欄位）。"""
+    """寫入本機 AI 設定（建立父目錄；只序列化 AiConfig 宣告的欄位）。"""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(

@@ -11,11 +11,19 @@ AI 為選配增強：批次失敗（網路／解析）即該批降級 None（維
 或 None。**頁碼不在其中**，AI 一個數字都不出：頁碼由 toc.document_with_toc 以兩趟
 分頁確定性算出（同分工鐵律）。層級一律由 AI 顯式宣告後交人工校正，引擎不從樣式名
 或字級反推階層（同 document.Paragraph.toc_title 的既有紀律）。
+
+送出節流與重試（Sprint 143）：批次送出受 _Pacer 的滑動視窗節流（每分鐘至多
+config.requests_per_minute 次），且暫時性失敗（503／429／5xx／逾時／連線失敗）
+退避重試而非直接降級，因為降級就是「這批段落維持原樣式」，對使用者而言等於指派
+沒做完，能重試就不該讓一次 503 定生死。重試同樣走節流計數，故不會偷偷超過上限。
 """
 import dataclasses
 import json
 import re
+import time
+import urllib.error
 import urllib.request
+from collections import deque
 from dataclasses import dataclass
 
 from .ai_config import AiConfig
@@ -23,6 +31,14 @@ from .document import Document
 
 _THINK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
 _ARRAY_RE = re.compile(r"\[[\s\S]*\]")
+
+# 值得重試的 HTTP 狀態：伺服器端暫時性，同一份輸入再送一次有機會成功。
+# 401／403（金鑰錯）、400（請求壞）、404（路徑錯）不在其中：重試必然重現。
+_RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_MAX_RETRIES = 3          # 一批最多重送 3 次（合計最多 4 次送出）
+_BACKOFF_BASE = 5.0       # 指數退避 5、10、20 秒
+_BACKOFF_MAX = 60.0       # 退避與 Retry-After 的共同上限（背景執行緒不可無限等）
+_WINDOW = 60.0            # 節流視窗＝一分鐘
 
 
 @dataclass(frozen=True)
@@ -44,6 +60,95 @@ def _post_json(url: str, headers: dict, body: bytes, timeout: float) -> dict:
     req = urllib.request.Request(url, data=body, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+class _Pacer:
+    """送出節流器：每分鐘至多 per_minute 次（滑動視窗）；now／sleep 可注入。
+
+    視窗記的是**實際送出**的時刻，重試也記一筆，故重試不會偷偷超過上限。
+    per_minute <= 0＝不節流（無限額的自架 endpoint）。
+    退避等待也走本物件的 sleep，測試注入一份假時鐘即可全程零真實等待。
+    """
+
+    def __init__(self, per_minute: int, *, now=time.monotonic, sleep=time.sleep) -> None:
+        self._per_minute = per_minute
+        self._now = now
+        self._sleep = sleep
+        self._sent = deque()   # 視窗內的送出時刻（單調遞增）
+
+    def wait(self) -> float:
+        """必要時等到視窗有空位再放行，並記下這次送出；回實際等待秒數。"""
+        waited = 0.0
+        while self._per_minute > 0:
+            self._expire()
+            if len(self._sent) < self._per_minute:
+                break
+            gap = _WINDOW - (self._now() - self._sent[0])
+            self.sleep(gap)
+            waited += gap
+            # 剛才就是為了等這一筆過期才睡的，直接汰除而不再比時刻：時鐘解析度
+            # 不足時（gap 小到加不進浮點時刻）比時刻會永遠汰不掉，變成空轉
+            self._sent.popleft()
+        self._sent.append(self._now())
+        return waited
+
+    def sleep(self, seconds: float) -> None:
+        """退避等待（重試用）；與節流共用同一個可注入的 sleep。"""
+        if seconds > 0:
+            self._sleep(seconds)
+
+    def _expire(self) -> None:
+        now = self._now()
+        while self._sent and now - self._sent[0] >= _WINDOW:
+            self._sent.popleft()
+
+
+def _retry_after(exc) -> float:
+    """伺服器指定的 Retry-After 秒數；無／不是純秒數（HTTP-date 形態）回 -1。"""
+    headers = getattr(exc, "headers", None)
+    raw = headers.get("Retry-After") if headers is not None else None
+    try:
+        return min(max(float(raw), 0.0), _BACKOFF_MAX)
+    except (TypeError, ValueError):
+        return -1.0
+
+
+def _retry_wait(exc: Exception, attempt: int):
+    """可重試就回等待秒數，不可重試回 None。
+
+    可重試＝伺服器端暫時性（服務不可用、過量、逾時、連線失敗）。回應格式錯誤
+    （ValueError／KeyError）不重試：同一份輸入必然重現，重試只是白花配額。
+    伺服器有給 Retry-After 就照它的（上限 _BACKOFF_MAX），沒有才用指數退避。
+    """
+    if isinstance(exc, urllib.error.HTTPError):   # 是 URLError 的子類，先判
+        if exc.code not in _RETRY_STATUS:
+            return None
+        after = _retry_after(exc)
+        if after >= 0:
+            return after
+    elif not isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError)):
+        return None
+    return min(_BACKOFF_BASE * 2 ** attempt, _BACKOFF_MAX)
+
+
+def _post_with_retry(post, args, pacer: _Pacer, note) -> dict:
+    """送出一批；暫時性失敗退避重試，重試次數用完或不可重試即上拋（由上層降級）。
+
+    note(exc, 第幾次, 等待秒數)＝據實記錄每次重試（警告不沉默：使用者要看得到
+    「試過了、等了多久」，不是只看到最後一次的錯誤訊息）。
+    """
+    attempt = 0
+    while True:
+        pacer.wait()
+        try:
+            return post(*args)
+        except Exception as exc:
+            wait = _retry_wait(exc, attempt) if attempt < _MAX_RETRIES else None
+            if wait is None:
+                raise
+            note(exc, attempt + 1, wait)
+            pacer.sleep(wait)
+            attempt += 1
 
 
 def _system_prompt(candidates, default_style: str, toc_levels=()) -> str:
@@ -167,16 +272,22 @@ def suggest_styles(
     timeout: float = 300.0,
     transport=None,
     toc_levels=(),
+    pacer=None,
 ) -> SuggestResult:
     """對每段文字取得樣式建議；批次失敗降級該批 None 並列警告（不擋流程）。
 
     toc_levels＝模版 auto_toc.level_hints()（選配）：把本書已宣告的目次層級語意
     寫進 prompt，未帶則退回通則說明（見 _level_prompt）。
+
+    送出速率取 config.requests_per_minute（Sprint 143）：節流視窗只涵蓋這一次
+    呼叫，同一把金鑰若同時被別的程式或另一次指派使用，加總仍可能超過服務端限額
+    （GAPS #101）。pacer 注入＝測試用假時鐘（注入時 config 的速率不再生效）。
     """
     for field in ("base_url", "model"):
         if not getattr(config, field):
             raise ValueError(f"AI 設定不完整：{field} 為空（見 local/ai-config.local.json）")
     post = transport or _post_json
+    gate = pacer if pacer is not None else _Pacer(config.requests_per_minute)
     url = config.base_url.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if config.api_key:
@@ -200,16 +311,26 @@ def suggest_styles(
             "temperature": 0.2,
             "max_tokens": 4000,
         }).encode("utf-8")
+        label = f"批次 {batches}（段 {start}〜{start + len(bucket) - 1}）"
+        retried = []
+
+        def note(exc, nth, wait, label=label):
+            """重試據實入警告列（成功收尾也留著：使用者要看得到中途發生過什麼）。"""
+            retried.append(nth)
+            warnings.append(_sanitize(
+                f"{label}第 {nth} 次送出失敗，{wait:.0f} 秒後重試：{exc}",
+                config.api_key))
+
         try:
-            payload = post(url, headers, body, timeout)
+            payload = _post_with_retry(post, (url, headers, body, timeout), gate, note)
             slots, toc_slots, batch_warnings = _parse_assignments(
                 payload, len(bucket), candidate_set)
         except Exception as exc:  # 降級不擋流程（§4.4），警告不沉默
             # 該批樣式與目錄條目一併維持 None：目錄條目源自同一次回應，
             # 回應沒回來就沒有半份可信的目錄建議。
+            tried = f"（已送出 {len(retried) + 1} 次）" if retried else ""
             warnings.append(_sanitize(
-                f"批次 {batches}（段 {start}〜{start + len(bucket) - 1}）AI 指派失敗，"
-                f"維持原樣式：{exc}", config.api_key))
+                f"{label}AI 指派失敗{tried}，維持原樣式：{exc}", config.api_key))
             continue
         warnings.extend(_sanitize(w, config.api_key) for w in batch_warnings)
         assignments[start:start + len(bucket)] = slots

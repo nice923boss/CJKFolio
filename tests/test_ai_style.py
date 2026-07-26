@@ -1,7 +1,9 @@
 """AI 輔助樣式指派（cjkfolio.ai_style）：建議層與降級防禦（PLAN §4.4）。
 
 基線零網路：transport 一律注入假回應；真 endpoint 驗收屬 CLI R5（不入基線）。
+基線零等待：節流與重試的時間全走注入的假時鐘（FakeClock），不呼叫真 time.sleep。
 """
+import dataclasses
 import json
 import urllib.error
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from cjkfolio.ai_config import AiConfig
-from cjkfolio.ai_style import apply_suggestions, suggest_styles
+from cjkfolio.ai_style import _Pacer, apply_suggestions, suggest_styles
 from cjkfolio.document import Document, Paragraph
 
 CONFIG = AiConfig(base_url="http://unit.test/v1", api_key="unit-secret-key", model="m")
@@ -28,6 +30,49 @@ def transport_returning(*texts):
     def transport(url, headers, body, timeout):
         calls.append((url, headers, json.loads(body.decode("utf-8"))))
         return chat_response(texts[len(calls) - 1])
+
+    transport.calls = calls
+    return transport
+
+
+class FakeClock:
+    """假時鐘：sleep 只推進時間並記帳，測試零真實等待（_Pacer 的注入點）。"""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+        self.slept = []
+
+    def now(self) -> float:
+        return self.t
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.t += seconds
+
+
+def fake_pacer(per_minute: int = 0):
+    """回 (pacer, clock)：per_minute=0＝只驗重試退避，不摻節流等待。"""
+    clock = FakeClock()
+    return _Pacer(per_minute, now=clock.now, sleep=clock.sleep), clock
+
+
+def http_error(code: int, retry_after=None) -> urllib.error.HTTPError:
+    headers = {} if retry_after is None else {"Retry-After": retry_after}
+    return urllib.error.HTTPError("http://unit.test/v1/chat/completions", code,
+                                  "Service Unavailable", headers, None)
+
+
+def transport_raising(*errors, then=None):
+    """前幾次丟指定例外，之後回 then（None＝一直丟最後一個例外）。"""
+    calls = []
+
+    def transport(url, headers, body, timeout):
+        calls.append(1)
+        if len(calls) <= len(errors):
+            raise errors[len(calls) - 1]
+        if then is None:
+            raise errors[-1]
+        return chat_response(then)
 
     transport.calls = calls
     return transport
@@ -74,8 +119,10 @@ def test_transport_error_degrades_not_raises():
     def broken(url, headers, body, timeout):
         raise urllib.error.URLError("connection refused")
 
+    # 連線失敗屬暫時性，Sprint 143 起會退避重試；注入假時鐘故本測試零等待
+    pacer, _ = fake_pacer()
     result = suggest_styles(["甲。"], CANDIDATES, CONFIG,
-                            default_style=DEFAULT, transport=broken)
+                            default_style=DEFAULT, transport=broken, pacer=pacer)
     assert result.assignments == (None,)
     assert result.warnings
 
@@ -258,6 +305,152 @@ def test_apply_suggestions_writes_toc_entries_and_keeps_none():
     # None＝維持原條目宣告（不是清除）
     assert (out.paragraphs[1].toc_title, out.paragraphs[1].toc_level) == ("舊標", 3)
     assert doc.paragraphs[0].toc_title is None  # 原件不變
+
+
+# ── 送出節流與暫時性失敗重試（Sprint 143）：不超過每分鐘上限，503 不再一次定生死 ──
+
+def test_pacer_holds_at_limit_and_releases_after_window():
+    """滿額時等到最舊那筆滿一分鐘才放行；放行後視窗只剩後續的送出。"""
+    pacer, clock = fake_pacer(2)
+    assert pacer.wait() == 0.0 and pacer.wait() == 0.0  # 前兩次不等
+    clock.t = 10.0
+    assert pacer.wait() == pytest.approx(50.0)          # 第 3 次等到第 1 次滿 60 秒
+    assert clock.slept == [pytest.approx(50.0)]
+    assert clock.t == pytest.approx(60.0)
+    clock.t = 70.0                                       # 第 2 次（t=0）也過期
+    assert pacer.wait() == 0.0
+
+
+def test_pacer_never_exceeds_limit_in_any_window():
+    """Gate 4：以送出時刻獨立重算，任一分鐘內的送出數都不超過上限。"""
+    pacer, clock = fake_pacer(40)
+    stamps = []
+    for _ in range(100):
+        pacer.wait()
+        stamps.append(clock.t)
+        clock.t += 0.1  # 每次請求耗時 0.1 秒
+    worst = max(sum(1 for s in stamps if t <= s < t + 60.0) for t in stamps)
+    assert worst <= 40, f"某一分鐘視窗內送出 {worst} 次，超過上限"
+
+
+def test_pacer_zero_means_no_throttle():
+    pacer, clock = fake_pacer(0)
+    for _ in range(200):
+        pacer.wait()
+    assert clock.slept == []
+
+
+def test_503_retried_then_succeeds():
+    """Owner 遇到的 503：退避後重送，該批段落不再降級。"""
+    t = transport_raising(http_error(503), then=json.dumps(
+        [{"index": 0, "style": "章名大標-明體W7"}]))
+    pacer, clock = fake_pacer()
+    result = suggest_styles(["第一章"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, pacer=pacer)
+    assert result.assignments == ("章名大標-明體W7",)
+    assert len(t.calls) == 2
+    assert clock.slept == [5.0]                       # 退避 5 秒
+    assert len(result.warnings) == 1                  # 重試據實記錄，不沉默
+    assert "第 1 次送出失敗" in result.warnings[0]
+    assert "5 秒後重試" in result.warnings[0]
+
+
+def test_503_retry_exhausted_degrades_with_attempt_count():
+    t = transport_raising(http_error(503))             # 一直失敗
+    pacer, clock = fake_pacer()
+    result = suggest_styles(["甲。", "乙。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, pacer=pacer)
+    assert result.assignments == (None, None)          # 重試用完才降級
+    assert len(t.calls) == 4                           # 首送＋重試 3 次
+    assert clock.slept == [5.0, 10.0, 20.0]            # 指數退避
+    assert "已送出 4 次" in result.warnings[-1]
+    assert "維持原樣式" in result.warnings[-1]
+
+
+def test_retries_count_against_the_rate_limit():
+    """重試也佔配額：否則「每分鐘不超過 N 次」會被重試偷偷突破。"""
+    pacer, clock = fake_pacer(2)
+    sent = []
+
+    def transport(url, headers, body, timeout):
+        sent.append(clock.t)   # 記實際送出時刻，不看節流器自己的帳
+        raise http_error(503)
+
+    suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                   transport=transport, pacer=pacer)
+    assert len(sent) == 4                       # 首送＋重試 3 次
+    worst = max(sum(1 for s in sent if t <= s < t + 60.0) for t in sent)
+    assert worst <= 2, f"重試突破了節流上限（某一分鐘 {worst} 次）：{sent}"
+
+
+@pytest.mark.parametrize("code", [400, 401, 403, 404, 422])
+def test_permanent_http_status_not_retried(code):
+    """金鑰錯／路徑錯重試必然重現，重試只是白花配額。"""
+    t = transport_raising(http_error(code))
+    pacer, clock = fake_pacer()
+    result = suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, pacer=pacer)
+    assert len(t.calls) == 1 and clock.slept == []
+    assert result.assignments == (None,)
+    assert "已送出" not in result.warnings[0]          # 沒重試就不宣稱重試過
+
+
+def test_bad_response_format_not_retried():
+    """回應格式錯屬同一份輸入必然重現，不重試（與連線失敗分開處置）。"""
+    t = transport_returning("完全不是 JSON 的回應")
+    pacer, clock = fake_pacer()
+    result = suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, pacer=pacer)
+    assert len(t.calls) == 1 and clock.slept == []
+    assert result.assignments == (None,)
+
+
+def test_network_error_retried():
+    t = transport_raising(urllib.error.URLError("connection refused"),
+                          then=json.dumps([{"index": 0, "style": "內文-明體直排"}]))
+    pacer, clock = fake_pacer()
+    result = suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, pacer=pacer)
+    assert result.assignments == ("內文-明體直排",)
+    assert clock.slept == [5.0]
+
+
+@pytest.mark.parametrize("header,expect", [
+    ("30", 30.0),          # 伺服器指定秒數，照它的
+    ("900", 60.0),         # 過長截到上限（背景執行緒不可無限等）
+    ("Wed, 21 Oct 2026 07:28:00 GMT", 5.0),  # HTTP-date 形態不解析，退回指數退避
+])
+def test_retry_after_header_respected(header, expect):
+    t = transport_raising(http_error(429, retry_after=header),
+                          then=json.dumps([{"index": 0, "style": "內文-明體直排"}]))
+    pacer, clock = fake_pacer()
+    suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                   transport=t, pacer=pacer)
+    assert clock.slept == [expect]
+
+
+def test_retry_warning_never_contains_api_key():
+    """金鑰紅線同樣蓋住重試記錄（新增的訊息路徑不得成為漏口）。"""
+    t = transport_raising(urllib.error.URLError("boom unit-secret-key boom"))
+    pacer, _ = fake_pacer()
+    result = suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, pacer=pacer)
+    assert len(result.warnings) == 4                   # 3 筆重試記錄＋1 筆降級
+    assert all("unit-secret-key" not in w for w in result.warnings)
+
+
+def test_config_rate_drives_the_default_pacer(monkeypatch):
+    """未注入 pacer 時，節流上限取自設定檔那一欄（不是寫死常數）。"""
+    from cjkfolio import ai_style
+
+    built = []
+    monkeypatch.setattr(ai_style, "_Pacer",
+                        lambda per_minute, **kw: built.append(per_minute) or _Pacer(0))
+    suggest_styles(["甲。"], CANDIDATES,
+                   dataclasses.replace(CONFIG, requests_per_minute=12),
+                   default_style=DEFAULT,
+                   transport=transport_returning(json.dumps([])))
+    assert built == [12]
 
 
 def test_prompt_carries_template_declared_toc_levels():

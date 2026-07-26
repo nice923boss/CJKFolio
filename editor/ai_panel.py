@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QSpinBox,
 )
 
 from cjkfolio.ai_config import AiConfig, AiConfigError, load_ai_config, save_ai_config
@@ -25,7 +26,11 @@ DEFAULT_CONFIG_PATH = (
 
 
 class AiConfigDialog(QDialog):
-    """三欄位設定面板：載入既有本機設定 → 編輯 → 儲存（僅本機檔）。"""
+    """設定面板：載入既有本機設定 → 編輯 → 儲存（僅本機檔）。
+
+    每分鐘請求上限（Sprint 143）做成欄位而非寫死：限額因供應商而異，
+    值不對就會撞 503／429（那批段落降級成維持原樣式）。
+    """
 
     def __init__(self, parent=None, config_path=DEFAULT_CONFIG_PATH) -> None:
         super().__init__(parent)
@@ -45,6 +50,14 @@ class AiConfigDialog(QDialog):
         self._api_key.setPlaceholderText("只存本機 local/，不入 repo 與 log")
         self._model = QLineEdit(cfg.model)
         self._model.setPlaceholderText("例：qwen3-32b")
+        self._rpm = QSpinBox()
+        self._rpm.setRange(0, 1000)
+        self._rpm.setValue(cfg.requests_per_minute)
+        self._rpm.setSuffix(" 次／分")
+        self._rpm.setSpecialValueText("不節流")  # 0＝自架 endpoint 無限額
+        self._rpm.setToolTip(
+            "送給 AI 的請求每分鐘不超過此數；撞到服務端限額（503／429）會自動退避重試。"
+            "0＝不節流。")
         self._notice = QLabel(load_error)
         self._notice.setStyleSheet("color:#b00; font-size:11px;")
         self._notice.setWordWrap(True)
@@ -53,6 +66,7 @@ class AiConfigDialog(QDialog):
         form.addRow("Base URL", self._base_url)
         form.addRow("API Key", self._api_key)
         form.addRow("Model", self._model)
+        form.addRow("每分鐘請求上限", self._rpm)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -67,6 +81,7 @@ class AiConfigDialog(QDialog):
             base_url=self._base_url.text().strip(),
             api_key=self._api_key.text().strip(),
             model=self._model.text().strip(),
+            requests_per_minute=self._rpm.value(),
         )
 
     def _on_save(self) -> None:
