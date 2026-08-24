@@ -468,3 +468,87 @@ def test_prompt_carries_template_declared_toc_levels():
     assert "第 1 層＝目錄-部名（不標頁碼）" in system
     assert "第 2 層＝目錄-篇章條目（標頁碼）" in system
     assert "章名一律用第 2 層" in system
+
+
+# ── 回應長度守門（Sprint 148）：短段多的批次不再整批被截斷報廢 ────────────────
+
+def cut_response(text: str) -> dict:
+    """被輸出長度上限截斷的回應（finish_reason=length，如真 endpoint 所回）。"""
+    return {"choices": [{"message": {"content": text}, "finish_reason": "length"}]}
+
+
+def transport_returning_raw(*payloads):
+    """依呼叫序回傳整包 payload 的假 transport（要控 finish_reason 時用）。"""
+    calls = []
+
+    def transport(url, headers, body, timeout):
+        calls.append((url, headers, json.loads(body.decode("utf-8"))))
+        return payloads[len(calls) - 1]
+
+    transport.calls = calls
+    return transport
+
+
+def test_batching_also_caps_paragraph_count():
+    """短段多的稿件過得了字數關，仍須依段數切批（回應長度隨段數成長）。"""
+    from cjkfolio.ai_style import _BATCH_ITEMS, _batches
+
+    texts = ["甲。"] * (_BATCH_ITEMS + 5)          # 合計遠低於預設 3000 字上限
+    sizes = [len(bucket) for _start, bucket in _batches(texts, 3000)]
+    assert sizes == [_BATCH_ITEMS, 5]
+    assert sum(sizes) == len(texts)
+
+
+def test_max_tokens_scales_with_batch_size():
+    """max_tokens 由該批段數推算：段多就給多，不是寫死的 4000。"""
+    from cjkfolio.ai_style import _REASONING_RESERVE, _TOKENS_PER_ITEM
+
+    t = transport_returning(json.dumps([]), json.dumps([]))
+    suggest_styles(["甲。", "乙。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                   batch_char_limit=3, transport=t)                 # 一段一批
+    assert t.calls[0][2]["max_tokens"] == _REASONING_RESERVE + _TOKENS_PER_ITEM
+    t2 = transport_returning(json.dumps([]))
+    suggest_styles(["甲。", "乙。"], CANDIDATES, CONFIG, default_style=DEFAULT,
+                   transport=t2)                                    # 兩段同批
+    assert t2.calls[0][2]["max_tokens"] == _REASONING_RESERVE + _TOKENS_PER_ITEM * 2
+
+
+def test_truncated_response_salvages_finished_items():
+    """截斷在陣列中途：已寫完的項照採，不整批報廢；缺的維持原樣式且據實警告。"""
+    t = transport_returning_raw(cut_response(
+        '[{"index": 0, "style": "章名大標-明體W7"}, '
+        '{"index": 1, "style": "內文-明體直排"}, {"index": 2, "sty'))
+    result = suggest_styles(["第一章", "內文。", "尾段。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.assignments == ("章名大標-明體W7", "內文-明體直排", None)
+    assert len(result.warnings) == 1
+    assert "被輸出長度上限截斷" in result.warnings[0]
+    assert "2／3" in result.warnings[0]
+
+
+def test_truncated_response_keeps_toc_entries_of_finished_items():
+    """搶救到的項若帶目錄欄位，目錄建議一併留下（與樣式同批可信）。"""
+    t = transport_returning_raw(cut_response(
+        '[{"index": 0, "style": "章名大標-明體W7", "toc_title": "第一章　留白", '
+        '"toc_level": 2}, {"index": 1, "sty'))
+    result = suggest_styles(["第一章　留白", "內文。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (("第一章　留白", 2), None)
+
+
+def test_reasoning_prose_is_not_mistaken_for_json_array():
+    """content 空而只剩推理文字時，[16] 這種段號標記不得被當成 JSON 陣列。
+
+    舊式貪婪比對會把 prose 從第一個 [ 吃到最後一個 ]，報出「Extra data」這種
+    看不懂的錯；現在一律認「[ 後接 {」，據實回報無陣列並降級該批。
+    """
+    t = transport_returning_raw({"choices": [{
+        "message": {"content": "", "reasoning_content":
+                    "Paragraph [16] is a subheading. Paragraph [17] is body text."},
+        "finish_reason": "length"}]})
+    result = suggest_styles(["甲。", "乙。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert result.assignments == (None, None)
+    assert len(result.warnings) == 1
+    assert "Extra data" not in result.warnings[0]
+    assert "回應被輸出長度上限截斷" in result.warnings[0]

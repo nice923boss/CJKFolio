@@ -16,6 +16,11 @@ AI 為選配增強：批次失敗（網路／解析）即該批降級 None（維
 config.requests_per_minute 次），且暫時性失敗（503／429／5xx／逾時／連線失敗）
 退避重試而非直接降級，因為降級就是「這批段落維持原樣式」，對使用者而言等於指派
 沒做完，能重試就不該讓一次 503 定生死。重試同樣走節流計數，故不會偷偷超過上限。
+
+回應長度守門（Sprint 148）：分批只看輸入字數會漏掉「短段多」的稿件，因為回應
+長度是隨**段數**成長（一段一項 JSON），與輸入字數無關。故段數另設上限，
+max_tokens 亦由該批段數推算並為推理型模型的 reasoning_content 預留額度；萬一
+仍被截斷，逐項搶救已寫完的建議而非整批報廢，並據實說明只採用了幾項。
 """
 import dataclasses
 import json
@@ -30,7 +35,24 @@ from .ai_config import AiConfig
 from .document import Document
 
 _THINK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
-_ARRAY_RE = re.compile(r"\[[\s\S]*\]")
+# 物件陣列的起頭（「[」後接「{」）：推理文字裡的 [12] 這種段號標記不算陣列。
+# 舊式貪婪比對 \[[\s\S]*\] 會把整段推理文字誤當陣列，報出「Extra data」這種
+# 看不懂的錯（Sprint 148 實測，見下方 _extract_items）。
+_ARRAY_START_RE = re.compile(r"\[\s*\{")
+_ITEM_RE = re.compile(r"\{[^{}]*\}")   # 截斷時逐項搶救（每項都是扁平物件）
+
+# 單批段數上限：**回應長度隨段數線性成長，與輸入字數無關**。真稿《一路走來，
+# 恩典相伴》一批 114 段只有 2,983 字（短段多，過得了 batch_char_limit），輸出
+# 卻要 114 項 JSON，實測 completion_tokens 撞滿 max_tokens 被截斷（見 _max_tokens）。
+_BATCH_ITEMS = 40
+# 單段回應的 token 預算：實測 40 段的 JSON 本體約 1,630 字（約 20〜25 tokens／段），
+# 帶 toc_title 的長項更貴，取 80 留餘裕。
+_TOKENS_PER_ITEM = 80
+# 推理型模型的 reasoning_content 也吃 max_tokens，且**它才是主成本**：同一批 40 段
+# 實測 completion 3,364〜4,986 tokens，其中 JSON 本體只佔約 800，其餘全是推理，
+# 且同一份輸入兩次跑的推理長度差到 1.2 倍。不留足額度就會「推理推完、JSON 一個字
+# 都還沒寫」而整批報廢（本書前 40 段在 5,200 額度下即如此）。
+_REASONING_RESERVE = 6000
 
 # 值得重試的 HTTP 狀態：伺服器端暫時性，同一份輸入再送一次有機會成功。
 # 401／403（金鑰錯）、400（請求壞）、404（路徑錯）不在其中：重試必然重現。
@@ -188,17 +210,31 @@ def _level_prompt(toc_levels) -> str:
     return text
 
 
-def _batches(texts, batch_char_limit: int):
-    """依字數上限切批（段落不跨批，單段超限自成一批）；產出 (起始索引, 段列表)。"""
+def _batches(texts, batch_char_limit: int, batch_item_limit: int = _BATCH_ITEMS):
+    """依字數與段數雙上限切批（段落不跨批，單段超限自成一批）；產出 (起始索引, 段列表)。
+
+    段數上限是 Sprint 148 補的：字數上限管的是**送進去**的量，回應長度卻是隨
+    **段數**成長（一段一項 JSON），短段多的稿件會過得了字數關卻在回應端被截斷。
+    """
     start, bucket, size = 0, [], 0
     for i, text in enumerate(texts):
-        if bucket and size + len(text) > batch_char_limit:
+        if bucket and (size + len(text) > batch_char_limit
+                       or len(bucket) >= batch_item_limit):
             yield start, bucket
             start, bucket, size = i, [], 0
         bucket.append(text)
         size += len(text)
     if bucket:
         yield start, bucket
+
+
+def _max_tokens(item_count: int) -> int:
+    """該批的回應 token 上限＝推理預留＋每段預算（不寫死常數）。
+
+    寫死 4000 的舊值對短段多的批次不夠用：114 段需要 114 項 JSON，加上推理型
+    模型自己的 reasoning_content，實測正好撞滿 4000 而停在陣列中途。
+    """
+    return _REASONING_RESERVE + _TOKENS_PER_ITEM * item_count
 
 
 def _sanitize(message: str, secret: str) -> str:
@@ -232,22 +268,65 @@ def _parse_toc_entry(item: dict, idx: int, warnings: list):
     return title.strip(), level
 
 
+def _salvage_items(chunk: str):
+    """從沒收尾的陣列裡撿出已寫完的項（解析不了的殘項直接跳過）。"""
+    items = []
+    for m in _ITEM_RE.finditer(chunk):
+        try:
+            item = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            items.append(item)
+    return items
+
+
+def _extract_items(text: str, truncated: bool):
+    """回應文字 → (項目列, 是否只搶救到局部)。
+
+    回應被輸出長度上限截斷時，AI 停在陣列中途、沒有收尾的「]」，整份 json.loads
+    必失敗。此時**整批丟掉等於數十段指派沒做**，而已寫完的那些項本身完整可信，
+    故逐項搶救；沒搶救到任何一項才上拋（由上層降級該批）。
+    """
+    start = _ARRAY_START_RE.search(text)
+    if start:
+        chunk = text[start.start():]
+        end = chunk.rfind("]")
+        if end >= 0:
+            try:
+                items = json.loads(chunk[:end + 1])
+            except json.JSONDecodeError:
+                items = None
+            if isinstance(items, list):
+                return items, False
+        salvaged = _salvage_items(chunk)
+        if salvaged:
+            return salvaged, True
+    hint = "（回應被輸出長度上限截斷）" if truncated else ""
+    raise ValueError(f"回應中無 JSON 陣列{hint}（前 120 字）：{text[:120]}")
+
+
 def _parse_assignments(payload: dict, count: int, candidates: set):
     """回應 → (逐段樣式列, 逐段目錄條目列, 警告列表)；兩條位置列等長且與批內段對齊。
 
     樣式名不在候選集即拒（幻覺守門）；目錄欄位獨立守門，樣式被拒不連坐目錄條目
     （反之亦然），兩者各自可用即各自留下。
     """
-    msg = payload["choices"][0]["message"]
+    choice = payload["choices"][0]
+    msg = choice["message"]
     text = msg.get("content") or msg.get("reasoning_content") or ""
     text = _THINK_RE.sub("", text)
-    m = _ARRAY_RE.search(text)
-    if not m:
-        raise ValueError(f"回應中無 JSON 陣列（前 120 字）：{text[:120]}")
-    items = json.loads(m.group(0))
+    cut = choice.get("finish_reason") == "length"
+    items, partial = _extract_items(text, cut)
     slots = [None] * count
     toc_slots = [None] * count
     warnings = []
+    if partial:
+        # 搶救成功也要說：使用者看到的是「這批只改了一半」，不說等於沉默降級
+        why = "被輸出長度上限截斷" if cut else "格式不完整"
+        warnings.append(
+            f"AI 回應{why}，只採用已寫完的 {len(items)}／{count} 項建議"
+            "（其餘維持原樣式）")
     for item in items:
         idx = item.get("index")
         style = item.get("style")
@@ -309,7 +388,7 @@ def suggest_styles(
                     f"[{i}] {t}" for i, t in enumerate(bucket))},
             ],
             "temperature": 0.2,
-            "max_tokens": 4000,
+            "max_tokens": _max_tokens(len(bucket)),
         }).encode("utf-8")
         label = f"批次 {batches}（段 {start}〜{start + len(bucket) - 1}）"
         retried = []
