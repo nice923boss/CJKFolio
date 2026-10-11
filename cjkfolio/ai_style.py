@@ -370,7 +370,9 @@ def _halves(positions: tuple) -> list:
 
 
 def _span(positions: tuple) -> str:
-    return f"段 {positions[0]}" if len(positions) == 1 else f"段 {positions[0]}〜{positions[-1]}"
+    """原段索引（0 起算）→ 訊息用段號（1 起算，與校正表列號一致，Sprint 152）。"""
+    first, last = positions[0] + 1, positions[-1] + 1
+    return f"段 {first}" if len(positions) == 1 else f"段 {first}〜{last}"
 
 
 def _sanitize(message: str, secret: str) -> str:
@@ -378,28 +380,29 @@ def _sanitize(message: str, secret: str) -> str:
     return message.replace(secret, "［api_key 已遮蔽］") if secret else message
 
 
-def _parse_toc_entry(item: dict, idx: int, warnings: list):
+def _parse_toc_entry(item: dict, number: int, warnings: list):
     """單項的目錄欄位 → (標題, 層級) 或 None；守門鏡射 document._paragraph_toc_from_dict。
 
     存檔端（document@2）明訂 toc_title 須非空字串、toc_level 須 ≥1 整數、且
     toc_level 不得單獨出現。這裡先擋，才不會讓一份「看起來套用成功」的稿件到
     存檔時才炸 DocumentError（同 import_core 不把可在邊界判定的錯留給下游）。
+    number＝訊息用段號（1 起算）。
     """
     title = item.get("toc_title")
     level = item.get("toc_level")
     if title is None and level is None:
         return None
     if title is None:
-        warnings.append(f"AI 只給 toc_level 未給 toc_title，忽略目錄條目（段 {idx}）")
+        warnings.append(f"AI 只給 toc_level 未給 toc_title，忽略目錄條目（段 {number}）")
         return None
     if not (isinstance(title, str) and title.strip()):
-        warnings.append(f"AI 目錄標題非非空字串，忽略：{title!r}（段 {idx}）")
+        warnings.append(f"AI 目錄標題非非空字串，忽略：{title!r}（段 {number}）")
         return None
     if level is None:
         level = 1
     # 真布林是 int 的子類，True 會被當成層級 1；目錄層級只收真整數
     if isinstance(level, bool) or not isinstance(level, int) or level < 1:
-        warnings.append(f"AI 目錄層級非 ≥1 整數，忽略：{level!r}（段 {idx}）")
+        warnings.append(f"AI 目錄層級非 ≥1 整數，忽略：{level!r}（段 {number}）")
         return None
     return title.strip(), level
 
@@ -453,8 +456,9 @@ def _parse_assignments(payload: dict, count: int, candidates: set, numbers=None)
     樣式名不在候選集即拒（幻覺守門）；目錄欄位獨立守門，樣式被拒不連坐目錄條目
     （反之亦然），兩者各自可用即各自留下。被截斷時回報哪些段 AI 還沒寫到，
     由上層拆小批重送（Sprint 149），故此處不另發「只採用幾項」的警告。
-    回應完整卻漏回某些段時據實警告（Sprint 151）；numbers＝批內索引對應的原段號
-    （0 起算，未帶即批內索引），警告換算成校正表列號（1 起算）以便對照。
+    回應完整卻漏回某些段時據實警告（Sprint 151）；numbers＝批內索引對應的原段
+    索引（0 起算，未帶即批內索引）。警告裡的段號一律換算成 1 起算，與校正表列號
+    一致（Sprint 152）。
     """
     choice = payload["choices"][0]
     msg = choice["message"]
@@ -471,6 +475,10 @@ def _parse_assignments(payload: dict, count: int, candidates: set, numbers=None)
             f"AI 回應格式不完整，只採用已寫完的 {len(items)}／{count} 項建議"
             "（其餘維持原樣式）")
     answered = set()
+
+    def number(i):
+        return (numbers[i] if numbers else i) + 1
+
     for item in items:
         idx = item.get("index")
         style = item.get("style")
@@ -478,16 +486,16 @@ def _parse_assignments(payload: dict, count: int, candidates: set, numbers=None)
             warnings.append(f"AI 回應 index 越界忽略：{idx!r}")
             continue
         answered.add(idx)
-        toc_slots[idx] = _parse_toc_entry(item, idx, warnings)
+        toc_slots[idx] = _parse_toc_entry(item, number(idx), warnings)
         if style not in candidates:
-            warnings.append(f"AI 建議樣式不在模版候選集，忽略：{style!r}（段 {idx}）")
+            warnings.append(f"AI 建議樣式不在模版候選集，忽略：{style!r}（段 {number(idx)}）")
             continue
         slots[idx] = style
     missing = tuple(i for i in range(count) if i not in answered)
     if cut:
         return slots, toc_slots, warnings, missing
     if missing and not partial:   # 格式殘缺已有「只採用幾項」的警告，不重複
-        shown = [str((numbers[i] if numbers else i) + 1) for i in missing]
+        shown = [str(number(i)) for i in missing]
         more = f" 等 {len(shown)} 列" if len(shown) > _MISSING_SHOWN else ""
         warnings.append(f"AI 回應漏回校正表第 {'、'.join(shown[:_MISSING_SHOWN])}{more} 列"
                         "，該列維持原樣式（可重跑指派補上）")
@@ -582,12 +590,12 @@ def suggest_styles(
 
     for batches, (start, bucket) in enumerate(plan, 1):
         report(batches - 1, len(plan),
-               f"第 {batches}／{len(plan)} 批送出中（段 {start}〜{start + len(bucket) - 1}）")
+               f"第 {batches}／{len(plan)} 批送出中（{_span(range(start, start + len(bucket)))}）")
         # 截斷時把沒拿到建議的段拆半重送，遞迴到單段為止（Sprint 149）：截斷是
         # 推理加 JSON 超過輸出上限，段少了兩者都縮小；每次重送的段數必然比上一次少，
         # 故一定收斂。單段仍被截斷才放棄，並指出可調高 AI 設定的輸出上限。
         pending = [(tuple(range(start, start + len(bucket))),
-                    f"批次 {batches}（段 {start}〜{start + len(bucket) - 1}）")]
+                    f"批次 {batches}（{_span(range(start, start + len(bucket)))}）")]
         while pending:
             positions, label = pending.pop(0)
             missing = request(positions, label, batches - 1)

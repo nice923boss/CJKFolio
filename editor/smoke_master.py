@@ -86,7 +86,7 @@ def check_master(EditorWindow, chapter_path, paiban_path) -> None:
     next(a for a in _master_acts(menu_p2) if a.text() == "B-部扉").trigger()
     assert win2.doc.paragraphs[5].master == "B-部扉"
     msg2 = win2.statusBar().currentMessage()
-    assert "段 5" in msg2 and "起新開一節" in msg2 and "延續至下一節首" in msg2, msg2
+    assert "段 6" in msg2 and "起新開一節" in msg2 and "延續至下一節首" in msg2, msg2
     assert win2.page.number == 2, f"升節首後未留在右鍵頁，得頁 {win2.page.number}"
     win2.session.undo()
     assert win2.doc.paragraphs[5].master is None

@@ -113,6 +113,6 @@ class MasterActionsMixin:
         elif was_head:
             msg = f"頁 {page_number} 起的節改用主版 {master}（全書 {npages} 頁）"
         else:
-            msg = (f"自頁 {page_number}（段 {para_idx}）起新開一節，主版 {master}，"
+            msg = (f"自頁 {page_number}（段 {para_idx + 1}）起新開一節，主版 {master}，"
                    f"延續至下一節首（全書 {npages} 頁）")
         self.statusBar().showMessage(msg)

@@ -93,7 +93,7 @@ class FindActionsMixin:
         dlg.set_status(f"第 {idx + 1}／{len(matches)} 個相符")
         self.statusBar().showMessage(
             f"尋找「{query}」：第 {idx + 1}／{len(matches)} 個"
-            f"（段 {m.para_idx} 位 {m.start}）")
+            f"（段 {m.para_idx + 1} 位 {m.start}）")
 
     def _next_match_index(self, matches) -> int:
         """自目前錨之後的第一個命中序；到底則環繞回首個（無錨＝首個）。"""
@@ -161,7 +161,7 @@ class FindActionsMixin:
         self._find_pos = (m.para_idx, m.start + len(repl))
         self._rebuild()
         self.statusBar().showMessage(
-            f"已取代 1 處：段 {m.para_idx} 位 {m.start}「{query}」→「{repl}」")
+            f"已取代 1 處：段 {m.para_idx + 1} 位 {m.start}「{query}」→「{repl}」")
         self._find_next()  # 前進並高亮下一個命中
 
     def _replace_all(self) -> None:

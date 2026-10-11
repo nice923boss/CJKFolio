@@ -101,7 +101,7 @@ def test_session_remove_blank_rejects_nonempty_without_changing_state(template):
     """非空段 ValueError，且文件與歷史都不動（失敗的操作不入 undo）。"""
     session = EditSession(two_para_doc(), template)
     before = session.document
-    with pytest.raises(ValueError, match="空段"):
+    with pytest.raises(ValueError, match="段 1 不是空段"):  # 訊息段號 1 起算（Sprint 152）
         session.remove_blank(0)
     assert session.document is before
     assert not session.can_undo()

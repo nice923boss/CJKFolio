@@ -35,7 +35,7 @@ def check_blank_line(EditorWindow, doc_path) -> None:
     slot0 = next(ln.slot for ln in win.page.placed if ln.para_idx == target)
     win._insert_blank_line()
     msg = win.statusBar().currentMessage()
-    assert f"已在段{target}前插入空行" in msg and "Ctrl+Z 一步回原" in msg, msg
+    assert f"已在段{target + 1}前插入空行" in msg and "Ctrl+Z 一步回原" in msg, msg
     assert f"全書 {pages0} 頁" in msg, msg
     assert len(win.doc.paragraphs) == paras0 + 1
     assert win.doc.paragraphs[target].text == "", "插入的不是空段"
@@ -45,7 +45,7 @@ def check_blank_line(EditorWindow, doc_path) -> None:
 
     # 移除：回到原文件（游標仍在目標段，移除的是它前面那個空段）
     win._remove_blank_line()
-    assert f"已移除段{target + 1}前的空行" in win.statusBar().currentMessage()
+    assert f"已移除段{target + 2}前的空行" in win.statusBar().currentMessage()
     assert len(win.doc.paragraphs) == paras0
     assert next(ln.slot for ln in win.page.placed if ln.para_idx == target) == slot0
 

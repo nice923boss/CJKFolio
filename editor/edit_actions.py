@@ -109,7 +109,7 @@ class EditActionsMixin:
         hit = resolve_hit(self.doc, self.page, *self.cursor)
         pos = hit.span[1] if hit.span else "?"
         self.statusBar().showMessage(
-            f"IME 組字：「{text}」→ 目標 段{hit.para_idx} 字位{pos}（按 Enter 插入並 reflow）"
+            f"IME 組字：「{text}」→ 目標 段{hit.para_idx + 1} 字位{pos}（按 Enter 插入並 reflow）"
         )
 
     def _on_ime_commit(self) -> None:
@@ -124,8 +124,8 @@ class EditActionsMixin:
             self._follow_body_address(res)
             self._ime.clear()
             self.statusBar().showMessage(
-                f"已以「{text}」替換選取（段{span.start.para_idx}〜"
-                f"段{span.end.para_idx}）→ 游標 段{res.cursor.para_idx} "
+                f"已以「{text}」替換選取（段{span.start.para_idx + 1}〜"
+                f"段{span.end.para_idx + 1}）→ 游標 段{res.cursor.para_idx + 1} "
                 f"字位{res.cursor.caret}"
             )
             return
@@ -154,7 +154,7 @@ class EditActionsMixin:
         self.statusBar().showMessage(
             f"已插入「{text}」→ reflow：{len(self.layout_result.pages)} 頁、"
             f"{len(self.layout_result.violations)} 禁則違規；"
-            f"游標 段{res.cursor.para_idx} 字位{res.cursor.caret}"
+            f"游標 段{res.cursor.para_idx + 1} 字位{res.cursor.caret}"
         )
 
     def _commit_frame_insert(self, text: str) -> None:
@@ -237,7 +237,7 @@ class EditActionsMixin:
             return
         self._follow_body_address(res)
         self.statusBar().showMessage(
-            f"已{verb} → 段{res.cursor.para_idx} 字位{res.cursor.caret}")
+            f"已{verb} → 段{res.cursor.para_idx + 1} 字位{res.cursor.caret}")
 
     def _on_key(self, event) -> bool:
         """畫布鍵盤事件（Sprint 62）：Backspace／Delete 刪字、Enter 分段、PgUp／PgDn 換頁。
@@ -325,7 +325,7 @@ class EditActionsMixin:
         res = self.session.delete(DocRange(hit.para_idx, start, end))
         self._follow_body_address(res)
         self.statusBar().showMessage(
-            f"已刪 段{hit.para_idx} 字位 [{start}, {end}) → 游標 字位{res.cursor.caret}")
+            f"已刪 段{hit.para_idx + 1} 字位 [{start}, {end}) → 游標 字位{res.cursor.caret}")
         return True
 
     def _cursor_para_idx(self):
@@ -357,7 +357,7 @@ class EditActionsMixin:
         after = len(self.layout_result.pages)
         page_no = self.page.number if self.page is not None else "?"
         self.statusBar().showMessage(
-            f"已在段{idx}前插入空行 → 該段現落於頁 {page_no}"
+            f"已在段{idx + 1}前插入空行 → 該段現落於頁 {page_no}"
             f"（全書 {before} 頁{'→ ' + str(after) + ' 頁' if after != before else '不變'}）；"
             "Ctrl+Z 一步回原")
 
@@ -374,13 +374,13 @@ class EditActionsMixin:
             res = self.session.remove_blank(idx - 1)
         except ValueError:
             self.statusBar().showMessage(
-                f"段{idx} 前面不是空行（未移除任何內容；空行才可由此移除）")
+                f"段{idx + 1} 前面不是空行（未移除任何內容；空行才可由此移除）")
             return
         self._follow_body_address(res)
         after = len(self.layout_result.pages)
         page_no = self.page.number if self.page is not None else "?"
         self.statusBar().showMessage(
-            f"已移除段{idx}前的空行 → 該段現落於頁 {page_no}"
+            f"已移除段{idx + 1}前的空行 → 該段現落於頁 {page_no}"
             f"（全書 {before} 頁{'→ ' + str(after) + ' 頁' if after != before else '不變'}）")
 
     def _split_at_cursor(self) -> bool:
@@ -396,5 +396,5 @@ class EditActionsMixin:
         res = self.session.split(DocCursor(hit.para_idx, hit.span[1]))
         self._follow_body_address(res)
         self.statusBar().showMessage(
-            f"已分段 → 段{res.cursor.para_idx} 起（共 {len(self.doc.paragraphs)} 段）")
+            f"已分段 → 段{res.cursor.para_idx + 1} 起（共 {len(self.doc.paragraphs)} 段）")
         return True

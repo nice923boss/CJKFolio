@@ -435,7 +435,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         echo_note = ("已回填輸入欄（按「複製」可貼到新位置）" if self._echo_to_ime(hit.text)
                      else "此格無字可回填，輸入欄內容保留")
         self.statusBar().showMessage(
-            f"游標｜段 {hit.para_idx}｜字 {hit.span}＝「{hit.text}」｜"
+            f"游標｜段 {hit.para_idx + 1}｜字 {hit.span}＝「{hit.text}」｜"
             f"樣式 {hit.style}／{hit.kind}｜段內文切片「{src}」｜{echo_note}"
         )
         self._draw_highlight(item.rect())
@@ -505,8 +505,8 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
                      if self._echo_to_ime(self._selection_text())
                      else "跨段選取不回填輸入欄（一行欄位表達不了段落分界）")
         self.statusBar().showMessage(
-            f"選取 段{span.start.para_idx} 字位{span.start.caret} 〜 "
-            f"段{span.end.para_idx} 字位{span.end.caret}"
+            f"選取 段{span.start.para_idx + 1} 字位{span.start.caret} 〜 "
+            f"段{span.end.para_idx + 1} 字位{span.end.caret}"
             f"（{self._selection_char_count()} 字）｜{echo_note}｜"
             "Backspace 刪除選取、點字元樣式套用至選取、組字 Enter 替換選取"
         )
@@ -583,9 +583,9 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         res = self.session.delete_span(span)
         self._follow_body_address(res)
         self.statusBar().showMessage(
-            f"已刪選取 段{span.start.para_idx} 字位{span.start.caret} 〜 "
-            f"段{span.end.para_idx} 字位{span.end.caret} → "
-            f"游標 段{res.cursor.para_idx} 字位{res.cursor.caret}"
+            f"已刪選取 段{span.start.para_idx + 1} 字位{span.start.caret} 〜 "
+            f"段{span.end.para_idx + 1} 字位{span.end.caret} → "
+            f"游標 段{res.cursor.para_idx + 1} 字位{res.cursor.caret}"
         )
         return True
 
@@ -605,7 +605,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
             return
         res = self.session.apply_para_style(DocCursor(hit.para_idx, hit.span[1]), name)
         self._follow_body_address(res)
-        self.statusBar().showMessage(f"段{hit.para_idx} 段落樣式 → {name}")
+        self.statusBar().showMessage(f"段{hit.para_idx + 1} 段落樣式 → {name}")
 
     def _apply_char_style_at_cursor(self, name) -> None:
         """樣式面板點字元樣式 → 套用至拖曳選取範圍（Sprint 65）或 body 游標字（None＝清除）。"""
@@ -615,7 +615,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
             self._follow_body_address(res)
             self._set_selection(span)  # 套樣式不改 text，選取座標仍有效＝保留選取
             self.statusBar().showMessage(
-                f"選取 段{span.start.para_idx}〜段{span.end.para_idx} 字元樣式 → "
+                f"選取 段{span.start.para_idx + 1}〜段{span.end.para_idx + 1} 字元樣式 → "
                 f"{name if name else '（清除）'}"
             )
             return
@@ -632,7 +632,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         res = self.session.apply_style(DocRange(hit.para_idx, s, e), name)
         self._follow_body_address(res)
         self.statusBar().showMessage(
-            f"段{hit.para_idx} 字位 [{s}, {e}) 字元樣式 → {name if name else '（清除）'}")
+            f"段{hit.para_idx + 1} 字位 [{s}, {e}) 字元樣式 → {name if name else '（清除）'}")
 
     # 樣式選單域回呼（雙擊編輯／新增／刪除／改名／色票／另存）見 StyleActionsMixin
     # （editor/style_actions.py，Sprint 78 行數紀律分檔）。

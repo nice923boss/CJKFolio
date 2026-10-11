@@ -659,3 +659,19 @@ def test_malformed_reply_does_not_double_warn_missing():
                             default_style=DEFAULT, transport=t)
     assert any("只採用已寫完的 1／3 項" in w for w in result.warnings)
     assert not any("漏回" in w for w in result.warnings)
+
+
+
+def test_warning_paragraph_numbers_are_one_based():
+    """警告段號一律 1 起算且為原段號（不是批內索引），與校正表列號一致（Sprint 152）。"""
+    texts = [f"段{i}" for i in range(6)]
+    t = transport_returning(
+        "這不是 JSON",
+        json.dumps([{"index": 0, "style": DEFAULT, "toc_level": 2},
+                    {"index": 1, "style": "不存在的樣式"},
+                    {"index": 2, "style": DEFAULT}]))
+    result = suggest_styles(texts, CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, batch_char_limit=6)
+    assert any(w.startswith("批次 1（段 1〜3）AI 指派失敗") for w in result.warnings)
+    assert any("忽略目錄條目（段 4）" in w for w in result.warnings)
+    assert any("'不存在的樣式'（段 5）" in w for w in result.warnings)

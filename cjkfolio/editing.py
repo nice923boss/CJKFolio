@@ -496,9 +496,9 @@ def change_paragraph_toc_entries(doc: Document, entries) -> Document:
         else:
             title, level = entry
             if not (isinstance(title, str) and title.strip()):
-                raise ValueError(f"目錄條目標題不得為空（段 {para_idx}）")
+                raise ValueError(f"目錄條目標題不得為空（段 {para_idx + 1}）")
             if isinstance(level, bool) or not isinstance(level, int) or level < 1:
-                raise ValueError(f"目錄條目層級需為 ≥1 整數，得到 {level!r}（段 {para_idx}）")
+                raise ValueError(f"目錄條目層級需為 ≥1 整數，得到 {level!r}（段 {para_idx + 1}）")
             title = title.strip()
         para = paras[para_idx]
         if (para.toc_title, para.toc_level) == (title, level):
@@ -658,7 +658,7 @@ def remove_blank_paragraph(doc: Document, para_idx: int) -> Document:
             f"para_idx {para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
         )
     if doc.paragraphs[para_idx].text:
-        raise ValueError(f"段 {para_idx} 不是空段，不移除（避免誤刪內文）")
+        raise ValueError(f"段 {para_idx + 1} 不是空段，不移除（避免誤刪內文）")
     new_paras = doc.paragraphs[:para_idx] + doc.paragraphs[para_idx + 1:]
     return replace(doc, paragraphs=new_paras)
 
