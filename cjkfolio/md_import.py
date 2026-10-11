@@ -113,4 +113,4 @@ def import_markdown_file(path, mapping: dict, **kwargs) -> Document:
 
     path = Path(path)
     kwargs.setdefault("title", path.stem)
-    return import_markdown(path.read_text(encoding="utf-8"), mapping, **kwargs)
+    return import_markdown(path.read_text(encoding="utf-8-sig"), mapping, **kwargs)

@@ -268,3 +268,21 @@ def test_zip_without_document_xml_fast_fail(tmp_path):
     path = make_docx(tmp_path, "", with_document=False, styles="")
     with pytest.raises(ValueError, match="document.xml"):
         paragraphs_from_docx(path)
+
+
+def test_soft_line_break_splits_into_paragraphs(tmp_path):
+    """Sprint 149：w:br（Shift+Enter）拆段，不把作者分行的兩句黏成一串（真稿實測）。"""
+    body = ("<w:p><w:r><w:t>分成幾個階段：</w:t><w:br/><w:t>一、求學</w:t></w:r>"
+            "<w:r><w:rPr><w:b/></w:rPr><w:t>階段</w:t></w:r>"
+            "<w:r><w:br/><w:br/></w:r><w:r><w:t>二、就業</w:t></w:r></w:p>")
+    doc = import_docx(make_docx(tmp_path, body), mapping={"paragraph": "內文"},
+                      inline_mapping={"strong": "強調"})
+    assert [p.text for p in doc.paragraphs] == ["分成幾個階段：", "一、求學階段", "二、就業"]
+    assert [(r.text, r.char_style) for r in doc.paragraphs[1].runs] == [
+        ("一、求學", None), ("階段", "強調")]
+
+
+def test_soft_line_break_keeps_heading_kind(tmp_path):
+    body = "<w:p><w:pPr><w:outlineLvl w:val=\"0\"/></w:pPr><w:r><w:t>上</w:t><w:cr/><w:t>下</w:t></w:r></w:p>"
+    kinds = [kind for kind, _ in paragraphs_from_docx(make_docx(tmp_path, body))]
+    assert len(kinds) == 2 and kinds[0] == kinds[1] != "paragraph"

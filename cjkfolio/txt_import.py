@@ -46,4 +46,4 @@ def import_txt(
 def import_txt_file(path, **kwargs) -> Document:
     path = Path(path)
     kwargs.setdefault("title", path.stem)
-    return import_txt(path.read_text(encoding="utf-8"), **kwargs)
+    return import_txt(path.read_text(encoding="utf-8-sig"), **kwargs)

@@ -3,7 +3,8 @@
 覆蓋：缺檔＝預設空值（未設定不擋流程）、round-trip、壞 JSON／壞欄位明確錯誤、
 未知鍵容忍（向前相容）、save 建父目錄。金鑰紅線：預設空值、值不入訊息。
 Sprint 143 另加 requests_per_minute（每分鐘送出上限）的型別與範圍守門、
-舊設定檔缺鍵補預設 40（非 0＝不節流）。
+舊設定檔缺鍵補預設 40（非 0＝不節流）。Sprint 149 另加 max_output_tokens
+（輸出上限，0＝自動推算）。
 """
 import json
 
@@ -20,11 +21,12 @@ def test_missing_file_gives_empty_defaults(tmp_path):
 def test_roundtrip(tmp_path):
     path = tmp_path / "local" / "ai-config.local.json"
     cfg = AiConfig(base_url="http://127.0.0.1:8080/v1", api_key="k-本機", model="qwen",
-                   requests_per_minute=20)
+                   requests_per_minute=20, max_output_tokens=12000)
     save_ai_config(cfg, path)  # save 建父目錄
     assert load_ai_config(path) == cfg
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert set(raw) == {"base_url", "api_key", "model", "requests_per_minute"}
+    assert set(raw) == {"base_url", "api_key", "model", "requests_per_minute",
+                        "max_output_tokens"}
 
 
 def test_malformed_json_raises_clear_error(tmp_path):
@@ -74,6 +76,21 @@ def test_zero_rate_allowed_means_no_throttle(tmp_path):
     p = tmp_path / "zero.json"
     p.write_text(json.dumps({"requests_per_minute": 0}), encoding="utf-8")
     assert load_ai_config(p).requests_per_minute == 0
+
+
+def test_legacy_config_without_output_cap_gets_auto(tmp_path):
+    """Sprint 149 前的設定檔沒有輸出上限：補 0＝自動推算（沿用既有行為）。"""
+    p = tmp_path / "legacy.json"
+    p.write_text(json.dumps({"model": "m"}), encoding="utf-8")
+    assert load_ai_config(p).max_output_tokens == 0
+
+
+@pytest.mark.parametrize("value,keyword", [("8000", "整數"), (-1, "≥0")])
+def test_bad_output_cap_raises(tmp_path, value, keyword):
+    p = tmp_path / "bad-cap.json"
+    p.write_text(json.dumps({"max_output_tokens": value}), encoding="utf-8")
+    with pytest.raises(AiConfigError, match=keyword):
+        load_ai_config(p)
 
 
 def test_error_message_never_contains_secret(tmp_path):

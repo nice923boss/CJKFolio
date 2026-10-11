@@ -9,6 +9,10 @@
 requests_per_minute（Sprint 143）：每分鐘送出上限，服務端的限額因供應商而異，
 故做成設定而非寫死常數（0＝不節流，給無限額的自架 endpoint）。
 
+max_output_tokens（Sprint 149）：每次請求的輸出上限（max_tokens）。0＝自動，
+依該批段數推算並為推理預留（見 ai_style._max_tokens）；推理量因模型而異，
+自動值不夠時可在設定面板手動調高，不必改程式。
+
 面板 UI（真視窗欄位）屬 Phase 2 編輯器工程；本層為其資料面。
 """
 import json
@@ -16,7 +20,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # 欄位 → 型別（載入守門用）；預設值以 AiConfig 的欄位預設為唯一真相。
-_FIELDS = {"base_url": str, "api_key": str, "model": str, "requests_per_minute": int}
+_FIELDS = {"base_url": str, "api_key": str, "model": str, "requests_per_minute": int,
+           "max_output_tokens": int}
 _TYPE_NAMES = {str: "字串", int: "整數"}
 
 
@@ -30,6 +35,7 @@ class AiConfig:
     api_key: str = ""
     model: str = ""
     requests_per_minute: int = 40
+    max_output_tokens: int = 0
 
 
 def load_ai_config(path) -> AiConfig:
@@ -62,6 +68,9 @@ def load_ai_config(path) -> AiConfig:
     if values["requests_per_minute"] < 0:
         raise AiConfigError(
             f"AI 設定檔 {p} 欄位 requests_per_minute 需為 ≥0 整數（0＝不節流）")
+    if values["max_output_tokens"] < 0:
+        raise AiConfigError(
+            f"AI 設定檔 {p} 欄位 max_output_tokens 需為 ≥0 整數（0＝自動）")
     return AiConfig(**values)
 
 

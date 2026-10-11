@@ -11,6 +11,9 @@
 目錄節。**頁碼欄不存在**：頁碼由排版引擎兩趟分頁算出，AI 一個數字都不出，
 使用者也不手填（同 cjkfolio/toc.py 的分工鐵律）。模版未宣告 auto_toc 時該勾選
 停用並於標籤說明原因。
+
+摘要列（Sprint 149）：頂部一行說清「幾批、幾段有建議、預設勾了幾段要改、幾條
+目次」，使用者一眼確認 AI 指派是否真的有結果，不必捲完整張表。
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -35,7 +38,7 @@ class AssignReviewDialog(QDialog):
     """逐段確認與批次改派（離屏可驗：程式化改勾選／下拉後呼 _assignments）。"""
 
     def __init__(self, doc, template, assignments, on_apply,
-                 warnings=(), toc_entries=(), parent=None) -> None:
+                 warnings=(), toc_entries=(), batches=None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("AI 樣式指派校正（初稿請人工確認）")
         self._doc = doc
@@ -49,6 +52,9 @@ class AssignReviewDialog(QDialog):
                       "目次頁碼由排版引擎計算，不在此填。")
         head.setWordWrap(True)
         box.addWidget(head)
+        self._summary = QLabel()
+        self._summary.setStyleSheet("font-weight:bold;")
+        box.addWidget(self._summary)
         self._notice = QLabel("；".join(warnings))
         self._notice.setStyleSheet("color:#b00; font-size:11px;")
         self._notice.setWordWrap(True)
@@ -79,8 +85,15 @@ class AssignReviewDialog(QDialog):
             self._add_toc_cells(i, para, toc)
         self.table.resizeColumnsToContents()
         box.addWidget(self.table)
+        suggested_any = sum(1 for s in assignments if s is not None)
+        changes = len(self._assignments())
+        prefix = f"AI 共 {batches} 批回應：" if batches is not None else ""
+        self._summary.setText(
+            f"{prefix}{suggested_any}／{len(doc.paragraphs)} 段有樣式建議，"
+            f"其中 {changes} 段異於現行已預設勾選；目次條目建議 {suggested_toc} 條")
 
-        self._generate = QCheckBox("生成目次頁（置於書首，頁碼由排版引擎計算）")
+        self._generate = QCheckBox(
+            "生成目次頁（置於書首，頁碼由排版引擎計算；稿件自帶的手寫目錄一併移除）")
         if getattr(template, "auto_toc", None) is None:
             self._generate.setChecked(False)
             self._generate.setEnabled(False)

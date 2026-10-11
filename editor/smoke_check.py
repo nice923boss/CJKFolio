@@ -46,7 +46,7 @@ from cjkfolio.document import document_from_dict, load_document  # noqa: E402
 from cjkfolio.layout import layout_document  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.app import EditorWindow  # noqa: E402
-from editor.smoke_ai import check_ai_assign, check_ai_toc  # noqa: E402
+from editor.smoke_ai import check_ai_all  # noqa: E402
 from editor.smoke_blank import check_blank  # noqa: E402
 from editor.smoke_blank_line import check_blank_line  # noqa: E402
 from editor.smoke_book import check_book
@@ -642,9 +642,8 @@ def main() -> int:
     check_images(EditorWindow, DOC, ROOT)
     check_wrap_ui(EditorWindow, ROOT)
 
-    # C21 AI 指派背景執行緒、C37 AI 指派整理目次（抽於 editor/smoke_ai.py，同上）
-    check_ai_assign(EditorWindow, DOC)
-    check_ai_toc(EditorWindow, DOC)
+    # C21 AI 指派背景執行緒、C37 整理目次、C45 進度回饋（抽於 editor/smoke_ai*.py，同上）
+    check_ai_all(EditorWindow, DOC, QApplication.instance())
 
     # C22 稿件匯入（抽於 editor/smoke_import.py，同上）
     check_import(EditorWindow, DOC, ROOT)

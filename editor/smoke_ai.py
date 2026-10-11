@@ -28,6 +28,14 @@ from cjkfolio.editing import DocCursor
 from cjkfolio.primitives import book_number_for
 from editor import ai_actions
 from editor.ai_assign import AssignReviewDialog
+from editor.smoke_ai_feedback import check_ai_feedback
+
+
+def check_ai_all(EditorWindow, DOC, app) -> None:
+    """C21＋C37＋C45 一次跑完（smoke_check 已逼近行數上限，入口收成一行）。"""
+    check_ai_assign(EditorWindow, DOC)
+    check_ai_toc(EditorWindow, DOC)
+    check_ai_feedback(EditorWindow, DOC, app)
 
 
 def check_ai_assign(EditorWindow, DOC) -> None:

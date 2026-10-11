@@ -21,6 +21,24 @@ config.requests_per_minute 次），且暫時性失敗（503／429／5xx／逾�
 長度是隨**段數**成長（一段一項 JSON），與輸入字數無關。故段數另設上限，
 max_tokens 亦由該批段數推算並為推理型模型的 reasoning_content 預留額度；萬一
 仍被截斷，逐項搶救已寫完的建議而非整批報廢，並據實說明只採用了幾項。
+
+設定錯誤即停與進度回報（Sprint 149）：401／403／404 代表金鑰、Base URL 或 Model
+填錯，每一批都必然重現，舊行為是逐批降級後開出一張「全部無建議」的校正表，
+使用者看不出是金鑰錯。故第一次撞到即拋 AiConfigProblem（訊息已換成白話並指出
+去哪裡改），不再送後續批次。progress 回呼逐批回報，全書級指派常需數分鐘，
+沒有進度等於讓使用者以為當機。check_connection 給設定面板的「測試連線」用。
+
+全書標題一覽（Sprint 149）：分批送出時每批只看得到自己那 40 段，同一種編號的
+小節（「一、」「二、」）會在不同批被判成不同樣式與目次層級（真稿實測）。故每批
+的系統提示附上全書短段一覽，並明訂同編號格式須給同一樣式與層級。
+
+長段只送段首（Sprint 149）：判樣式只需段首與段長，全文送出反而讓推理型模型
+逐字推敲，真稿 docx 8 段 1,806 字一批就把 6,640 tokens 推理額度吃光、回應被截斷
+而 0／8。故超過 _EXCERPT_CHARS 的段只送段首並註明全段字數；回應的 index 不變。
+
+截斷拆批重送與輸出上限（Sprint 149）：回應被截斷時，沒拿到建議的段對半拆開
+重送，一路拆到單段；單段仍截斷才放棄並指出可調高 AI 設定的「輸出上限」
+（config.max_output_tokens，0＝依段數推算）。重送不算新批次。
 """
 import dataclasses
 import json
@@ -62,6 +80,29 @@ _BACKOFF_BASE = 5.0       # 指數退避 5、10、20 秒
 _BACKOFF_MAX = 60.0       # 退避與 Retry-After 的共同上限（背景執行緒不可無限等）
 _WINDOW = 60.0            # 節流視窗＝一分鐘
 
+# 設定錯誤：金鑰無效／無權限／端點或模型不存在。重試與換下一批都必然重現，
+# 第一次撞到就停（Sprint 149）。
+_FATAL_STATUS = frozenset({401, 403, 404})
+_HTTP_HINTS = {
+    401: "API Key 無效或已過期",
+    403: "API Key 無效，或沒有使用此模型的權限",  # NVIDIA 對錯的金鑰回 403（實測）
+    404: "找不到端點或模型，請確認 Base URL 與 Model",
+    429: "請求過量，已超過服務端限額",
+}
+_SETTINGS_HINT = "請到「設定 → AI 設定…」修正，並按「測試連線」確認"
+
+# 全書標題一覽：短段（且不以句讀收尾）才像標題；上限防長書把提示撐爆
+_OUTLINE_MAX_CHARS = 30
+_OUTLINE_MAX_ITEMS = 150
+_SENTENCE_END = "。！？；，、：…」』"
+
+# 送給 AI 的每段上限：超過只送段首（標題、引題、編號都在段首）並註明全段字數
+_EXCERPT_CHARS = 60
+
+
+class AiConfigProblem(RuntimeError):
+    """設定錯誤（金鑰、Base URL、Model）：訊息已白話化且不含金鑰值。"""
+
 
 @dataclass(frozen=True)
 class SuggestResult:
@@ -80,8 +121,38 @@ class SuggestResult:
 def _post_json(url: str, headers: dict, body: bytes, timeout: float) -> dict:
     """預設 transport：OpenAI 相容 chat/completions POST（測試注入替身取代）。"""
     req = urllib.request.Request(url, data=body, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # 服務端的錯誤說明（如 "Authentication failed"）只在回應本體裡，
+        # 不先讀出來，使用者只看得到一個狀態碼
+        try:
+            exc.detail = exc.read(300).decode("utf-8", "replace").strip()
+        except OSError:
+            exc.detail = ""
+        raise
+
+
+def describe_error(exc: Exception, secret: str = "") -> str:
+    """連線／HTTP 錯誤 → 使用者看得懂的一句話（不含金鑰值）。"""
+    if isinstance(exc, urllib.error.HTTPError):
+        hint = _HTTP_HINTS.get(exc.code)
+        if hint is None:
+            hint = "服務暫時無法使用" if exc.code >= 500 else "服務端拒絕請求"
+        detail = getattr(exc, "detail", "")
+        text = f"{hint}（HTTP {exc.code}）" + (f"：{detail}" if detail else "")
+    elif isinstance(exc, urllib.error.URLError):
+        text = f"連不上伺服器，請確認 Base URL 與網路：{exc.reason}"
+    elif isinstance(exc, TimeoutError):
+        text = "等待回應逾時"
+    else:
+        text = str(exc)
+    return _sanitize(text, secret)
+
+
+def _is_fatal(exc: Exception) -> bool:
+    return isinstance(exc, urllib.error.HTTPError) and exc.code in _FATAL_STATUS
 
 
 class _Pacer:
@@ -173,7 +244,7 @@ def _post_with_retry(post, args, pacer: _Pacer, note) -> dict:
             attempt += 1
 
 
-def _system_prompt(candidates, default_style: str, toc_levels=()) -> str:
+def _system_prompt(candidates, default_style: str, toc_levels=(), outline=()) -> str:
     return (
         "你是書籍排版助手。針對輸入的每個段落，從以下段落樣式清單中選一個最合適的："
         + "、".join(candidates)
@@ -183,6 +254,17 @@ def _system_prompt(candidates, default_style: str, toc_levels=()) -> str:
         + "toc_level＝目次層級的正整數。"
         + _level_prompt(toc_levels)
         + "不列入目次的段落（內文、引文等）不要輸出這兩個欄位。"
+        + "toc_title 照該段原文，保留「第一章」「一、」等編號。"
+        + "同一種編號格式的標題（如「第X章」一類、「一、」一類）全書必須給同一個樣式"
+        + "與同一個目次層級，要列入目次就全部列入，不列就全部不列。"
+        + "稿件開頭若附有作者手寫的目錄，以它列出的條目決定哪些標題列入目次；"
+        + "手寫目錄本身（「目錄」二字與其條目）指派清單中的目錄類樣式且不列入目次，"
+        + "排版程式會以自動生成的目次取代它。"
+        + "段首引題（如「一、求學階段：」後面直接接內文）整段仍是內文樣式，"
+        + "要列入目次時 toc_title 只取引題本身（到冒號為止，不含冒號）。"
+        + "超過 " + str(_EXCERPT_CHARS) + " 字的段落只給段首並註明全段字數，"
+        + "依段首判斷即可。"
+        + _outline_prompt(outline)
         + "不要輸出頁碼，頁碼由排版程式計算。"
         + "只輸出 JSON 陣列，格式 [{\"index\": 數字, \"style\": \"樣式名\"}]，"
         + "列入目次者為 [{\"index\": 數字, \"style\": \"樣式名\", \"toc_title\": \"文字\", "
@@ -210,6 +292,32 @@ def _level_prompt(toc_levels) -> str:
     return text
 
 
+def _outline(texts) -> tuple:
+    """全書疑似標題的短段（依序）；給 AI 判斷層級一致的上下文，非判定依據。"""
+    out = []
+    for text in texts:
+        t = text.strip()
+        if t and len(t) <= _OUTLINE_MAX_CHARS and t[-1] not in _SENTENCE_END:
+            out.append(t)
+            if len(out) >= _OUTLINE_MAX_ITEMS:
+                break
+    return tuple(out)
+
+
+def _excerpt(text: str) -> str:
+    """長段只送段首並註明全段字數（判樣式不需全文，全文只會撐大推理量）。"""
+    if len(text) <= _EXCERPT_CHARS:
+        return text
+    return f"{text[:_EXCERPT_CHARS]}……（以下省略，全段 {len(text)} 字）"
+
+
+def _outline_prompt(outline) -> str:
+    if not outline:
+        return ""
+    return ("輸入只是全書的一部分；全書疑似標題的短段依序如下，供你判斷層級一致"
+            "（只需輸出本次輸入的段落）：" + "／".join(outline) + "。")
+
+
 def _batches(texts, batch_char_limit: int, batch_item_limit: int = _BATCH_ITEMS):
     """依字數與段數雙上限切批（段落不跨批，單段超限自成一批）；產出 (起始索引, 段列表)。
 
@@ -228,13 +336,28 @@ def _batches(texts, batch_char_limit: int, batch_item_limit: int = _BATCH_ITEMS)
         yield start, bucket
 
 
-def _max_tokens(item_count: int) -> int:
+def _max_tokens(item_count: int, configured: int = 0) -> int:
     """該批的回應 token 上限＝推理預留＋每段預算（不寫死常數）。
 
     寫死 4000 的舊值對短段多的批次不夠用：114 段需要 114 項 JSON，加上推理型
     模型自己的 reasoning_content，實測正好撞滿 4000 而停在陣列中途。
+    configured＞0＝使用者在 AI 設定填的輸出上限，照用不推算（Sprint 149）。
     """
+    if configured > 0:
+        return configured
     return _REASONING_RESERVE + _TOKENS_PER_ITEM * item_count
+
+
+def _halves(positions: tuple) -> list:
+    """截斷重送的拆法：兩段以上對半拆，只剩一段就單獨重送。"""
+    if len(positions) < 2:
+        return [positions]
+    mid = len(positions) // 2
+    return [positions[:mid], positions[mid:]]
+
+
+def _span(positions: tuple) -> str:
+    return f"段 {positions[0]}" if len(positions) == 1 else f"段 {positions[0]}〜{positions[-1]}"
 
 
 def _sanitize(message: str, secret: str) -> str:
@@ -281,6 +404,10 @@ def _salvage_items(chunk: str):
     return items
 
 
+class _Truncated(ValueError):
+    """回應被輸出長度上限截斷且一項都沒寫完（由上層拆小批重送）。"""
+
+
 def _extract_items(text: str, truncated: bool):
     """回應文字 → (項目列, 是否只搶救到局部)。
 
@@ -302,15 +429,17 @@ def _extract_items(text: str, truncated: bool):
         salvaged = _salvage_items(chunk)
         if salvaged:
             return salvaged, True
-    hint = "（回應被輸出長度上限截斷）" if truncated else ""
-    raise ValueError(f"回應中無 JSON 陣列{hint}（前 120 字）：{text[:120]}")
+    if truncated:
+        raise _Truncated(f"回應中無 JSON 陣列（回應被輸出長度上限截斷）（前 120 字）：{text[:120]}")
+    raise ValueError(f"回應中無 JSON 陣列（前 120 字）：{text[:120]}")
 
 
 def _parse_assignments(payload: dict, count: int, candidates: set):
-    """回應 → (逐段樣式列, 逐段目錄條目列, 警告列表)；兩條位置列等長且與批內段對齊。
+    """回應 → (逐段樣式列, 逐段目錄條目列, 警告列表, 截斷而沒回到的批內索引)。
 
     樣式名不在候選集即拒（幻覺守門）；目錄欄位獨立守門，樣式被拒不連坐目錄條目
-    （反之亦然），兩者各自可用即各自留下。
+    （反之亦然），兩者各自可用即各自留下。被截斷時回報哪些段 AI 還沒寫到，
+    由上層拆小批重送（Sprint 149），故此處不另發「只採用幾項」的警告。
     """
     choice = payload["choices"][0]
     msg = choice["message"]
@@ -321,24 +450,26 @@ def _parse_assignments(payload: dict, count: int, candidates: set):
     slots = [None] * count
     toc_slots = [None] * count
     warnings = []
-    if partial:
+    if partial and not cut:
         # 搶救成功也要說：使用者看到的是「這批只改了一半」，不說等於沉默降級
-        why = "被輸出長度上限截斷" if cut else "格式不完整"
         warnings.append(
-            f"AI 回應{why}，只採用已寫完的 {len(items)}／{count} 項建議"
+            f"AI 回應格式不完整，只採用已寫完的 {len(items)}／{count} 項建議"
             "（其餘維持原樣式）")
+    answered = set()
     for item in items:
         idx = item.get("index")
         style = item.get("style")
         if not isinstance(idx, int) or not 0 <= idx < count:
             warnings.append(f"AI 回應 index 越界忽略：{idx!r}")
             continue
+        answered.add(idx)
         toc_slots[idx] = _parse_toc_entry(item, idx, warnings)
         if style not in candidates:
             warnings.append(f"AI 建議樣式不在模版候選集，忽略：{style!r}（段 {idx}）")
             continue
         slots[idx] = style
-    return slots, toc_slots, warnings
+    unanswered = tuple(i for i in range(count) if i not in answered) if cut else ()
+    return slots, toc_slots, warnings, unanswered
 
 
 def suggest_styles(
@@ -352,6 +483,7 @@ def suggest_styles(
     transport=None,
     toc_levels=(),
     pacer=None,
+    progress=None,
 ) -> SuggestResult:
     """對每段文字取得樣式建議；批次失敗降級該批 None 並列警告（不擋流程）。
 
@@ -361,6 +493,10 @@ def suggest_styles(
     送出速率取 config.requests_per_minute（Sprint 143）：節流視窗只涵蓋這一次
     呼叫，同一把金鑰若同時被別的程式或另一次指派使用，加總仍可能超過服務端限額
     （GAPS #101）。pacer 注入＝測試用假時鐘（注入時 config 的速率不再生效）。
+
+    progress(已完成批數, 總批數, 說明)：每批送出前、重試等待前與全部結束時呼叫。
+    金鑰／端點／模型錯誤（401／403／404）拋 AiConfigProblem 並停送後續批次
+    （Sprint 149）。
     """
     for field in ("base_url", "model"):
         if not getattr(config, field):
@@ -376,46 +512,110 @@ def suggest_styles(
     assignments = [None] * len(texts)
     toc_entries = [None] * len(texts)
     warnings = []
-    batches = 0
-    for start, bucket in _batches(texts, batch_char_limit):
-        batches += 1
+    plan = list(_batches(texts, batch_char_limit))
+    report = progress or (lambda done, total, note: None)
+    system = _system_prompt(candidates, default_style, toc_levels, _outline(texts))
+
+    def request(positions: tuple, label: str, done: int) -> tuple:
+        """送出一個請求並把建議寫回原段位置；回傳被截斷而沒拿到建議的原段索引。"""
+        retried = []
+
+        def note(exc, nth, wait):
+            """重試據實入警告列（成功收尾也留著：使用者要看得到中途發生過什麼）。"""
+            retried.append(nth)
+            reason = describe_error(exc, config.api_key)
+            warnings.append(f"{label}第 {nth} 次送出失敗，{wait:.0f} 秒後重試：{reason}")
+            report(done, len(plan), f"{label}{reason}，{wait:.0f} 秒後重試")
+
         body = json.dumps({
             "model": config.model,
             "messages": [
-                {"role": "system",
-                 "content": _system_prompt(candidates, default_style, toc_levels)},
+                {"role": "system", "content": system},
                 {"role": "user", "content": "\n".join(
-                    f"[{i}] {t}" for i, t in enumerate(bucket))},
+                    f"[{i}] {_excerpt(texts[p])}" for i, p in enumerate(positions))},
             ],
             "temperature": 0.2,
-            "max_tokens": _max_tokens(len(bucket)),
+            "max_tokens": _max_tokens(len(positions), config.max_output_tokens),
         }).encode("utf-8")
-        label = f"批次 {batches}（段 {start}〜{start + len(bucket) - 1}）"
-        retried = []
-
-        def note(exc, nth, wait, label=label):
-            """重試據實入警告列（成功收尾也留著：使用者要看得到中途發生過什麼）。"""
-            retried.append(nth)
-            warnings.append(_sanitize(
-                f"{label}第 {nth} 次送出失敗，{wait:.0f} 秒後重試：{exc}",
-                config.api_key))
-
         try:
             payload = _post_with_retry(post, (url, headers, body, timeout), gate, note)
-            slots, toc_slots, batch_warnings = _parse_assignments(
-                payload, len(bucket), candidate_set)
+            slots, toc_slots, batch_warnings, unanswered = _parse_assignments(
+                payload, len(positions), candidate_set)
+        except _Truncated:
+            return positions   # 一項都沒寫完：整批交給上層拆小批重送
         except Exception as exc:  # 降級不擋流程（§4.4），警告不沉默
+            if _is_fatal(exc):  # 設定錯誤：後續批次必然重現，停送並明說去哪改
+                raise AiConfigProblem(
+                    f"{describe_error(exc, config.api_key)}。{_SETTINGS_HINT}") from None
             # 該批樣式與目錄條目一併維持 None：目錄條目源自同一次回應，
             # 回應沒回來就沒有半份可信的目錄建議。
             tried = f"（已送出 {len(retried) + 1} 次）" if retried else ""
-            warnings.append(_sanitize(
-                f"{label}AI 指派失敗{tried}，維持原樣式：{exc}", config.api_key))
-            continue
+            warnings.append(
+                f"{label}AI 指派失敗{tried}，維持原樣式：{describe_error(exc, config.api_key)}")
+            return ()
         warnings.extend(_sanitize(w, config.api_key) for w in batch_warnings)
-        assignments[start:start + len(bucket)] = slots
-        toc_entries[start:start + len(bucket)] = toc_slots
-    return SuggestResult(tuple(assignments), tuple(warnings), batches,
+        for p, style, toc in zip(positions, slots, toc_slots):
+            assignments[p], toc_entries[p] = style, toc
+        return tuple(positions[i] for i in unanswered)
+
+    for batches, (start, bucket) in enumerate(plan, 1):
+        report(batches - 1, len(plan),
+               f"第 {batches}／{len(plan)} 批送出中（段 {start}〜{start + len(bucket) - 1}）")
+        # 截斷時把沒拿到建議的段拆半重送，遞迴到單段為止（Sprint 149）：截斷是
+        # 推理加 JSON 超過輸出上限，段少了兩者都縮小；每次重送的段數必然比上一次少，
+        # 故一定收斂。單段仍被截斷才放棄，並指出可調高 AI 設定的輸出上限。
+        pending = [(tuple(range(start, start + len(bucket))),
+                    f"批次 {batches}（段 {start}〜{start + len(bucket) - 1}）")]
+        while pending:
+            positions, label = pending.pop(0)
+            missing = request(positions, label, batches - 1)
+            if not missing:
+                continue
+            if len(positions) == 1:
+                warnings.append(f"{label}回應被輸出長度上限截斷，維持原樣式；"
+                                "可到「設定 → AI 設定…」調高「輸出上限」")
+                continue
+            parts = _halves(missing)
+            warnings.append(
+                f"{label}回應被輸出長度上限截斷，已採用 {len(positions) - len(missing)}"
+                f"／{len(positions)} 項，其餘 {len(missing)} 段拆成 {len(parts)} 小批重送")
+            report(batches - 1, len(plan),
+                   f"{label}回應被截斷，其餘 {len(missing)} 段拆小批重送")
+            pending[:0] = [(part, f"批次 {batches} 重送（{_span(part)}）") for part in parts]
+    report(len(plan), len(plan), f"{len(plan)} 批全部回應")
+    return SuggestResult(tuple(assignments), tuple(warnings), len(plan),
                          tuple(toc_entries))
+
+
+def check_connection(config: AiConfig, *, transport=None, timeout: float = 60.0) -> str:
+    """設定面板「測試連線」：送一則極短請求，成功回說明文字，失敗拋 AiConfigProblem。
+
+    驗的是 Base URL、API Key、Model 三者能不能通（HTTP 200 且回應有 choices），
+    不驗模型會不會正確指派樣式。max_tokens 給小值：推理型模型可能因額度用完而
+    沒有正文，但服務端已接受金鑰與模型，對「設定對不對」而言已足夠。
+    """
+    for field, name in (("base_url", "Base URL"), ("model", "Model")):
+        if not getattr(config, field):
+            raise AiConfigProblem(f"{name} 未填")
+    headers = {"Content-Type": "application/json"}
+    if config.api_key:
+        headers["Authorization"] = "Bearer " + config.api_key
+    body = json.dumps({
+        "model": config.model,
+        "messages": [{"role": "user", "content": "請回覆 OK"}],
+        "max_tokens": 16,
+    }).encode("utf-8")
+    url = config.base_url.rstrip("/") + "/chat/completions"
+    began = time.monotonic()
+    try:
+        payload = (transport or _post_json)(url, headers, body, timeout)
+        payload["choices"][0]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise AiConfigProblem(
+            f"服務端有回應但格式不是 OpenAI 相容的 chat/completions：{exc}") from None
+    except Exception as exc:  # noqa: BLE001（網路／HTTP 任何失敗都轉白話）
+        raise AiConfigProblem(describe_error(exc, config.api_key)) from None
+    return f"連線成功：{config.model} 已回應（{time.monotonic() - began:.1f} 秒）"
 
 
 def apply_suggestions(document: Document, assignments, toc_entries=None) -> Document:

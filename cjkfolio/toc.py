@@ -172,8 +172,36 @@ def _body_of(doc: Document, spec):
     return (), doc.master
 
 
+def _manual_toc_styles(spec) -> frozenset:
+    return frozenset({spec.heading_style, *spec.entry_styles.values()} - {None})
+
+
+def manual_toc_indices(doc: Document, spec) -> tuple:
+    """內文中掛目錄類樣式、且自身不宣告目錄條目的段序（＝作者手寫目錄）。"""
+    styles = _manual_toc_styles(spec)
+    body, _ = _body_of(doc, spec)
+    offset = len(doc.paragraphs) - len(body)
+    return tuple(offset + i for i, p in enumerate(body)
+                 if p.style in styles and not p.toc_title)
+
+
+def _drop_manual_toc(body, spec) -> tuple:
+    """拿掉手寫目錄段；被拿掉段的節首主版標記轉給下一個留下的段（節不消失）。"""
+    styles = _manual_toc_styles(spec)
+    kept, carry = [], None
+    for p in body:
+        if p.style in styles and not p.toc_title:
+            carry = p.master if p.master is not None else carry
+            continue
+        if carry is not None and p.master is None:
+            p = replace(p, master=carry)
+        carry = None
+        kept.append(p)
+    return tuple(kept)
+
+
 def document_with_toc(doc: Document, template, *, first_page: int = 1,
-                      spec=None) -> Document:
+                      spec=None, drop_manual: bool = False) -> Document:
     """單份稿件於書首生成自動目錄節，回傳可直接 render／export 的 Document。
 
     條目來源＝段落自身宣告的 toc_title／toc_level（未宣告層級者視為第 1 層）；
@@ -185,6 +213,10 @@ def document_with_toc(doc: Document, template, *, first_page: int = 1,
     （參考書 p002／p003 的部名條目即如此）。
 
     first_page 須與最終 render／export 的 --first-page 一致，頁碼才對得上。
+
+    drop_manual（Sprint 149）：一併拿掉內文中的手寫目錄（掛目錄標題或條目樣式、
+    自身不宣告條目的段）。匯入的稿件常自帶一份打字的目錄，不拿掉就與生成的目次
+    並排成兩份。判準靠樣式（AI 指派或使用者手動套的目錄類樣式），不猜文字內容。
     """
     spec = spec if spec is not None else getattr(template, "auto_toc", None)
     if spec is None:
@@ -207,6 +239,8 @@ def document_with_toc(doc: Document, template, *, first_page: int = 1,
             "插入目錄節會使其錯頁；請先移除，或改走書冊自動目錄"
             "（assemble_book_with_toc）")
     body, body_master = _body_of(doc, spec)
+    if drop_manual:
+        body = _drop_manual_toc(body, spec)
     if not body:
         raise TocError("文件無內文段落，無法生成目錄")
     entries = [(i, p.toc_title, 1 if p.toc_level is None else p.toc_level)

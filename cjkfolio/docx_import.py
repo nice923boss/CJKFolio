@@ -6,7 +6,8 @@ pStyle 樣式鏈（含 basedOn 遞迴）outlineLvl → 樣式名（heading N／�
 outlineLvl 有效層級 0〜8；9＝正文（TOC Heading 實測值），鏈上首見即定不再上溯。
 引文＝樣式名或 styleId 含 quote／引文。粗體 → strong、斜體 → em、
 粗斜並用 → strong（md v1 不嵌套同構）；對映復用模版 md_mapping／md_inline_mapping。
-v1 不處理：表格、圖片、註腳、追蹤修訂、段內強制換行（w:br）、tab。
+段內強制換行（w:br／w:cr）拆成同類的下一段（Sprint 149）。
+v1 不處理：表格、圖片、註腳、追蹤修訂、tab。
 """
 import re
 import xml.etree.ElementTree as ET
@@ -111,16 +112,21 @@ def paragraphs_from_docx(path) -> list:
             ol = ppr.find(f"{_W}outlineLvl")
             if ol is not None and (ol.get(f"{_W}val") or "").isdigit():
                 direct_lvl = int(ol.get(f"{_W}val"))
-        runs = []
+        # 段內強制換行（w:br／w:cr，Word 的 Shift+Enter）拆成同類的下一段
+        # （Sprint 149）：文件模型沒有段內換行，丟掉它會把作者分行的兩句黏成一串
+        # （真稿「…去回憶：」直接接上「一、求學階段」）。
+        segments = [[]]
         for r in p.iter(f"{_W}r"):  # iter 深走：hyperlink 內 run 不漏（Spike 11）
-            text = "".join(t.text or "" for t in r.findall(f"{_W}t"))
-            if not text:
-                continue
             rpr = r.find(f"{_W}rPr")
-            runs.append((text, _flag_on(rpr, "b"), _flag_on(rpr, "i")))
-        if not runs:
-            continue  # 空段（無文字）跳過，md blocks 同構
-        paragraphs.append((_paragraph_kind(pstyle, direct_lvl, styles), tuple(runs)))
+            bold, italic = _flag_on(rpr, "b"), _flag_on(rpr, "i")
+            for child in r:
+                if child.tag == f"{_W}t" and child.text:
+                    segments[-1].append((child.text, bold, italic))
+                elif child.tag in (f"{_W}br", f"{_W}cr"):
+                    segments.append([])
+        kind = _paragraph_kind(pstyle, direct_lvl, styles)
+        # 空段（無文字）跳過，md blocks 同構；連續換行造成的空片段同理
+        paragraphs.extend((kind, tuple(runs)) for runs in segments if runs)
     return paragraphs
 
 

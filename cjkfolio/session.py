@@ -264,18 +264,28 @@ class EditSession:
 
         改派後隨即補章首分頁（Sprint 141 apply_page_starts）：順序必須在生成目錄
         之前，否則目錄的兩趟穩定分頁算的是「還沒換頁」的頁碼，印出來的目錄頁碼
-        會整批偏掉。"""
+        會整批偏掉。
+
+        生成目錄時一併拿掉內文中的手寫目錄（Sprint 149 drop_manual），段數可能
+        變少，游標越界即歸零（同 replace_document，避免指到不存在的段）。"""
         document = change_paragraph_styles(self._document, assignments)
         document = apply_page_starts(document, self._template)
         if toc_entries:
             document = change_paragraph_toc_entries(document, toc_entries)
         if generate_toc:
-            document = document_with_toc(document, self._template)
+            document = document_with_toc(document, self._template, drop_manual=True)
             if document == self._document:
                 # 目錄重生成恆造新物件（replace），內容相同時還原同一性，
                 # 讓 _commit_pair 的 no-op 判定成立＝不推一步「看不出差別」的 undo
                 document = self._document
-        return self._commit_pair(document, self._template)
+        result = self._commit_pair(document, self._template)
+        cursor = self._cursor
+        if result is not None and isinstance(cursor, DocCursor) and (
+                cursor.para_idx >= len(document.paragraphs)
+                or cursor.caret > len(document.paragraphs[cursor.para_idx].text)):
+            self._cursor = DocCursor(0, 0)
+            result = self._state_result()
+        return result
 
     def set_section_master(self, para_idx: int, master: Optional[str]):
         """指派節式主版入**單一 undo 步**（Sprint 130 主版指派介面的核心半邊；

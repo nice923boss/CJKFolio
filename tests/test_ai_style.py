@@ -383,9 +383,9 @@ def test_retries_count_against_the_rate_limit():
     assert worst <= 2, f"重試突破了節流上限（某一分鐘 {worst} 次）：{sent}"
 
 
-@pytest.mark.parametrize("code", [400, 401, 403, 404, 422])
+@pytest.mark.parametrize("code", [400, 422])
 def test_permanent_http_status_not_retried(code):
-    """金鑰錯／路徑錯重試必然重現，重試只是白花配額。"""
+    """請求被拒重試必然重現，重試只是白花配額（401／403／404 另見即停測試）。"""
     t = transport_raising(http_error(code))
     pacer, clock = fake_pacer()
     result = suggest_styles(["甲。"], CANDIDATES, CONFIG, default_style=DEFAULT,
@@ -514,23 +514,59 @@ def test_max_tokens_scales_with_batch_size():
 
 
 def test_truncated_response_salvages_finished_items():
-    """截斷在陣列中途：已寫完的項照採，不整批報廢；缺的維持原樣式且據實警告。"""
-    t = transport_returning_raw(cut_response(
-        '[{"index": 0, "style": "章名大標-明體W7"}, '
-        '{"index": 1, "style": "內文-明體直排"}, {"index": 2, "sty'))
+    """截斷在陣列中途：已寫完的項照採，只把沒寫到的段單獨重送（Sprint 149）。"""
+    t = transport_returning_raw(
+        cut_response('[{"index": 0, "style": "章名大標-明體W7"}, '
+                     '{"index": 1, "style": "內文-明體直排"}, {"index": 2, "sty'),
+        chat_response(json.dumps([{"index": 0, "style": "內文-明體直排"}])))
     result = suggest_styles(["第一章", "內文。", "尾段。"], CANDIDATES, CONFIG,
                             default_style=DEFAULT, transport=t)
-    assert result.assignments == ("章名大標-明體W7", "內文-明體直排", None)
+    assert result.assignments == ("章名大標-明體W7", "內文-明體直排", "內文-明體直排")
+    assert t.calls[1][2]["messages"][1]["content"] == "[0] 尾段。"   # 只重送缺的那段
     assert len(result.warnings) == 1
     assert "被輸出長度上限截斷" in result.warnings[0]
-    assert "2／3" in result.warnings[0]
+    assert "已採用 2／3 項，其餘 1 段拆成 1 小批重送" in result.warnings[0]
+    assert result.batches == 1   # 重送不算新批次（摘要的批數＝原計畫批數）
+
+
+def test_truncation_with_nothing_finished_splits_in_halves():
+    """一項都沒寫完：整批對半拆開重送，各半的 index 從 0 起算並對回原段位置。"""
+    from cjkfolio.ai_style import _max_tokens
+
+    t = transport_returning_raw(
+        cut_response('[{"index": 0, "sty'),
+        chat_response(json.dumps([{"index": 0, "style": "章名大標-明體W7"},
+                                  {"index": 1, "style": "內文-明體直排"}])),
+        chat_response(json.dumps([{"index": 0, "style": "章節小標-黑體"},
+                                  {"index": 1, "style": "內文-明體直排"}])))
+    notes = []
+    result = suggest_styles(["第一章", "甲。", "一、", "乙。"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t,
+                            progress=lambda done, total, note: notes.append(note))
+    assert result.assignments == ("章名大標-明體W7", "內文-明體直排",
+                                  "章節小標-黑體", "內文-明體直排")
+    assert [c[2]["messages"][1]["content"] for c in t.calls[1:]] == [
+        "[0] 第一章\n[1] 甲。", "[0] 一、\n[1] 乙。"]
+    assert t.calls[1][2]["max_tokens"] == _max_tokens(2)   # 段少，額度依段數重算
+    assert "拆成 2 小批重送" in result.warnings[0]
+    assert any("拆小批重送" in n for n in notes), f"進度未報拆批：{notes}"
+
+
+def test_configured_output_cap_overrides_auto():
+    """AI 設定填了輸出上限就照用，不依段數推算（0＝自動）。"""
+    t = transport_returning(json.dumps([]))
+    suggest_styles(["甲。", "乙。"], CANDIDATES,
+                   dataclasses.replace(CONFIG, max_output_tokens=12345),
+                   default_style=DEFAULT, transport=t)
+    assert t.calls[0][2]["max_tokens"] == 12345
 
 
 def test_truncated_response_keeps_toc_entries_of_finished_items():
     """搶救到的項若帶目錄欄位，目錄建議一併留下（與樣式同批可信）。"""
-    t = transport_returning_raw(cut_response(
-        '[{"index": 0, "style": "章名大標-明體W7", "toc_title": "第一章　留白", '
-        '"toc_level": 2}, {"index": 1, "sty'))
+    t = transport_returning_raw(
+        cut_response('[{"index": 0, "style": "章名大標-明體W7", "toc_title": "第一章　留白", '
+                     '"toc_level": 2}, {"index": 1, "sty'),
+        cut_response(""))   # 單段重送仍截斷：放棄該段
     result = suggest_styles(["第一章　留白", "內文。"], CANDIDATES, CONFIG,
                             default_style=DEFAULT, transport=t)
     assert result.toc_entries == (("第一章　留白", 2), None)
@@ -542,13 +578,17 @@ def test_reasoning_prose_is_not_mistaken_for_json_array():
     舊式貪婪比對會把 prose 從第一個 [ 吃到最後一個 ]，報出「Extra data」這種
     看不懂的錯；現在一律認「[ 後接 {」，據實回報無陣列並降級該批。
     """
-    t = transport_returning_raw({"choices": [{
+    prose = {"choices": [{
         "message": {"content": "", "reasoning_content":
                     "Paragraph [16] is a subheading. Paragraph [17] is body text."},
-        "finish_reason": "length"}]})
+        "finish_reason": "length"}]}
+    t = transport_returning_raw(prose, prose, prose)   # 拆成兩段單獨重送也都截斷
     result = suggest_styles(["甲。", "乙。"], CANDIDATES, CONFIG,
                             default_style=DEFAULT, transport=t)
     assert result.assignments == (None, None)
-    assert len(result.warnings) == 1
-    assert "Extra data" not in result.warnings[0]
-    assert "回應被輸出長度上限截斷" in result.warnings[0]
+    assert len(t.calls) == 3
+    assert not any("Extra data" in w for w in result.warnings)
+    assert "拆成 2 小批重送" in result.warnings[0]
+    # 單段仍截斷才放棄，並指出可以去調高輸出上限
+    assert len(result.warnings) == 3
+    assert all("調高「輸出上限」" in w for w in result.warnings[1:])

@@ -106,3 +106,11 @@ def test_inline_without_mapping_strips_markers():
     p = doc.paragraphs[0]
     assert p.text == "看重點了"
     assert all(r.char_style is None for r in p.runs)
+
+
+def test_utf8_bom_not_left_in_first_paragraph(tmp_path):
+    from cjkfolio.md_import import import_markdown_file
+    p = tmp_path / "稿.md"
+    p.write_bytes("\ufeff書名\n\n內文。".encode("utf-8"))
+    doc = import_markdown_file(p, {"paragraph": "內文-明體直排"})
+    assert doc.paragraphs[0].text == "書名"

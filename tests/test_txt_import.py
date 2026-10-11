@@ -28,3 +28,11 @@ def test_import_txt_file_assigns_default_style(tmp_path):
     assert doc.title == "自擬稿"
     assert [para.style for para in doc.paragraphs] == [DEFAULT, DEFAULT]
     assert [para.text for para in doc.paragraphs] == ["首段。", "次段。"]
+
+
+def test_utf8_bom_not_left_in_first_paragraph(tmp_path):
+    """記事本存的 UTF-8 帶 BOM；舊版把 U+FEFF 留在首段（真稿書名前多一個隱形字）。"""
+    p = tmp_path / "稿.txt"
+    p.write_bytes("\ufeff書名\n\n內文。".encode("utf-8"))
+    doc = import_txt_file(p, default_style=DEFAULT)
+    assert doc.paragraphs[0].text == "書名"
