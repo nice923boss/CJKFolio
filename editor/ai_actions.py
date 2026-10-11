@@ -26,7 +26,9 @@ from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QProgressBar
 
 from cjkfolio.ai_config import load_ai_config
 from cjkfolio.ai_style import AiConfigProblem, suggest_styles
-from cjkfolio.editing import change_paragraph_styles, change_paragraph_toc_entries
+from cjkfolio.editing import (
+    change_paragraph_styles, change_paragraph_toc_entries, insert_preface,
+)
 from cjkfolio.toc import manual_toc_indices
 from editor.ai_assign import AssignReviewDialog
 from editor.ai_assign_core import assignments_still_apply, paragraph_texts
@@ -221,6 +223,7 @@ class AiActionsMixin:
                                  warnings=result.warnings,
                                  toc_entries=toc_entries,
                                  batches=result.batches,
+                                 preface=getattr(result, "preface", None),
                                  parent=self)
         dlg.exec()
 
@@ -247,13 +250,14 @@ class AiActionsMixin:
             thread.deleteLater()
 
     def _apply_assignments(self, assignments, toc_entries=None,
-                           generate_toc: bool = False):
+                           generate_toc: bool = False, preface=None):
         """批次改派套用（session.apply_para_styles 單一 undo 步）；回錯誤訊息或 None。
 
         樣式、目次條目宣告、生成目次頁三件事一次送進 session（Sprint 135）：分開送
         會變三步 undo，違反對話框頂部「單一 undo 步可整批回退」的承諾。
+        preface（Sprint 159）＝(段序, 層級, 樣式)：同一步插入「前言」標題並列入目次。
         """
-        if not assignments and not toc_entries and not generate_toc:
+        if not assignments and not toc_entries and not generate_toc and preface is None:
             self.statusBar().showMessage("未採用任何建議（文件未變更）")
             return None
         # 套用前先數會被自動換頁的段（Sprint 141）：session 會替宣告 starts_page 的
@@ -262,10 +266,14 @@ class AiActionsMixin:
             1 for idx, name in assignments.items()
             if idx > 0 and self.doc.paragraphs[idx].master is None
             and getattr(self.template.paragraph_styles.get(name), "starts_page", False))
+        if preface is not None and preface[0] > 0 and getattr(
+                self.template.paragraph_styles.get(preface[2]), "starts_page", False):
+            page_starts += 1
         try:
-            manual = self._manual_toc_count(assignments, toc_entries) if generate_toc else 0
+            manual = (self._manual_toc_count(assignments, toc_entries, preface)
+                      if generate_toc else 0)
             res = self.session.apply_para_styles(
-                assignments, toc_entries, generate_toc=generate_toc)
+                assignments, toc_entries, generate_toc=generate_toc, preface=preface)
         except (KeyError, ValueError, IndexError) as err:
             return f"無法套用：{err}"
         parts = [f"AI 批次改派 {len(assignments)} 段"]
@@ -273,6 +281,8 @@ class AiActionsMixin:
             parts.append(f"其中 {page_starts} 段依模版宣告自動起新頁")
         if toc_entries:
             parts.append(f"目次條目 {len(toc_entries)} 段")
+        if preface is not None:
+            parts.append(f"在第 {preface[0] + 1} 段前插入「前言」標題")
         if generate_toc:
             entries = sum(1 for p in self.doc.paragraphs if p.toc_title)
             # 標頁碼的條目數要列出來：模版可宣告某層不標頁碼（如部名），
@@ -289,7 +299,7 @@ class AiActionsMixin:
         self._ai_progress_finish(f"已套用：{message}", True)
         return None
 
-    def _manual_toc_count(self, assignments, toc_entries) -> int:
+    def _manual_toc_count(self, assignments, toc_entries, preface=None) -> int:
         """套用後會被當成手寫目錄拿掉的段數（session 生成目次時 drop_manual）。"""
         spec = self.template.auto_toc
         if spec is None:
@@ -297,6 +307,8 @@ class AiActionsMixin:
         probe = change_paragraph_styles(self.doc, assignments)
         if toc_entries:
             probe = change_paragraph_toc_entries(probe, toc_entries)
+        if preface is not None:
+            probe = insert_preface(probe, *preface)
         return len(manual_toc_indices(probe, spec))
 
     def closeEvent(self, event) -> None:

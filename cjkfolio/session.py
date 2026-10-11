@@ -44,6 +44,7 @@ from .editing import (
     change_paragraph_toc_entries,
     delete_page,
     insert_blank_page,
+    insert_preface,
     locate_cell,
     move_section,
     rename_char_style_refs,
@@ -263,7 +264,7 @@ class EditSession:
         )
 
     def apply_para_styles(self, assignments, toc_entries=None, *,
-                          generate_toc: bool = False):
+                          generate_toc: bool = False, preface=None):
         """多段批次改派段落樣式入**單一 undo 步**（Sprint 79，§4.4 逐段校正批次
         改派＝AI 建議採用與跨段套段落樣式的共同地基；復用 _commit_pair＝文件變
         模版不變）。未知樣式名全文重排 KeyError 快速失敗；全數等值 no-op 回 None。
@@ -279,11 +280,17 @@ class EditSession:
         會整批偏掉。
 
         生成目錄時一併拿掉內文中的手寫目錄（Sprint 149 drop_manual），段數可能
-        變少，游標越界即歸零（同 replace_document，避免指到不存在的段）。"""
+        變少，游標越界即歸零（同 replace_document，避免指到不存在的段）。
+
+        preface＝(段序, 層級, 樣式)（Sprint 159）：在該段前插入「前言」標題並列入
+        目次。段序以 AI 指派時的原文件為準，故排在樣式與條目（同樣以原段序定址）
+        之後、章首分頁與生成目錄之前。"""
         document = change_paragraph_styles(self._document, assignments)
-        document = apply_page_starts(document, self._template)
         if toc_entries:
             document = change_paragraph_toc_entries(document, toc_entries)
+        if preface is not None:
+            document = insert_preface(document, *preface)
+        document = apply_page_starts(document, self._template)
         if generate_toc:
             document = document_with_toc(document, self._template, drop_manual=True)
             if document == self._document:

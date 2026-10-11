@@ -43,6 +43,17 @@ max_tokens 亦由該批段數推算並為推理型模型的 reasoning_content �
 同樣式目次一致化（Sprint 150）：提示詞約束不住跨批一致，故收尾時以確定性規則
 補齊：同一建議樣式只要有一段列入目次，其餘疑似標題的短段一併列入，層級取多數
 （見 _harmonize_toc）。
+
+同編號目次一致化（Sprint 159）：同一份輸入、同一批，AI 仍可能只把「四、」到「七、」
+列入目次並判成起新頁的大標題，「一、」到「三、」卻留內文不列（真稿《認真過好
+每一刻的人生》實測，重跑又全對）。同樣式一致化救不了：段首引題整段是內文，預設
+內文不參與。故再以段首編號格式（「一、」「（一）」「第X章」「1、」）分組補齊：
+組內只要有一段列入目次，其餘可取出標題者一併列入；段首引題（引題後直接接內文）
+一律回內文樣式，獨立標題段之間統一為多數樣式（見 ai_toc_harmony）。
+
+前言（Sprint 159）：第一個目次條目之前還有內文時，建議在那段內文之前插入一段
+「前言」標題並列入目次（同層），否則目次第一條之前的文字在目次上無處可指。
+是否插入由校正對話框勾選，插入本身在 editing.insert_preface（建議見 ai_toc_harmony）。
 """
 import dataclasses
 import json
@@ -52,9 +63,13 @@ import urllib.error
 import urllib.request
 from collections import deque
 from dataclasses import dataclass
+from typing import Optional
 
 from .ai_config import AiConfig
 from .document import Document
+from .ai_toc_harmony import (
+    _OUTLINE_MAX_CHARS, _harmonize_numbered, _harmonize_toc, _heading_like, _preface_at,
+)
 
 _THINK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
 # 物件陣列的起頭（「[」後接「{」）：推理文字裡的 [12] 這種段號標記不算陣列。
@@ -95,13 +110,11 @@ _HTTP_HINTS = {
 }
 _SETTINGS_HINT = "請到「設定 → AI 設定…」修正，並按「測試連線」確認"
 
-# 全書標題一覽：短段（且不以句讀收尾）才像標題；上限防長書把提示撐爆
-_OUTLINE_MAX_CHARS = 30
-_OUTLINE_MAX_ITEMS = 150
-_SENTENCE_END = "。！？；，、：…」』"
-
 # 送給 AI 的每段上限：超過只送段首（標題、引題、編號都在段首）並註明全段字數
 _EXCERPT_CHARS = 60
+
+# 全書標題一覽的條目上限（防長書把提示撐爆；字形判準見 ai_toc_harmony）
+_OUTLINE_MAX_ITEMS = 150
 
 # 漏回警告最多列出的段號數（其餘以「等 N 段」帶過）
 _MISSING_SHOWN = 10
@@ -123,6 +136,8 @@ class SuggestResult:
     warnings: tuple
     batches: int
     toc_entries: tuple = ()
+    # (段序, 目次層級, 樣式)＝建議在該段前插入「前言」標題（Sprint 159）；None＝不建議
+    preface: Optional[tuple] = None
 
 
 def _post_json(url: str, headers: dict, body: bytes, timeout: float) -> dict:
@@ -297,12 +312,6 @@ def _level_prompt(toc_levels) -> str:
         text += (f"稿件若沒有上層結構（如沒有部名／篇名分卷），章名一律用第 {paged[0]} 層，"
                  "不要全部押在第 1 層。")
     return text
-
-
-def _heading_like(text: str) -> bool:
-    """短段且不以句讀收尾＝疑似標題（純字形判斷，不看樣式名）。"""
-    t = text.strip()
-    return bool(t) and len(t) <= _OUTLINE_MAX_CHARS and t[-1] not in _SENTENCE_END
 
 
 def _outline(texts) -> tuple:
@@ -614,44 +623,14 @@ def suggest_styles(
             pending[:0] = [(part, f"批次 {batches} 重送（{_span(part)}）") for part in parts]
     toc_entries, notes = _harmonize_toc(texts, assignments, toc_entries, default_style)
     warnings.extend(notes)
+    toc_styles = {style for _level, style, _wants in toc_levels}
+    assignments, toc_entries, notes = _harmonize_numbered(
+        texts, assignments, toc_entries, default_style, toc_styles)
+    warnings.extend(notes)
     report(len(plan), len(plan), f"{len(plan)} 批全部回應")
     return SuggestResult(tuple(assignments), tuple(warnings), len(plan),
-                         tuple(toc_entries))
-
-
-def _harmonize_toc(texts, assignments, toc_entries, default_style: str) -> tuple:
-    """同樣式目次一致化（Sprint 150）→ (新目次條目列, 說明列)。
-
-    提示詞約束不住跨批一致：真稿 17 段「章節小標-黑體」只有 6 段被列入目次。
-    規則：某建議樣式只要有一段列入目次，同樣式的其餘段一併列入，層級統一取該樣式
-    已宣告層級的多數（平手取先出現者）。層級仍出自 AI 宣告，不從樣式名推階層。
-    守門：預設內文樣式不參與；只補疑似標題的短段（_heading_like），以免一段內文
-    或引文被誤列就把同樣式的長段全拖進目次。補上的條目照樣進校正表由人勾選。
-    """
-    entries = list(toc_entries)
-    groups = {}
-    for i, style in enumerate(assignments):
-        if style is not None and style != default_style:
-            groups.setdefault(style, []).append(i)
-    notes = []
-    for style, members in groups.items():
-        levels = [entries[i][1] for i in members if entries[i] is not None]
-        if not levels:
-            continue
-        level = max(dict.fromkeys(levels), key=levels.count)
-        added = relevelled = 0
-        for i in members:
-            if entries[i] is None:
-                if _heading_like(texts[i]):
-                    entries[i] = (texts[i].strip(), level)
-                    added += 1
-            elif entries[i][1] != level:
-                entries[i] = (entries[i][0], level)
-                relevelled += 1
-        if added or relevelled:
-            notes.append(f"目次一致化：「{style}」補列 {added} 段、改層級 {relevelled} 段，"
-                         f"同樣式統一為第 {level} 層（請在校正表確認）")
-    return entries, notes
+                         tuple(toc_entries),
+                         _preface_at(texts, assignments, toc_entries, default_style))
 
 
 def check_connection(config: AiConfig, *, transport=None, timeout: float = 60.0) -> str:

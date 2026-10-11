@@ -651,6 +651,29 @@ def insert_blank_paragraph(doc: Document, para_idx: int) -> Document:
     return replace(doc, paragraphs=new_paras)
 
 
+def insert_preface(doc: Document, para_idx: int, level: int, style: str,
+                   title: str = "前言") -> Document:
+    """在第 para_idx 段之前插入「前言」標題段並列入目次（Sprint 159）。
+
+    AI 指派後第一個目次條目之前仍有內文時，那段文字在目次上無處可指；插一段
+    可見的標題並宣告條目（toc_title＝標題、toc_level＝level）。目標段的節首標記
+    （master）移到新段，節仍從標題起算。para_idx 越界 raise IndexError。
+    """
+    if not 0 <= para_idx < len(doc.paragraphs):
+        raise IndexError(
+            f"para_idx {para_idx} 超出段落範圍 0..{len(doc.paragraphs) - 1}"
+        )
+    target = doc.paragraphs[para_idx]
+    heading = Paragraph(text=title, style=style, master=target.master,
+                        toc_title=title, toc_level=level)
+    new_paras = (
+        doc.paragraphs[:para_idx]
+        + (heading, replace(target, master=None))
+        + doc.paragraphs[para_idx + 1:]
+    )
+    return replace(doc, paragraphs=new_paras)
+
+
 def remove_blank_paragraph(doc: Document, para_idx: int) -> Document:
     """移除第 para_idx 段（須為空段），回傳新 Document（Sprint 141）。
 

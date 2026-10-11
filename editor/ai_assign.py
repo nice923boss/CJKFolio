@@ -14,6 +14,9 @@
 
 摘要列（Sprint 149）：頂部一行說清「幾批、幾段有建議、預設勾了幾段要改、幾條
 目次」，使用者一眼確認 AI 指派是否真的有結果，不必捲完整張表。
+
+前言（Sprint 159）：第一個目次條目之前還有內文時，AI 結果附建議 (段序, 層級, 樣式)，
+底部多一個「插入『前言』標題」勾選（預設勾），套用時與樣式、目次同一 undo 步。
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -38,12 +41,14 @@ class AssignReviewDialog(QDialog):
     """逐段確認與批次改派（離屏可驗：程式化改勾選／下拉後呼 _assignments）。"""
 
     def __init__(self, doc, template, assignments, on_apply,
-                 warnings=(), toc_entries=(), batches=None, parent=None) -> None:
+                 warnings=(), toc_entries=(), batches=None, preface=None,
+                 parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("AI 樣式指派校正（初稿請人工確認）")
         self._doc = doc
-        # callable(assignments, toc_entries, generate_toc) -> 錯誤訊息或 None
+        # callable(assignments, toc_entries, generate_toc, preface=) -> 錯誤訊息或 None
         self._on_apply = on_apply
+        self._preface_hint = preface
         candidates = sorted(template.paragraph_styles)
 
         box = QVBoxLayout(self)
@@ -90,7 +95,8 @@ class AssignReviewDialog(QDialog):
         prefix = f"AI 共 {batches} 批回應：" if batches is not None else ""
         self._summary.setText(
             f"{prefix}{suggested_any}／{len(doc.paragraphs)} 段有樣式建議，"
-            f"其中 {changes} 段異於現行已預設勾選；目次條目建議 {suggested_toc} 條")
+            f"其中 {changes} 段異於現行已預設勾選；目次條目建議 {suggested_toc} 條"
+            + ("；建議插入「前言」" if preface is not None else ""))
 
         self._generate = QCheckBox(
             "生成目次頁（置於書首，頁碼由排版引擎計算；稿件自帶的手寫目錄一併移除）")
@@ -103,6 +109,15 @@ class AssignReviewDialog(QDialog):
             has_entry = suggested_toc or any(p.toc_title for p in doc.paragraphs)
             self._generate.setChecked(bool(has_entry))
         box.addWidget(self._generate)
+
+        self._preface = QCheckBox()
+        if preface is not None:
+            idx, level, _style = preface
+            self._preface.setText(
+                f"在第 {idx + 1} 列前插入「前言」標題並列入目次（第 {level} 層；"
+                "第一個目次條目之前還有內文）")
+            self._preface.setChecked(True)
+            box.addWidget(self._preface)
 
         all_on = QPushButton("全部採用")
         all_off = QPushButton("全部不採")
@@ -167,8 +182,9 @@ class AssignReviewDialog(QDialog):
         return out
 
     def _on_confirm(self) -> None:
+        preface = self._preface_hint if self._preface.isChecked() else None
         err = self._on_apply(self._assignments(), self._toc_entries(),
-                             self._generate.isChecked())
+                             self._generate.isChecked(), preface=preface)
         if err:
             self._notice.setText(err)  # 套用錯誤：留在對話框修正
             return
