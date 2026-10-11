@@ -39,6 +39,10 @@ max_tokens 亦由該批段數推算並為推理型模型的 reasoning_content �
 截斷拆批重送與輸出上限（Sprint 149）：回應被截斷時，沒拿到建議的段對半拆開
 重送，一路拆到單段；單段仍截斷才放棄並指出可調高 AI 設定的「輸出上限」
 （config.max_output_tokens，0＝依段數推算）。重送不算新批次。
+
+同樣式目次一致化（Sprint 150）：提示詞約束不住跨批一致，故收尾時以確定性規則
+補齊：同一建議樣式只要有一段列入目次，其餘疑似標題的短段一併列入，層級取多數
+（見 _harmonize_toc）。
 """
 import dataclasses
 import json
@@ -292,12 +296,18 @@ def _level_prompt(toc_levels) -> str:
     return text
 
 
+def _heading_like(text: str) -> bool:
+    """短段且不以句讀收尾＝疑似標題（純字形判斷，不看樣式名）。"""
+    t = text.strip()
+    return bool(t) and len(t) <= _OUTLINE_MAX_CHARS and t[-1] not in _SENTENCE_END
+
+
 def _outline(texts) -> tuple:
     """全書疑似標題的短段（依序）；給 AI 判斷層級一致的上下文，非判定依據。"""
     out = []
     for text in texts:
         t = text.strip()
-        if t and len(t) <= _OUTLINE_MAX_CHARS and t[-1] not in _SENTENCE_END:
+        if _heading_like(t):
             out.append(t)
             if len(out) >= _OUTLINE_MAX_ITEMS:
                 break
@@ -582,9 +592,46 @@ def suggest_styles(
             report(batches - 1, len(plan),
                    f"{label}回應被截斷，其餘 {len(missing)} 段拆小批重送")
             pending[:0] = [(part, f"批次 {batches} 重送（{_span(part)}）") for part in parts]
+    toc_entries, notes = _harmonize_toc(texts, assignments, toc_entries, default_style)
+    warnings.extend(notes)
     report(len(plan), len(plan), f"{len(plan)} 批全部回應")
     return SuggestResult(tuple(assignments), tuple(warnings), len(plan),
                          tuple(toc_entries))
+
+
+def _harmonize_toc(texts, assignments, toc_entries, default_style: str) -> tuple:
+    """同樣式目次一致化（Sprint 150）→ (新目次條目列, 說明列)。
+
+    提示詞約束不住跨批一致：真稿 17 段「章節小標-黑體」只有 6 段被列入目次。
+    規則：某建議樣式只要有一段列入目次，同樣式的其餘段一併列入，層級統一取該樣式
+    已宣告層級的多數（平手取先出現者）。層級仍出自 AI 宣告，不從樣式名推階層。
+    守門：預設內文樣式不參與；只補疑似標題的短段（_heading_like），以免一段內文
+    或引文被誤列就把同樣式的長段全拖進目次。補上的條目照樣進校正表由人勾選。
+    """
+    entries = list(toc_entries)
+    groups = {}
+    for i, style in enumerate(assignments):
+        if style is not None and style != default_style:
+            groups.setdefault(style, []).append(i)
+    notes = []
+    for style, members in groups.items():
+        levels = [entries[i][1] for i in members if entries[i] is not None]
+        if not levels:
+            continue
+        level = max(dict.fromkeys(levels), key=levels.count)
+        added = relevelled = 0
+        for i in members:
+            if entries[i] is None:
+                if _heading_like(texts[i]):
+                    entries[i] = (texts[i].strip(), level)
+                    added += 1
+            elif entries[i][1] != level:
+                entries[i] = (entries[i][0], level)
+                relevelled += 1
+        if added or relevelled:
+            notes.append(f"目次一致化：「{style}」補列 {added} 段、改層級 {relevelled} 段，"
+                         f"同樣式統一為第 {level} 層（請在校正表確認）")
+    return entries, notes
 
 
 def check_connection(config: AiConfig, *, transport=None, timeout: float = 60.0) -> str:

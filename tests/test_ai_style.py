@@ -592,3 +592,42 @@ def test_reasoning_prose_is_not_mistaken_for_json_array():
     # 單段仍截斷才放棄，並指出可以去調高輸出上限
     assert len(result.warnings) == 3
     assert all("調高「輸出上限」" in w for w in result.warnings[1:])
+
+
+def _toc_reply(items):
+    return json.dumps([dict(index=i, style=s, **({"toc_title": t, "toc_level": lv} if t else {}))
+                       for i, (s, t, lv) in enumerate(items)])
+
+
+def test_same_style_toc_entries_harmonized():
+    """同樣式只要有一段列入目次，其餘短段一併補列，層級取多數（Sprint 149，真稿 17 列 6）。"""
+    texts = ["第一章", "一、出生", "內文。", "二、搬家", "三、求學", "四、就業"]
+    t = transport_returning(_toc_reply([
+        ("章名大標-明體W7", "第一章", 2), ("章節小標-黑體", None, None),
+        ("內文-明體直排", None, None), ("章節小標-黑體", "二、搬家", 2),
+        ("章節小標-黑體", "三、求學", 3), ("章節小標-黑體", "四、就業", 2)]))
+    result = suggest_styles(texts, CANDIDATES, CONFIG, default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (("第一章", 2), ("一、出生", 2), None,
+                                  ("二、搬家", 2), ("三、求學", 2), ("四、就業", 2))
+    assert any("「章節小標-黑體」補列 1 段、改層級 1 段，同樣式統一為第 2 層" in w
+               for w in result.warnings)
+
+
+def test_harmonize_skips_default_style_and_long_paragraphs():
+    """預設內文不參與一致化；同樣式的長段或句讀收尾段不補（以免拖整本進目次）。"""
+    long_quote = "這是一段很長的引文" * 5
+    texts = ["內文甲", "內文乙", "引言", long_quote, "結語。"]
+    t = transport_returning(_toc_reply([
+        ("內文-明體直排", "內文甲", 2), ("內文-明體直排", None, None),
+        ("引文-仿宋語錄", "引言", 2), ("引文-仿宋語錄", None, None),
+        ("引文-仿宋語錄", None, None)]))
+    result = suggest_styles(texts, CANDIDATES, CONFIG, default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (("內文甲", 2), None, ("引言", 2), None, None)
+    assert not any("目次一致化" in w for w in result.warnings)
+
+
+def test_harmonize_tie_takes_first_declared_level():
+    t = transport_returning(_toc_reply([
+        ("章節小標-黑體", "甲", 3), ("章節小標-黑體", "乙", 2)]))
+    result = suggest_styles(["甲", "乙"], CANDIDATES, CONFIG, default_style=DEFAULT, transport=t)
+    assert result.toc_entries == (("甲", 3), ("乙", 3))
