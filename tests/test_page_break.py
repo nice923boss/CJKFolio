@@ -15,7 +15,13 @@ from pathlib import Path
 import pytest
 
 from cjkfolio.document import PlacedImage, load_document
-from cjkfolio.page_break import clear_page_start, page_mapping, remap_page_refs, start_page_at
+from cjkfolio.page_break import (
+    clear_page_start,
+    page_mapping,
+    refs_past_end,
+    remap_page_refs,
+    start_page_at,
+)
 from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
 from cjkfolio.wrap import layout_with_wrap
@@ -111,3 +117,32 @@ def test_last_page_with_text_still_maps_to_last(template, doc):
     new = layout_with_wrap(start_page_at(doc, MID), template)
     assert len(new.pages) > len(old.pages)
     assert page_mapping(old.pages, new.pages)[len(old.pages)] == len(new.pages)
+
+
+def test_snap_past_end_moves_back_cover_to_last_page(template, doc):
+    """全書變短後封底圖落到書外：開檔一步移回末頁，書內的圖不動，undo 回原。"""
+    s = EditSession(doc, template)
+    last = len(s.layout.pages)
+    imgs = (PlacedImage(path="c.png", page=1, rect=(0.0, 0.0, 10.0, 10.0)),
+            PlacedImage(path="z.png", page=last + 4, rect=(0.0, 0.0, 10.0, 10.0)))
+    s = EditSession(replace(doc, images=imgs), template)
+    assert refs_past_end(s.document, last) == (f"置入圖「z.png」頁 {last + 4}",)
+    assert s.snap_past_end() is not None
+    assert [im.page for im in s.document.images] == [1, last]
+    assert refs_past_end(s.document, last) == () and s.snap_past_end() is None
+    s.undo()
+    assert s.document.images == imgs
+
+
+def test_cover_image_shows_although_another_page_is_out_of_range(template, doc, tmp_path):
+    """一張圖頁號超出全書，不再連累封面（之前整本每頁都不顯示圖）。"""
+    from PIL import Image
+
+    from editor.canvas import page_images
+
+    Image.new("RGB", (8, 8), "red").save(tmp_path / "c.png")
+    layout = layout_with_wrap(doc, template)
+    bad = replace(doc, images=(
+        PlacedImage(path="c.png", page=1, rect=(0.0, 0.0, 10.0, 10.0)),
+        PlacedImage(path="z.png", page=len(layout.pages) + 4, rect=(0.0, 0.0, 10.0, 10.0))))
+    assert len(page_images(template, bad, layout, layout.pages[0], base_dir=tmp_path)) == 1

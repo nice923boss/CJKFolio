@@ -72,7 +72,13 @@ from .image_editing import (
     set_image_wrap,
 )
 from .layout import LayoutResult
-from .page_break import clear_page_start, page_mapping, remap_page_refs, start_page_at
+from .page_break import (
+    clear_page_start,
+    page_mapping,
+    remap_page_refs,
+    snap_past_end,
+    start_page_at,
+)
 from .page_scale import scale_page_size
 from .page_size import set_page_size
 from .toc import TocRefresh, document_with_toc, refresh_toc_page_numbers
@@ -350,6 +356,13 @@ class EditSession:
 
         主版與前一節不同的節首 ValueError（請用頁面面板「取消節首」）、狀態不變。"""
         return self._commit_page_break(clear_page_start(self._document, para_idx), para_idx)
+
+    def snap_past_end(self):
+        """把頁號超出全書頁數的置入圖與文字框移到末頁，入單一 undo 步；都在書內回 None。
+
+        開檔時用：存檔前全書變短，原在末頁的封底圖就落到書外（GAPS #111 (c)）。"""
+        return self._commit_pair(
+            snap_past_end(self._document, len(self._layout.pages)), self._template)
 
     def _commit_page_break(self, document: Document, para_idx: int):
         if document is self._document:

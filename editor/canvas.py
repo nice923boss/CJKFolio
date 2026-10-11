@@ -12,7 +12,7 @@ cjkfolio/render.py::PageRenderer._draw_vertical_body 逐項對齊）。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterator, Optional
 
 from PySide6.QtCore import Qt
@@ -239,9 +239,13 @@ def page_images(template: Template, doc: Document, layout: LayoutResult, page,
 
     封裝逐頁主版解析＋resolve_placed_images，供 build_page_scene 與呼叫端共用
     單一事實來源（同 page_frame_placements 慣例）。圖檔缺失或不可讀由
-    resolve_placed_images 拋 ImageError，呼叫端負責提示（畫布不吞錯）。"""
+    resolve_placed_images 拋 ImageError，呼叫端負責提示（畫布不吞錯）。
+
+    只解析本頁的圖：別頁一張圖出錯（如頁號超出全書）不連累本頁，否則封面圖會
+    因封底圖落到書外而整本都不顯示。書外的圖由 refs_past_end 另行警告。"""
     masters = masters_for_layout(template, doc, layout)
-    return resolve_placed_images(doc, masters, base_dir=base_dir).get(page.number, ())
+    own = replace(doc, images=tuple(im for im in doc.images if im.page == page.number))
+    return resolve_placed_images(own, masters, base_dir=base_dir).get(page.number, ())
 
 
 def iter_image_rects(doc: Document, page_number: int, scale: float) -> Iterator[tuple]:

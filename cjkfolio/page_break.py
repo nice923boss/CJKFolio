@@ -107,3 +107,22 @@ def remap_page_refs(document: Document, mapping: dict) -> Document:
     if images == document.images and frames == document.text_frames:
         return document
     return replace(document, images=images, text_frames=frames)
+
+
+def refs_past_end(document: Document, page_count: int) -> tuple:
+    """頁號超出全書頁數的置入圖與文字框說明，如 ('置入圖「b.png」頁 64',)。
+
+    其他編輯（打字刪字、插刪空行、取消節首、換尺寸重算行列）不平移圖文框頁號
+    （GAPS #111 (c)），全書變短時原在末頁的封底圖就會落到書外。"""
+    return tuple(
+        [f"置入圖「{im.path}」頁 {im.page}" for im in document.images if im.page > page_count]
+        + [f"文字框「{tf.text[:8] or '續框'}」頁 {tf.page}"
+           for tf in document.text_frames if tf.page > page_count])
+
+
+def snap_past_end(document: Document, page_count: int) -> Document:
+    """把頁號超出全書頁數的置入圖與文字框移到末頁（封底）；都在書內回原物件。"""
+    mapping = {p: page_count for p in
+               {im.page for im in document.images} | {tf.page for tf in document.text_frames}
+               if p > page_count}
+    return remap_page_refs(document, mapping)

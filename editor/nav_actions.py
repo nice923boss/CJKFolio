@@ -17,6 +17,7 @@ self.cursor／self.frame_cursor／self._doc_path／self._rebuild()／self.status
 """
 from PySide6.QtCore import QTimer
 
+from cjkfolio.page_break import refs_past_end
 from editor.page_panel import ThumbnailThread
 
 THUMB_DEBOUNCE_MS = 400  # 連續編輯的縮圖重渲染靜默期
@@ -139,6 +140,11 @@ class NavActionsMixin:
         if image_errors:  # 缺圖不沉默（主畫布另有逐次提示，此處彙整頁數）
             self.statusBar().showMessage(
                 f"頁面縮圖：{image_errors} 頁置入圖未載入（該頁縮圖不顯示圖）")
+        past = refs_past_end(self.doc, len(self.layout_result.pages))
+        if past:  # 全書變短後落到書外的圖文框：哪頁都不畫，匯出會失敗
+            self.statusBar().showMessage(
+                f"{'、'.join(past)} 超出全書 {len(self.layout_result.pages)} 頁，畫面不顯示、"
+                "匯出會失敗；Ctrl+Z 回到變短前，或存檔後重新開啟會自動移到末頁")
 
     def _on_thumb_thread_finished(self) -> None:
         self._thumb_thread = None

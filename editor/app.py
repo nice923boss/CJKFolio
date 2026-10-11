@@ -198,6 +198,9 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         self._init_nav()  # 頁面面板首輪同步＋縮圖 debounce 計時器（Sprint 125）
         self._init_quality()  # 底圖畫質 debounce 計時器（Sprint 133）
         self._init_file_state()  # 存檔基準＝開檔當下引用（Sprint 126 髒判定）
+        note = self._snap_past_end_on_open()  # 書外的封底圖移回末頁（標為未存）
+        if note:
+            self.statusBar().showMessage(f"開檔{note}")
 
     def _open_library(self, directory=None) -> None:
         """模版庫對話框（§4.3；v1 目錄＝內建 templates/，使用者庫目錄慣例後續）。"""

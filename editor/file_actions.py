@@ -31,6 +31,7 @@ from cjkfolio.document import (
     save_document,
     unknown_style_refs,
 )
+from cjkfolio.page_break import refs_past_end
 from cjkfolio.session import EditSession
 from editor.blank_doc import blank_document
 from editor.book_binding import with_binding
@@ -149,7 +150,7 @@ class FileActionsMixin:
         self._adopt_session(session, path)
         self.statusBar().showMessage(
             f"已開啟「{path.name}」：{len(doc.paragraphs)} 段、"
-            f"{len(self.layout_result.pages)} 頁")
+            f"{len(self.layout_result.pages)} 頁{self._snap_past_end_on_open()}")
         return True
 
     def _new_document(self) -> None:
@@ -178,6 +179,18 @@ class FileActionsMixin:
         self._saved_document = session.document
         self._saved_template = session.template
         self._rebuild()
+
+    def _snap_past_end_on_open(self) -> str:
+        """開檔後把落在書外的置入圖與文字框移到末頁（一步 undo），回狀態列附註。
+
+        存檔前全書變短，原在末頁的封底圖會落到書外：畫面看不到、匯出失敗，也
+        選不到它來搬。移到末頁後標為未存，存檔才寫回。"""
+        past = refs_past_end(self.doc, len(self.layout_result.pages))
+        if not past or self.session.snap_past_end() is None:
+            return ""
+        self._rebuild()
+        return (f"；{'、'.join(past)} 超出全書，已移到末頁 {len(self.layout_result.pages)}"
+                "（Ctrl+Z 可復原，存檔後生效）")
 
     # --- 關閉確認 ---
 
