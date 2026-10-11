@@ -267,6 +267,10 @@ def cmd_export_pdf(args) -> int:
     template = load_template(args.template)
     if _check_style_refs(doc, template):
         return 2
+    if args.trim_only and (args.crop_marks or args.press_marks):
+        print("錯誤：--trim-only 沒有出血與標記帶，不可搭 --crop-marks／--press-marks",
+              file=sys.stderr)
+        return 2
     if args.registration_single_k and not args.press_marks:
         print("錯誤：--registration-single-k 需搭 --press-marks"
               "（套準十字只在印前標記中產生）", file=sys.stderr)
@@ -282,6 +286,7 @@ def cmd_export_pdf(args) -> int:
             pdfx=args.pdfx, crop_marks=args.crop_marks,
             press_marks=args.press_marks,
             registration_single_k=args.registration_single_k,
+            trim_only=args.trim_only,
             color_convert=args.color_convert,
             rendering_intent=args.rendering_intent,
             license_policy=args.license_policy,
@@ -292,6 +297,8 @@ def cmd_export_pdf(args) -> int:
         print(f"錯誤：{exc}", file=sys.stderr)
         return 2
     print(f"匯出完成：{result.page_count} 頁 → {result.path}")
+    if result.trim_only:
+        print("只輸出成品範圍：MediaBox=TrimBox=BleedBox=成品尺寸，無出血")
     if result.crop_marks:
         print("裁切標記：8 條單 K 角標（MediaBox 外擴、BleedBox=trim+出血）")
     if result.press_marks:
@@ -318,6 +325,8 @@ def cmd_export_pdf(args) -> int:
             print(warning)
         if not result.ppi_warnings:
             print("影像解析度：置入影像實效 PPI 皆達 §9 300ppi 下限")
+        for warning in result.bleed_warnings:
+            print(warning)
     if result.tac_warnings:
         for warning in result.tac_warnings:
             print(warning)
@@ -494,6 +503,9 @@ def main(argv=None) -> int:
                             "perceptual＝感知，全域壓縮色域）")
     p_pdf.add_argument("--crop-marks", action="store_true",
                        help="加裁切標記（MediaBox 外擴、BleedBox=trim+出血、8 條單 K 角標）")
+    p_pdf.add_argument("--trim-only", action="store_true",
+                       help="只輸出成品範圍（無出血；超出成品邊的圖裁掉，不留白邊）。"
+                            "不可搭 --crop-marks／--press-marks")
     p_pdf.add_argument("--press-marks", action="store_true",
                        help="加印前標記（四邊中點套準十字、色條 8 塊、灰梯尺 9 階；"
                             "MediaBox 外擴 8mm。套準十字為四版套準色 TAC 400%%，"

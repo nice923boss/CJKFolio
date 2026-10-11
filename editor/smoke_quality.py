@@ -116,3 +116,6 @@ def check_quality(EditorWindow, doc_path) -> None:
         f"（{len(keys0)} 格 key 全等、hit-test {hit_ok}/{min(60, len(keys0))} 全對）"
         "＋回 100% 不重渲染＋reflow 回基準再排程（漸進式細化）＋對頁兩頁皆升級"
     )
+
+    from editor.smoke_bleed import check_bleed  # C46 用同一樣張；延遲匯入避循環
+    check_bleed(EditorWindow, doc_path)

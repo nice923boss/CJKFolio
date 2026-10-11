@@ -31,6 +31,7 @@ from .images import (
     PRINT_IMAGE_MODES,
     EmbeddedImage,
     ImageResolution,
+    bleed_gap_warning,
     resolution_warnings,
     resolve_placed_images,
 )
@@ -128,11 +129,12 @@ class _PdfPageWriter:
 
     def __init__(self, template, master_name: str, font_dir=None,
                  mark_margin_pt: float = 0.0, reg_cmyk=REG_CMYK,
-                 allow_rgb_images: bool = False):
+                 allow_rgb_images: bool = False, bleed_mm: float = BLEED_MM):
         self.template = template
         # 非 PDF/X 輸出才留 RGB 影像；送印形態轉灰並記 image_color_warnings
         self.allow_rgb_images = allow_rgb_images
         self.image_color_warnings: list = []
+        self.bleed_warnings: list = []  # 滿版圖未伸進出血區（Sprint 156）
         self.master = template.masters[master_name]
         self.registry = FontRegistry(font_dir or DEFAULT_FONT_DIR)
         self._shapers: dict = {}
@@ -146,7 +148,7 @@ class _PdfPageWriter:
         self._image_inks: dict = {}
         self.fonts_used: set = set()
         self.notdef_warnings: list = []
-        self.bleed_pt = mm_to_pt(BLEED_MM)
+        self.bleed_pt = mm_to_pt(bleed_mm)  # 0＝只輸出成品範圍（Sprint 156）
         self.mark_margin_pt = mark_margin_pt  # MediaBox 於 BleedBox 外的標記帶餘裕
         self.reg_cmyk = reg_cmyk  # 套準十字色（樣式值，非語意開關）
         # 印前標記著色值（Sprint 109 分帳；不是豁免，見 _Content.__init__）
@@ -353,6 +355,11 @@ class _PdfPageWriter:
             path=Path(path).name, page=page_number,
             px_w=emb.width, px_h=emb.height,
             draw_w_pt=box.x1 - box.x0, draw_h_pt=box.y1 - box.y0))
+        warning = self.bleed_pt and bleed_gap_warning(  # 無出血區就無出血可缺
+            Path(path).name, page_number, box, mm_to_pt(self.template.page_width_mm),
+            self.page_h_pt, self.bleed_pt)
+        if warning:
+            self.bleed_warnings.append(warning)
         content.draw_image(
             emb.res_name, box.x1 - box.x0, box.y1 - box.y0,
             self.origin_pt + box.x0, self.page_h_pt + self.origin_pt - box.y1)
@@ -472,6 +479,8 @@ class PdfResult:
     ink_uses: tuple = ()           # 著色與影像的最高墨量 InkUse（依 TAC 降序）
     tac_warnings: tuple = ()       # 總墨量超上限（預設 §9 320%）的警告（不擋流程）
     image_color_warnings: tuple = ()  # RGB 影像已轉灰／已依描述檔轉 CMYK 的告知（不擋流程）
+    bleed_warnings: tuple = ()  # 置入圖貼成品邊卻未伸進出血區的警告（不擋流程）
+    trim_only: bool = False  # 只輸出成品範圍：三框皆＝trim，超出成品邊的內容裁掉
 
 
 def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
@@ -482,6 +491,7 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
                pdfx: str = "x-1a", crop_marks: bool = False,
                press_marks: bool = False,
                registration_single_k: bool = False,
+               trim_only: bool = False,
                color_convert: bool = False,
                rendering_intent: str = DEFAULT_INTENT,
                license_policy: str = "warn",
@@ -504,6 +514,9 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     crop_marks=True 加裁切標記（§9）：MediaBox 於 BleedBox 外擴 MARK_LENGTH_MM、
     BleedBox 縮回 trim＋出血、8 條單 K 角標；預設 False 時輸出與無標記相同（BleedBox
     ＝MediaBox，向後相容）。
+    trim_only=True（Sprint 156）只輸出成品範圍：MediaBox＝TrimBox＝BleedBox＝成品，
+    內容原點落在成品左下，伸進出血區的圖被頁框裁掉（不會留白邊）；無出血可放標記，
+    故與 crop_marks／press_marks 互斥（拋 ValueError），也不再列出血不足警告。
     license_policy="warn"（預設）字型授權問題只列 license_warnings 不擋；"block"
     則於寫檔前中止並拋 ValueError，不留半成品檔案。
     max_tac 為總墨量上限（%，預設 §9 保守下限 320）：印廠條件，只影響 tac_warnings
@@ -526,13 +539,18 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         raise ValueError(
             "registration_single_k 需搭 press_marks（套準十字只在印前標記中產生）"
         )
+    if trim_only and (crop_marks or press_marks):
+        raise ValueError(
+            "只輸出成品範圍沒有出血與標記帶，裁切標記、印前標記無處可放，請擇一")
+    bleed_mm = 0.0 if trim_only else BLEED_MM
     mark_margin_mm = resolve_mark_margin_mm(crop_marks, press_marks)
     layout = layout_with_wrap(doc, template, first_page=first_page)
     writer = _PdfPageWriter(template, doc.master, font_dir=font_dir,
                             mark_margin_pt=mm_to_pt(mark_margin_mm),
                             reg_cmyk=REG_SINGLE_K_CMYK if registration_single_k
                             else REG_CMYK,
-                            allow_rgb_images=not profile.is_pdfx)
+                            allow_rgb_images=not profile.is_pdfx,
+                            bleed_mm=bleed_mm)
     masters_by_page = {p.number: template.masters[p.master] for p in layout.pages}
     images_by_page = resolve_placed_images(
         doc, masters_by_page, base_dir=image_base_dir)
@@ -584,7 +602,8 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
     if image_refs:
         res_parts.append(f"/XObject << {' '.join(image_refs)} >>")
     resources_num = pdf.add(f"<< {' '.join(res_parts)} >>")
-    media, trim, bleed = page_boxes_pt(template, mark_margin_mm=mark_margin_mm)
+    media, trim, bleed = page_boxes_pt(template, bleed_mm=bleed_mm,
+                                       mark_margin_mm=mark_margin_mm)
     box = lambda b: f"[{_fmt(b[0])} {_fmt(b[1])} {_fmt(b[2])} {_fmt(b[3])}]"  # noqa: E731
     pages_num = pdf.reserve()
     kids = []
@@ -682,4 +701,6 @@ def export_pdf(doc, template, out_path, *, pages=None, footer: bool = True,
         ink_uses=ink_uses,
         tac_warnings=tuple(tac_warnings(ink_uses, max_tac)),
         image_color_warnings=tuple(convert_notes) + tuple(writer.image_color_warnings),
+        bleed_warnings=tuple(writer.bleed_warnings),
+        trim_only=trim_only,
     )

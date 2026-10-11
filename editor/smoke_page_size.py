@@ -2,7 +2,8 @@
 總墨量上限與 PDF/X 形態無處可設）。
 
 離屏可驗：
-- 甲 成品尺寸：版面選單入口、對話框以現行模版尺寸起始且預設勾選重算、只換紙張時
+- 甲 成品尺寸：版面選單入口、對話框以現行模版尺寸起始且預設整版等比、紙張下拉與
+  寬高雙向同步、含出血尺寸只影響顯示、整版等比時字級跟著放大而頁數不變、只換紙張時
   一個字都不重排、勾選重算時邊距不動而行列數與頁數跟著變、同尺寸 no-op 不入歷史、
   非法尺寸擋下且狀態不變、一步 undo 回原尺寸、改小紙張時溢出項據實列出（不擋），
   以及改完真匯出的 PDF 其 MediaBox／TrimBox 確為新尺寸（PyMuPDF 讀回＝Gate 4）。
@@ -47,12 +48,38 @@ def check_page_size(EditorWindow, DOC) -> None:
     assert "印前設定…" in _menu_items(win, "設定"), \
         f"設定選單缺印前設定項：{_menu_items(win, '設定')}"
 
-    # 對話框以現行模版尺寸起始、預設勾選重算（換開本的常態）
+    # 對話框以現行模版尺寸起始、預設整版等比（Sprint 157 Owner 決定）
     dlg = PageSizeDialog(win.template, parent=win)
     vals = dlg.values()
     assert vals["width_mm"] == win.template.page_width_mm, f"寬未帶入：{vals}"
     assert vals["height_mm"] == win.template.page_height_mm, f"高未帶入：{vals}"
-    assert vals["refit_grid"] is True, "重算版心應預設勾選"
+    assert vals["mode"] == "scale", f"換法應預設整版等比：{vals}"
+    # 紙張下拉雙向同步：選 18 開填入寬高；手改成 A4 尺寸切到 A4；不符切自訂
+    assert dlg._paper.currentText().startswith("25 開"), dlg._paper.currentText()
+    dlg._paper.setCurrentIndex(1)
+    dlg._paper.activated.emit(1)
+    assert (dlg.values()["width_mm"], dlg.values()["height_mm"]) == (170.0, 230.0)
+    dlg._width.setValue(210.0)
+    assert dlg._paper.currentText() == "自訂", dlg._paper.currentText()
+    dlg._height.setValue(297.0)
+    assert dlg._paper.currentText().startswith("A4"), dlg._paper.currentText()
+    assert dlg._bleed_label.isHidden(), "含出血尺寸應勾選才顯示"
+    dlg._show_bleed.setChecked(True)
+    assert "216 × 303 mm" in dlg._bleed_label.text(), dlg._bleed_label.text()
+    assert dlg.values()["width_mm"] == 210.0, "含出血只影響顯示，收回仍是成品尺寸"
+
+    # 整版等比：18 開（k＝230/210），字級與邊距跟著放大、行列與頁數不變、一步 undo
+    size0 = win.template.paragraph_styles[win.doc.paragraphs[0].style].size_pt
+    pages_before = len(win.layout_result.pages)
+    win._page_size_dialog({"width_mm": 170.0, "height_mm": 230.0, "mode": "scale"})
+    k = 230.0 / 210.0
+    size1 = win.template.paragraph_styles[win.doc.paragraphs[0].style].size_pt
+    assert abs(size1 - size0 * k) < 1e-6, (size0, size1)
+    assert len(win.layout_result.pages) == pages_before, "等比縮放不應改頁數"
+    assert win.template.masters[BODY].grid.chars_per_line ==         win.session._undo[-1][1].masters[BODY].grid.chars_per_line
+    assert "整版等比縮放" in win.statusBar().currentMessage()
+    win._on_undo()
+    assert win.template.page_width_mm == 148.0, "等比縮放一步 undo 未回原尺寸"
 
     w0, h0 = win.template.page_width_mm, win.template.page_height_mm
     grid0 = win.template.masters[BODY].grid
@@ -71,7 +98,9 @@ def check_page_size(EditorWindow, DOC) -> None:
         QMessageBox.warning = orig_warning
     win._shutdown_thumbnails()
     print(
-        f"C39 甲 成品尺寸：版面選單入口＋對話框帶入現行 {w0:g}×{h0:g}mm 且預設重算"
+        f"C39 甲 成品尺寸：版面選單入口＋對話框帶入現行 {w0:g}×{h0:g}mm 且預設整版等比"
+        "＋紙張下拉與寬高雙向同步＋含出血尺寸只影響顯示"
+        f"＋整版等比 18 開字級 ×{230 / 210:.3f} 頁數不變一步 undo"
         f"＋只換紙張不重排（{pages0} 頁不動）＋重算版心邊距不動而行列 "
         f"{grid0.chars_per_line}×{grid0.lines_per_page}→"
         f"{grid2.chars_per_line}×{grid2.lines_per_page}、"
@@ -86,7 +115,7 @@ def _run_size_steps(win, w0, h0, grid0, margins0, pages0, chars0, warned):
     """甲的各段改尺寸驗證（QMessageBox.warning 已由呼叫端接管）。"""
     # ── 只換紙張（不勾重算）：一個字都不重排 ──
     win._page_size_dialog({"width_mm": 160.0, "height_mm": 230.0,
-                           "refit_grid": False})
+                           "mode": "paper"})
     assert win.template.page_width_mm == 160.0, "成品寬未變更"
     grid1 = win.template.masters[BODY].grid
     assert (grid1.chars_per_line, grid1.lines_per_page) == \
@@ -101,7 +130,7 @@ def _run_size_steps(win, w0, h0, grid0, margins0, pages0, chars0, warned):
 
     # ── 勾選重算：邊距不動，行列數與頁數跟著紙張走 ──
     win._page_size_dialog({"width_mm": 210.0, "height_mm": 297.0,
-                           "refit_grid": True})
+                           "mode": "refit"})
     grid2 = win.template.masters[BODY].grid
     assert win.template.masters[BODY].margins == margins0, "重算版心不應動邊距"
     assert grid2.chars_per_line > grid0.chars_per_line, \
@@ -119,20 +148,20 @@ def _run_size_steps(win, w0, h0, grid0, margins0, pages0, chars0, warned):
 
     # ── 同尺寸 no-op：不入歷史（避免看不出差別的 undo 步） ──
     win._page_size_dialog({"width_mm": 210.0, "height_mm": 297.0,
-                           "refit_grid": True})
+                           "mode": "refit"})
     assert "無變更" in win.statusBar().currentMessage(), "同尺寸未報無變更"
     win._on_undo()
     assert (win.template.page_width_mm, win.template.page_height_mm) == (w0, h0), \
         "no-op 佔了一步 undo（同尺寸不應入歷史）"
 
     # ── 非法尺寸：純層守門擋下，狀態不變 ──
-    win._page_size_dialog({"width_mm": 0.0, "height_mm": 210.0, "refit_grid": False})
+    win._page_size_dialog({"width_mm": 0.0, "height_mm": 210.0, "mode": "paper"})
     assert "無法改成品尺寸" in win.statusBar().currentMessage(), "非法尺寸未擋"
     assert win.template.page_width_mm == w0, "非法尺寸卻改了狀態"
 
     # ── 改小紙張：溢出項據實列出（提示而非阻擋） ──
     win._page_size_dialog({"width_mm": 90.0, "height_mm": 120.0,
-                           "refit_grid": False})
+                           "mode": "paper"})
     assert warned and "超出成品範圍" in warned[-1], f"溢出未據實列出：{warned}"
     assert "落到成品外" in win.statusBar().currentMessage(), "狀態列未報溢出項數"
     assert win.template.page_width_mm == 90.0, "溢出不應阻擋改尺寸"
@@ -142,7 +171,7 @@ def _run_size_steps(win, w0, h0, grid0, margins0, pages0, chars0, warned):
     import fitz
     with tempfile.TemporaryDirectory() as td:
         win._page_size_dialog({"width_mm": 120.0, "height_mm": 180.0,
-                               "refit_grid": True})
+                               "mode": "refit"})
         out = Path(td) / "改尺寸成品.pdf"
         export_pdf(win.doc, win.template, out, footer=False)
         pdf = fitz.open(str(out))

@@ -16,8 +16,13 @@ from dataclasses import dataclass
 from typing import Iterator, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor, QCursor, QImage, QPixmap
-from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene
+from PySide6.QtGui import QBrush, QColor, QCursor, QImage, QPainterPath, QPen, QPixmap
+from PySide6.QtWidgets import (
+    QGraphicsPathItem,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
+    QGraphicsScene,
+)
 
 from cjkfolio.document import Document
 from cjkfolio.frames import masters_for_layout, resolve_text_frames
@@ -29,6 +34,7 @@ from cjkfolio.layout import (
     style_advance_pt,
     style_line_slots,
 )
+from cjkfolio.press_marks import BLEED_MM
 from cjkfolio.primitives import book_number_for, sheet_face_for
 from cjkfolio.render import PageRenderer, line_axis_x_pt, mm_to_pt
 from cjkfolio.styles import Template
@@ -93,6 +99,66 @@ def pil_to_qimage(img) -> QImage:
             img = img.convert("RGB")
         fmt, stride = QImage.Format_RGB888, img.width * 3
     return QImage(img.tobytes(), img.width, img.height, stride, fmt).copy()
+
+
+# 畫布出血範圍（Sprint 156）：紅實線＝出血線（PDF BleedBox 外緣），灰虛線＝成品裁切線
+BLEED_LINE_COLOR = "#e00000"
+TRIM_LINE_COLOR = "#9a9a9a"
+
+
+def bleed_px_for(dpi: int) -> int:
+    """出血寬的底圖像素數，與 PageRenderer.render_page(bleed_pt=…) 的捨入同式。"""
+    return round(mm_to_pt(BLEED_MM) * dpi / 72.0)
+
+
+def crop_spine_bleed(qimage: QImage, bleed_px: int, spine) -> QImage:
+    """對頁檢視去掉訂口側出血：那一側緊貼鄰頁，留著會蓋住鄰頁的邊。
+
+    spine＝訂口在本頁的哪一側（"left"／"right"）；None＝單頁，四邊出血全留。
+    """
+    if spine == "left":
+        return qimage.copy(bleed_px, 0, qimage.width() - bleed_px, qimage.height())
+    if spine == "right":
+        return qimage.copy(0, 0, qimage.width() - bleed_px, qimage.height())
+    return qimage
+
+
+def bleed_base_pos(x_offset: float, bleed_scene: float, spine) -> tuple:
+    """出血底圖左上的 scene 座標（trim 左上恆在 (x_offset, 0)，互動層不動）。"""
+    return (x_offset - (0.0 if spine == "left" else bleed_scene), -bleed_scene)
+
+
+def add_bleed_guides(scene: QGraphicsScene, x: float, w: float, h: float,
+                     b: float, spine=None) -> None:
+    """紅色出血框＋灰色虛線成品框（scene 座標；不設 data(0)，點擊穿透）。
+
+    對頁時出血框在訂口側不畫：兩頁合起來是一個圍住整個跨頁的紅框。
+    """
+    left, right = (x if spine == "left" else x - b), (x + w if spine == "right" else x + w + b)
+    path = QPainterPath()
+    if spine == "left":
+        path.moveTo(left, -b)
+        path.lineTo(right, -b)
+        path.lineTo(right, h + b)
+        path.lineTo(left, h + b)
+    elif spine == "right":
+        path.moveTo(right, -b)
+        path.lineTo(left, -b)
+        path.lineTo(left, h + b)
+        path.lineTo(right, h + b)
+    else:
+        path.addRect(left, -b, right - left, h + 2 * b)
+    trim = QPainterPath()
+    trim.addRect(x, 0.0, w, h)
+    for item_path, color, style in ((path, BLEED_LINE_COLOR, Qt.PenStyle.SolidLine),
+                                    (trim, TRIM_LINE_COLOR, Qt.PenStyle.DashLine)):
+        pen = QPen(QColor(color))
+        pen.setCosmetic(True)  # 任何縮放都是 1 螢幕像素寬
+        pen.setStyle(style)
+        item = QGraphicsPathItem(item_path)
+        item.setPen(pen)
+        item.setZValue(0.2)  # 底圖之上、互動層之下
+        scene.addItem(item)
 
 
 def iter_cell_rects(
@@ -223,6 +289,8 @@ def build_page_scene(
     x_offset: float = 0.0,
     first_page: int = 1,
     base_dpi: int = 0,
+    bleed: bool = False,
+    spine=None,
 ) -> list:
     """在 scene 建雙層畫布（底圖 PNG z=0＋互動層透明字格 z=1）。回傳互動層 item list。
 
@@ -238,6 +306,11 @@ def build_page_scene(
 
     x_offset＝底圖與互動層一併水平平移的像素量（對頁檢視右頁置於 x=頁寬，Sprint 129）。
     預設 0.0＝與單頁完全等價（byte-identical），既有單頁路徑不受影響。
+
+    bleed=True（Sprint 156）底圖四邊外擴 3mm 出血，畫出伸進出血區的置入圖，並加
+    紅色出血框與灰色虛線成品框；trim 左上仍在 (x_offset, 0)，互動層幾何不動。
+    spine＝對頁時訂口在本頁哪側（該側出血裁掉、紅框不畫），單頁為 None。
+    底圖 data(2)＝(x_offset, spine) 供畫質升級時以同一規則裁切與定位。
     """
     scale = dpi / 72.0  # 互動層字格幾何一律依 dpi（scene 座標系），不隨底圖畫質變
     base_dpi = base_dpi or dpi  # 底圖渲染解析度（Sprint 133，畫質用；預設同 scene）
@@ -255,8 +328,12 @@ def build_page_scene(
         page, footer_texts=footer, sheet_face=sheet_face, vertical=vertical,
         frames=frames,  # 底圖含獨立文字框（Sprint 55）；互動層字格見下（Sprint 58）
         images=images,  # 底圖含置入圖（Sprint 102）；互動層圖框見下
+        bleed_pt=mm_to_pt(BLEED_MM) if bleed else 0.0,
     )
-    base = QGraphicsPixmapItem(QPixmap.fromImage(pil_to_qimage(pil_img)))
+    qimage = pil_to_qimage(pil_img)
+    if bleed:
+        qimage = crop_spine_bleed(qimage, bleed_px_for(base_dpi), spine)
+    base = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
     base.setZValue(0)
     # 高 dpi 底圖縮回 scene 尺寸（Sprint 133）：畫面上像素更密而 scene 座標不變，
     # 故互動層字格幾何零改動。平滑轉換讓非整數倍縮放不出硬鋸齒。
@@ -267,6 +344,13 @@ def build_page_scene(
     # 那是互動層的字格鍵，底圖帶了就會被 _cell_item_at 當成字格命中。
     base.setData(1, page.number)
     base.setPos(x_offset, 0.0)  # 對頁右頁整頁右移（Sprint 129）；預設 0.0＝不動
+    if bleed:
+        base.setData(2, (x_offset, spine))
+        base.setPos(*bleed_base_pos(x_offset, bleed_px_for(base_dpi) * dpi / base_dpi,
+                                    spine))
+        add_bleed_guides(scene, x_offset, mm_to_pt(template.page_width_mm) * scale,
+                         mm_to_pt(template.page_height_mm) * scale,
+                         mm_to_pt(BLEED_MM) * scale, spine)
     scene.addItem(base)
     items: list = []
 

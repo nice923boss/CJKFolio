@@ -49,7 +49,7 @@ class ExportThread(QThread):
         self._template = template
         self._out_path = out_path
         self._image_base_dir = image_base_dir
-        self._opts = opts  # {pdfx, icc_profile, first_page, footer, crop_marks}
+        self._opts = opts  # {pdfx, icc_profile, first_page, footer, crop_marks, trim_only}
 
     def run(self) -> None:
         try:
@@ -152,11 +152,15 @@ class ExportActionsMixin:
                 f"{result.pdfx_label} 識別：OutputIntent "
                 f"{result.output_condition_identifier}"
                 + ("（嵌入 ICC）" if result.icc_embedded else "（registry 識別，免嵌 ICC）"))
+        if result.trim_only:
+            lines.append("只輸出成品範圍：無出血（MediaBox＝TrimBox＝BleedBox＝成品），"
+                         "超出成品邊的圖已裁掉")
         if result.crop_marks:
             lines.append("裁切標記：8 條單 K 角標（MediaBox 外擴、BleedBox＝trim＋出血）")
         if result.images_placed:
             lines.append(f"置入圖：{result.images_placed} 張影像 XObject")
         notes = list(result.image_color_warnings) + list(result.ppi_warnings) \
+            + list(result.bleed_warnings) \
             + list(result.tac_warnings) + list(result.license_warnings)
         lines.extend(notes)
         if not notes:

@@ -1,7 +1,7 @@
-"""成品尺寸動作 mixin（Sprint 140 甲）：版面＞成品尺寸…。
+"""成品尺寸動作 mixin（Sprint 140 甲；Sprint 157 加整版等比）：版面＞成品尺寸…。
 
-收對話框的寬高與重算旗標 → session.update_page_size（單一 undo 步，模版層先重排
-再入歷史）→ 重繪，並把這次改尺寸**新造成**的溢出項據實列出。改尺寸前就溢出的項
+收對話框的寬高與換法 → session.scale_page_size（整版等比）或 update_page_size（重算
+行列／只換紙張），皆單一 undo 步、先重排再入歷史 → 重繪，並把這次改尺寸**新造成**的溢出項據實列出。改尺寸前就溢出的項
 （模版既有狀態，如 B-部扉，GAPS #95）不重複報，免得淹掉真正該看的。
 
 換算與判定全在 cjkfolio.page_size（Qt 無關、pytest 已驗），本檔只調度與呈現。
@@ -10,7 +10,10 @@ self._after_template_change。
 """
 from PySide6.QtWidgets import QDialog, QMessageBox
 
+from cjkfolio.page_scale import scale_factor
 from cjkfolio.page_size import new_fit_warnings
+from cjkfolio.press_marks import BLEED_MM
+from cjkfolio.render import mm_to_pt
 from cjkfolio.styles import TemplateError
 
 from .page_size_panel import PageSizeDialog
@@ -31,10 +34,14 @@ class PageSizeActionsMixin:
                 return
             values = dlg.values()
         before = self.template
+        mode = values["mode"]
         try:
-            res = self.session.update_page_size(
-                values["width_mm"], values["height_mm"],
-                refit_grid=values["refit_grid"])
+            if mode == "scale":
+                res = self.session.scale_page_size(
+                    values["width_mm"], values["height_mm"], bleed_pt=mm_to_pt(BLEED_MM))
+            else:
+                res = self.session.update_page_size(
+                    values["width_mm"], values["height_mm"], refit_grid=mode == "refit")
         except TemplateError as err:  # 非法尺寸：狀態不變，據實說明留給使用者改
             self.statusBar().showMessage(f"無法改成品尺寸：{err}")
             return
@@ -43,8 +50,10 @@ class PageSizeActionsMixin:
             return
         warnings = new_fit_warnings(before, self.session.template, self.doc)
         pages = len(self.session.layout.pages)
-        detail = (f"版心已重算，全書重排為 {pages} 頁"
-                  if values["refit_grid"] else "只換紙張，一個字都沒重排")
+        k = scale_factor(before, values["width_mm"], values["height_mm"])
+        detail = {"scale": f"整版等比縮放 {k:.3g} 倍，仍為 {pages} 頁",
+                  "refit": f"版心已重算，全書重排為 {pages} 頁",
+                  "paper": "只換紙張，一個字都沒重排"}[mode]
         self._after_template_change(
             res,
             f"成品尺寸 {values['width_mm']:g} × {values['height_mm']:g} mm"

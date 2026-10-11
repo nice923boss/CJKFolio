@@ -119,6 +119,12 @@ class WindowChromeMixin:
         self._facing_action.setShortcut(QKeySequence("Ctrl+3"))
         self._facing_action.triggered.connect(self._toggle_facing)
         view_menu.addAction(self._facing_action)
+        # 出血範圍（Sprint 156）：紅框＝PDF 出血線，看得到匯出後出血區有沒有圖
+        self._bleed_action = QAction("顯示出血範圍（紅框）", self)
+        self._bleed_action.setCheckable(True)
+        self._bleed_action.setChecked(True)
+        self._bleed_action.triggered.connect(self._toggle_bleed)
+        view_menu.addAction(self._bleed_action)
 
         tools_menu = self.menuBar().addMenu("工具")  # 字數統計與文件資訊（Sprint 128 丙2）
         info_action = QAction("文件資訊…", self)

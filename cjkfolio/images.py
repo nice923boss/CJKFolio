@@ -165,6 +165,32 @@ def resolution_warnings(resolutions, min_ppi: float = MIN_IMAGE_PPI) -> list:
     ]
 
 
+#: 「貼著成品邊」的判定距離（1mm）：圖邊離成品邊這麼近，多半是要滿版而非刻意留白。
+BLEED_NEAR_EDGE_PT = PT_PER_INCH / 25.4
+#: 出血線容差（0.5pt）：拖曳吸附與 mm→pt 換算的捨入差，差在此內視為已達出血線。
+BLEED_TOLERANCE_PT = 0.5
+
+
+def bleed_gap_warning(name: str, page: int, box, page_w_pt: float, page_h_pt: float,
+                      bleed_pt: float):
+    """置入圖貼著成品邊卻沒延伸到出血線時的一項警告；無此情形回 None。
+
+    box＝實際繪製框（fit_image_rect 結果，trim pt、top-down），不是使用者拉的 rect：
+    contain 縮放下兩者可不同，露白看的是圖真正畫到哪。PDF 的 BleedBox 比成品每邊多
+    bleed_pt，圖只蓋到成品邊時出血區是白的，裁切稍偏就印出白邊（畫布只畫成品範圍，
+    在編輯器裡看不出來，故於匯出據實提示，不擋流程、不自動搬圖）。
+    """
+    reach = bleed_pt - BLEED_TOLERANCE_PT
+    beyond = [("上", -box.y0), ("下", box.y1 - page_h_pt),
+              ("左", -box.x0), ("右", box.x1 - page_w_pt)]  # 正值＝伸進出血區多少 pt
+    edges = [edge for edge, out in beyond if -BLEED_NEAR_EDGE_PT <= out < reach]
+    if not edges:
+        return None
+    return (f"出血不足：頁 {page} {name} 的{'、'.join(edges)}緣貼著成品邊，卻沒延伸到"
+            f" {bleed_pt * 25.4 / PT_PER_INCH:g}mm 出血線，出血區會露白、裁切稍偏就印出白邊"
+            f"（編輯器選圖後用「一鍵滿版：整個鋪滿」）")
+
+
 #: PIL mode → PDF 影像色彩空間。前兩種是 §9 的印前色彩空間，非 preflight
 #: color-cmyk-only 的禁列項；"RGB" 是 preflight 會判失敗的那一種，只在非 PDF/X 的
 #: 一般 PDF 走得到（PDF/X 路徑於 pdf_writer 轉灰並警告，Sprint 137）。

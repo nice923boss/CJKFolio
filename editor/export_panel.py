@@ -2,7 +2,8 @@
 
 只暴露 export_pdf 已驗且對印前送印必要的選項：輸出路徑、輸出形態（X-1a／X-4／
 一般 PDF）、輸出 ICC（X-4 強制嵌 DestOutputProfile）、總墨量上限（Sprint 140）、
-首頁書頁碼、頁腳頁碼、裁切標記、RGB 影像轉 CMYK 與其 rendering intent（Sprint 139）。
+首頁書頁碼、頁腳頁碼、裁切標記、RGB 影像轉 CMYK 與其 rendering intent（Sprint 139）、
+只輸出成品範圍（Sprint 156：無出血，與裁切標記互斥，勾一個就停用另一個）。
 判定與寫檔全在 cjkfolio.pdf_writer.export_pdf（pytest 已驗），本對話框只收選項不做匯出。
 
 輸出形態與總墨量上限的起始值來自印前設定（設定＞印前設定…），由呼叫端讀本機檔後
@@ -100,6 +101,12 @@ class ExportDialog(QDialog):
         self._footer = QCheckBox("輸出頁腳頁碼")
         self._footer.setChecked(True)
         self._crop = QCheckBox("裁切標記（MediaBox 外擴、BleedBox＝trim＋出血）")
+        self._trim_only = QCheckBox("只輸出成品範圍（不含 3mm 出血；超出成品邊的圖裁掉，不留白邊）")
+        self._trim_only.setToolTip(
+            "給螢幕閱讀或數位印刷用。送印刷廠裁切的稿件請保留出血，否則裁切稍偏就見白邊。")
+        # 互斥：無出血就無處放裁切標記
+        self._crop.toggled.connect(lambda on: self._trim_only.setEnabled(not on))
+        self._trim_only.toggled.connect(lambda on: self._crop.setEnabled(not on))
 
         self._notice = QLabel("")
         self._notice.setStyleSheet("color:#b00000;")
@@ -119,6 +126,7 @@ class ExportDialog(QDialog):
         form.addRow("首頁書頁碼", self._first_page)
         form.addRow("", self._footer)
         form.addRow("", self._crop)
+        form.addRow("", self._trim_only)
         form.addRow("", self._convert)
         form.addRow("轉換 intent", self._intent)
         form.addRow(self._notice)
@@ -196,6 +204,7 @@ class ExportDialog(QDialog):
             "first_page": self._first_page.value(),
             "footer": self._footer.isChecked(),
             "crop_marks": self._crop.isChecked(),
+            "trim_only": self._trim_only.isChecked(),
             "color_convert": self._convert.isChecked() and profile is not None,
             "rendering_intent": self._intent.currentData(),
         }

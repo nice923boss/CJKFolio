@@ -409,7 +409,7 @@ class PageRenderer:
         for edge in figure_slot_edges(rect, self.master.figure):
             _draw_stroke_line(img, edge, self.scale)
 
-    def _draw_image(self, img, pil, sheet_face: int, rect=None) -> None:
+    def _draw_image(self, img, pil, sheet_face: int, rect=None, offset_px: int = 0) -> None:
         """置入圖：等比縮放置中（contain）貼入畫布。
 
         rect＝任意圖框（trim pt、top-down，Sprint 54）；None＝主版 figure 保留區
@@ -417,7 +417,8 @@ class PageRenderer:
         溢出版心的 rect 由 PIL 於畫布邊界自然裁切（PNG 為 trim 空間預覽）。
         畫布為 "RGB"（Sprint 137）：RGB 來源原樣貼、灰階來源等值展成三通道、
         CMYK 來源以 PIL 內建換算轉 RGB 顯示。CMYK→RGB **未經色彩管理**，螢幕上
-        的是示意色而非打樣色（要準色請看 PDF 完稿或印廠打樣）。"""
+        的是示意色而非打樣色（要準色請看 PDF 完稿或印廠打樣）。
+        offset_px＝畫布原點相對 trim 左上的位移（出血畫布，Sprint 156）。"""
         if rect is None:
             page_w = mm_to_pt(self.template.page_width_mm)
             slot = figure_slot_rect(page_w, self.master, is_right_page(sheet_face),
@@ -429,7 +430,8 @@ class PageRenderer:
         resized = pil.resize((w_px, h_px))
         if resized.mode != "RGB":
             resized = resized.convert("RGB")
-        img.paste(resized, (round(box.x0 * self.scale), round(box.y0 * self.scale)))
+        img.paste(resized, (round(box.x0 * self.scale) + offset_px,
+                            round(box.y0 * self.scale) + offset_px))
 
     def _draw_text_frame(self, img, placement) -> None:
         """獨立文字框（Sprint 55）：欄幾何取 frames.FramePlacement（與 pdf_writer
@@ -478,7 +480,30 @@ class PageRenderer:
 
     def render_page(self, page, footer_texts=None, sheet_face=None,
                     vertical: bool = True, toc_marks=(),
-                    rule_breaks=(), images=(), frames=()) -> Image.Image:
+                    rule_breaks=(), images=(), frames=(),
+                    bleed_pt: float = 0.0) -> Image.Image:
+        """一頁 trim 範圍的 RGB 畫布；bleed_pt>0 時四邊各外擴出血（Sprint 156）。
+
+        出血畫布只多畫伸進出血區的置入圖（與 PDF 同幾何，故畫面看得到匯出會不會
+        露白）；成品範圍內逐像素等同 bleed_pt=0 的結果。文字框溢出成品邊不畫進出血
+        區（版心內排版不會溢出，自由文字框溢出屬少見情形）。
+        """
+        img = self._render_trim(page, footer_texts, sheet_face, vertical,
+                                toc_marks, rule_breaks, images, frames)
+        if bleed_pt <= 0:
+            return img
+        b_px = round(bleed_pt * self.scale)
+        out = Image.new("RGB", (img.width + 2 * b_px, img.height + 2 * b_px),
+                        (255, 255, 255))
+        if sheet_face is None:
+            sheet_face = page.number
+        for _path, pil, rect in images:
+            self._draw_image(out, pil, sheet_face, rect=rect, offset_px=b_px)
+        out.paste(img, (b_px, b_px))
+        return out
+
+    def _render_trim(self, page, footer_texts, sheet_face, vertical, toc_marks,
+                     rule_breaks, images, frames) -> Image.Image:
         template = self.template
         if getattr(page, "master", ""):  # 逐頁主版（節式主版指派，Sprint 51）
             self.master = template.masters[page.master]

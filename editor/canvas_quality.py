@@ -22,7 +22,16 @@ from PySide6.QtCore import QThread, Signal
 
 from cjkfolio.images import ImageError
 from cjkfolio.render import PageRenderer
-from editor.canvas import page_frame_placements, page_images, pil_to_qimage
+from cjkfolio.press_marks import BLEED_MM
+from cjkfolio.render import mm_to_pt
+from editor.canvas import (
+    bleed_base_pos,
+    bleed_px_for,
+    crop_spine_bleed,
+    page_frame_placements,
+    page_images,
+    pil_to_qimage,
+)
 
 CANVAS_DPI = 150  # scene 座標系基準（互動層幾何依此；不隨畫質變）
 # 底圖可選解析度（Spike 24 實測重繪中位：34／54／82／162ms）
@@ -117,7 +126,8 @@ class CanvasQualityMixin:
         thread = PageImageThread(
             self._quality_generation, self.doc, self.template,
             self.layout_result, self._quality_page_numbers(),
-            self._doc_path.parent, dpi, parent=self)
+            self._doc_path.parent, dpi, parent=self,
+            bleed=getattr(self, "_show_bleed", False))
         thread.page_ready.connect(self._on_quality_page)
         thread.all_done.connect(self._on_quality_done)
         thread.finished.connect(self._on_quality_thread_finished)
@@ -135,6 +145,12 @@ class CanvasQualityMixin:
         for item in self.scene.items():
             if item.data(1) != number:  # data(1)＝底圖標記（見 canvas.build_page_scene）
                 continue
+            placement = item.data(2)  # 出血底圖（Sprint 156）：同規則裁訂口側、重定位
+            if placement is not None:
+                x_offset, spine = placement
+                bleed_px = bleed_px_for(dpi)
+                qimage = crop_spine_bleed(qimage, bleed_px, spine)
+                item.setPos(*bleed_base_pos(x_offset, bleed_px * CANVAS_DPI / dpi, spine))
             item.setPixmap(QPixmap.fromImage(qimage))
             item.setScale(CANVAS_DPI / dpi)
             break
@@ -179,8 +195,9 @@ class PageImageThread(QThread):
     all_done = Signal(int, float, int)      # (generation, 耗時秒, 缺圖頁數)
 
     def __init__(self, generation: int, doc, template, layout, page_numbers,
-                 base_dir, dpi: int, parent=None) -> None:
+                 base_dir, dpi: int, parent=None, bleed: bool = False) -> None:
         super().__init__(parent)
+        self._bleed_pt = mm_to_pt(BLEED_MM) if bleed else 0.0
         self._generation = generation
         self._doc = doc
         self._template = template
@@ -228,7 +245,7 @@ class PageImageThread(QThread):
                 page, footer_texts=footer,
                 sheet_face=sheet_face_for(number),  # 側別依紙面（Sprint 145）
                 vertical=getattr(page, "vertical", self._layout.vertical),
-                frames=frames, images=images)
+                frames=frames, images=images, bleed_pt=self._bleed_pt)
             self.page_ready.emit(
                 self._generation, number, pil_to_qimage(pil_img))
         self.all_done.emit(

@@ -55,6 +55,8 @@ from PySide6.QtWidgets import (  # noqa: E402
 from cjkfolio.document import load_document  # noqa: E402
 from cjkfolio.editing import DocCursor, DocRange, DocSpan  # noqa: E402
 from cjkfolio.images import ImageError  # noqa: E402
+from cjkfolio.press_marks import BLEED_MM  # noqa: E402
+from cjkfolio.render import mm_to_pt  # noqa: E402
 from cjkfolio.session import EditSession  # noqa: E402
 from cjkfolio.styles import load_template  # noqa: E402
 from editor.ai_actions import AiActionsMixin  # noqa: E402
@@ -66,6 +68,7 @@ from editor.export_actions import ExportActionsMixin  # noqa: E402
 from editor.find_actions import FindActionsMixin  # noqa: E402
 from editor.library_panel import TemplateLibraryDialog  # noqa: E402
 from editor.canvas import (  # noqa: E402
+    add_bleed_guides,
     build_page_scene,
     page_frame_placements,
     page_images,
@@ -134,6 +137,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         self._drag_anchor = None  # 拖曳起點 (para_idx, span)，按下 body 字格時設定
         self._did_fit_on_show = False  # 首次顯示整頁 fit（Sprint 124），只做一次
         self._facing = False      # 對頁檢視（雙頁併排，Sprint 129）；純檢視，不影響匯出
+        self._show_bleed = True   # 畫布出血範圍紅框（Sprint 156）；純檢視，不影響匯出
 
         if self.page is None:  # 先放預設語，_make_scene 的缺圖提示才不被蓋掉
             self.statusBar().showMessage(
@@ -261,8 +265,14 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         if self.page is None:  # 空白文件（Sprint 123）：畫空紙面等匯入或第一字
             width_px = self.template.page_width_mm / 25.4 * DPI
             height_px = self.template.page_height_mm / 25.4 * DPI
-            scene.addRect(0, 0, width_px, height_px,
-                          QPen(QColor("#c8c8c8")), QBrush(QColor("white")))
+            if self._show_bleed:  # 出血區白底＋紅框（Sprint 156）
+                b = mm_to_pt(BLEED_MM) * DPI / 72.0
+                scene.addRect(-b, -b, width_px + 2 * b, height_px + 2 * b,
+                              QPen(Qt.PenStyle.NoPen), QBrush(QColor("white")))
+                add_bleed_guides(scene, 0.0, width_px, height_px, b)
+            else:
+                scene.addRect(0, 0, width_px, height_px,
+                              QPen(QColor("#c8c8c8")), QBrush(QColor("white")))
             return scene, {}
         if self._facing:  # 對頁檢視（Sprint 129）：兩頁併排，另走 _make_spread_scene
             return self._make_spread_scene(scene)
@@ -274,7 +284,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
             self.statusBar().showMessage(f"置入圖無法載入（本頁不顯示圖）：{err}")
         items = build_page_scene(
             scene, self.template, self.doc, self.layout_result, self.page, dpi=DPI,
-            images=images,
+            images=images, bleed=self._show_bleed,
         )
         return scene, {it.data(0): it for it in items}
 
@@ -296,7 +306,8 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         left_no, right_no = spread_pages(self.page.number, len(pages))
         page_w_px = self.template.page_width_mm / 25.4 * DPI
         item_map: dict = {}
-        for pg_no, x_off in ((left_no, 0.0), (right_no, page_w_px)):
+        both = left_no is not None and right_no is not None  # 單邊 spread 無訂口相鄰
+        for pg_no, x_off, spine in ((left_no, 0.0, "right"), (right_no, page_w_px, "left")):
             if pg_no is None:  # 該側空白（紙面1 右側、末偶紙面左側）：單頁顯示
                 continue
             pg = pages[pg_no - 1]
@@ -309,6 +320,7 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
             items = build_page_scene(
                 scene, self.template, self.doc, self.layout_result, pg, dpi=DPI,
                 images=images, x_offset=x_off,
+                bleed=self._show_bleed, spine=spine if both else None,
             )
             if pg.number == self.page.number:  # 目前頁：keys 原樣，照常可編輯
                 item_map.update({it.data(0): it for it in items})
@@ -316,6 +328,12 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
                 for it in items:
                     it.setData(0, ("facing", pg.number))
         return scene, item_map
+
+    def _toggle_bleed(self) -> None:
+        """出血範圍紅框開關（Sprint 156）：重繪並整頁 fit（有無出血 scene 尺寸不同）。"""
+        self._show_bleed = self._bleed_action.isChecked()
+        self._rebuild()
+        self.view.fit_page()
 
     def _toggle_facing(self) -> None:
         """對頁檢視開關（Sprint 129）：切換後重繪並整頁 fit（單雙頁版面尺寸不同）。"""

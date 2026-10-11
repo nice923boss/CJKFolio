@@ -33,20 +33,20 @@ def check_view(EditorWindow, doc_path) -> None:
     assert win._zoom_label.text() == f"{round(z0 * 100)}%", \
         f"狀態列百分比未同步：{win._zoom_label.text()}"
 
-    # 檢視選單六項與快捷鍵（縮放五項＋對頁檢視）。查找走 findChildren：
+    # 檢視選單七項與快捷鍵（縮放五項＋對頁檢視＋出血範圍，後者驗於 C46）。查找走 findChildren：
     # QAction.menu() 回的 wrapper 在 shiboken 下會指到已失效物件（實測），不可靠
     view_menu = next(
         m for m in win.menuBar().findChildren(QMenu) if m.title() == "檢視")
     acts = [a for a in view_menu.actions() if not a.isSeparator()]
     assert [a.text() for a in acts] == \
         ["放大", "縮小", "實際大小（100%）", "符合頁面", "符合寬度",
-         "對頁檢視（雙頁併排）"], \
+         "對頁檢視（雙頁併排）", "顯示出血範圍（紅框）"], \
         f"檢視選單項異常：{[a.text() for a in acts]}"
     keys = {a.text(): [s.toString() for s in a.shortcuts()] for a in acts}
     assert keys["放大"] == ["Ctrl+=", "Ctrl++"] and keys["縮小"] == ["Ctrl+-"]
     assert keys["實際大小（100%）"] == ["Ctrl+1"] and keys["符合頁面"] == ["Ctrl+0"]
     assert keys["符合寬度"] == ["Ctrl+2"], f"快捷鍵異常：{keys}"
-    facing = acts[-1]  # 對頁檢視（Sprint 129）：可勾選、Ctrl+3，行為驗於 C32
+    facing = acts[-2]  # 對頁檢視（Sprint 129）：可勾選、Ctrl+3，行為驗於 C32
     assert facing.isCheckable() and keys["對頁檢視（雙頁併排）"] == ["Ctrl+3"], \
         f"對頁檢視項屬性異常：checkable={facing.isCheckable()} keys={keys}"
 

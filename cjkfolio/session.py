@@ -72,6 +72,7 @@ from .image_editing import (
     set_image_wrap,
 )
 from .layout import LayoutResult
+from .page_scale import scale_page_size
 from .page_size import set_page_size
 from .toc import TocRefresh, document_with_toc, refresh_toc_page_numbers
 from .wrap import layout_with_wrap
@@ -493,6 +494,16 @@ class EditSession:
         """
         return self._commit_template(set_page_size(
             self._template, width_mm, height_mm, refit_grid=refit_grid))
+
+    def scale_page_size(self, width_mm, height_mm, *, bleed_pt: float):
+        """整版等比換開本（Sprint 157）：模版與文件成對變更入單一 undo 步。
+
+        字級、字距、行距、邊距、頁腳與自由佈局層同乘一倍率，行列數與頁數不變（換算見
+        page_scale）。等值變更 no-op 回 None；非法尺寸 TemplateError 快速失敗、狀態不變。
+        """
+        template, document = scale_page_size(
+            self._template, self._document, width_mm, height_mm, bleed_pt=bleed_pt)
+        return self._commit_pair(document, template)
 
     def merge_draft(self, draft: Mapping):
         """萃取草稿一鍵併入現行模版（GAPS #37 (b)，Sprint 77）：回 (result, report)。
