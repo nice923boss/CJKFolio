@@ -73,7 +73,7 @@ from .image_editing import (
 )
 from .layout import LayoutResult
 from .page_size import set_page_size
-from .toc import document_with_toc
+from .toc import TocRefresh, document_with_toc, refresh_toc_page_numbers
 from .wrap import layout_with_wrap
 from .style_editing import (
     add_character_style,
@@ -115,6 +115,8 @@ class EditSession:
         # 連續輸入序列尾：(鍵, 尾 caret, 時戳)；鍵＝("body", para_idx) 或
         # ("frame", source_idx)（Sprint 60：body 與框輸入互為序列邊界，鍵不同即打斷）
         self._pending_insert: Optional[tuple] = None
+        # 最近一次刪頁、插頁或手動更新的目次頁碼重算結果（Sprint 155，供編輯器回報）
+        self.last_toc_refresh = TocRefresh(document)
 
     @property
     def document(self) -> Document:
@@ -310,9 +312,12 @@ class EditSession:
         """刪除版面頁 page（段 [lo, hi) 與該頁的圖、文字框）入單一 undo 步。
 
         Sprint 153。段數變少，游標一律落到刪除處（越界即退到末段段首）：留著舊
-        游標會靜默指到別段，文字框游標同理（框可能已被刪）。"""
+        游標會靜默指到別段，文字框游標同理（框可能已被刪）。
+
+        Sprint 155：同一步內重算目次頁碼（結果見 last_toc_refresh）。"""
         result = self._commit_pair(
-            delete_page(self._document, page, lo, hi), self._template)
+            self._with_toc_refreshed(delete_page(self._document, page, lo, hi)),
+            self._template)
         if result is not None:
             self._cursor = DocCursor(min(lo, len(self._document.paragraphs) - 1), 0)
             result = self._state_result()
@@ -321,13 +326,24 @@ class EditSession:
     def insert_blank_page(self, at: int, page: int, master: Optional[str] = None):
         """在第 at 段之前插入空白頁（版面頁 page）入單一 undo 步（Sprint 153）。
 
-        段數加 1，內文游標在插入處之後者跟著後移一段（仍指同一個字）。"""
+        段數加 1，內文游標在插入處之後者跟著後移一段（仍指同一個字）。
+        Sprint 155：同一步內重算目次頁碼（結果見 last_toc_refresh）。"""
         result = self._commit_pair(
-            insert_blank_page(self._document, at, page, master), self._template)
+            self._with_toc_refreshed(insert_blank_page(self._document, at, page, master)),
+            self._template)
         if result is not None and isinstance(self._cursor, DocCursor)                 and self._cursor.para_idx >= at:
             self._cursor = DocCursor(self._cursor.para_idx + 1, self._cursor.caret)
             result = self._state_result()
         return result
+
+    def _with_toc_refreshed(self, document: Document) -> Document:
+        """重算 document 的目次頁碼並記入 last_toc_refresh（刪頁、插頁、手動更新共用）。"""
+        self.last_toc_refresh = refresh_toc_page_numbers(document, self._template)
+        return self.last_toc_refresh.document
+
+    def refresh_toc(self):
+        """依現行版面更新目次頁碼入單一 undo 步（Sprint 155）；頁碼沒變＝no-op。"""
+        return self._commit_pair(self._with_toc_refreshed(self._document), self._template)
 
     def replace_document(self, document: Document):
         """整份換文件（Sprint 107 稿件匯入）：游標歸零，入統一 undo 歷史。

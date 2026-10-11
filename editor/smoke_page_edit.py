@@ -4,7 +4,8 @@
 它加註冊行，同 Sprint 147 把新驗收塞進既有 C19 的處置）。
 
 離屏可驗：右鍵選單三項、插入前後跳到新頁、空白頁占一頁且照常編頁碼、裝訂補頁
-自動湊回 4 的倍數、一步 undo、刪頁、封面／裝訂補頁／跨頁段頁拒收並說明原因。
+自動湊回 4 的倍數、一步 undo、刪頁、封面／裝訂補頁／跨頁段頁拒收並說明原因；
+插頁後目次頁碼在同一步內更新、右鍵「更新目次頁碼」一鍵重算（Sprint 155）。
 真右鍵手感與縮圖重繪屬真視窗驗收（GAPS #19 批次）。
 """
 from PySide6.QtCore import Qt
@@ -100,7 +101,30 @@ def check_page_edit(EditorWindow, chapter_path, paiban_path) -> None:
     assert [p.master for p in _content(win2)][1:] == ["B-部扉", "A-內文版"], \
         [p.master for p in _content(win2)]
 
-    for w in (win, win2):
+    # ── 目次頁碼自動更新（Sprint 155）：chapter-opening 兩節各宣告一條層 2 條目 ──
+    from dataclasses import replace
+
+    from cjkfolio.toc import document_with_toc
+
+    win3 = EditorWindow(str(chapter_path))
+    paras = list(win3.doc.paragraphs)
+    for i in (1, 2):
+        paras[i] = replace(paras[i], toc_title=paras[i].text[:6], toc_level=2)
+    win3.session.replace_document(document_with_toc(
+        replace(win3.doc, paragraphs=tuple(paras)), win3.template))
+    with_toc = win3.doc
+    numbers = [p.page_no for p in with_toc.paragraphs[1:3]]
+    _act(win3._build_page_menu(1), "在此頁之後新增空白頁").trigger()
+    assert [p.page_no for p in win3.doc.paragraphs[1:3]] == [
+        str(int(n) + 1) for n in numbers], "目錄頁之後插頁，各條目頁碼應各加 1"
+    assert "目次頁碼已更新 2 條" in win3.statusBar().currentMessage()
+    _act(win3._build_page_menu(1), "更新目次頁碼").trigger()
+    assert "目次 2 條頁碼不變" in win3.statusBar().currentMessage()
+    win3.session.undo()
+    assert win3.doc is with_toc, "插頁與目次頁碼更新應同屬一個 undo 步"
+
+    for w in (win, win2, win3):
         w._shutdown_thumbnails()
     print("C41 附驗 刪頁／插頁：右鍵三項＋插頁跳新頁且空白頁編頁碼、可直接打字＋補頁湊回 4 的"
-          "倍數＋刪頁＋兩步 undo 回原稿＋封面、裝訂補頁、跨頁續段頁拒收並說明原因")
+          "倍數＋刪頁＋兩步 undo 回原稿＋封面、裝訂補頁、跨頁續段頁拒收並說明原因"
+          "＋插頁後目次頁碼同步更新、右鍵一鍵重算")

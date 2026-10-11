@@ -8,6 +8,9 @@ Owner 的話：頁 4 只有書名「這裡不需要再看到一次標題文字�
 動手：刪頁要求該頁首段不延續自前頁、末段不延續到下一頁；插頁要求插入處不切斷跨頁段。
 頁碼數字（書頁號）、左右側（紙面號）、末尾裝訂補頁都由重排推導，本檔不另算。
 
+Sprint 155：刪頁、插頁在同一個 undo 步內自動更新目次頁碼；右鍵選單另有「更新目次
+頁碼」，供其他編輯（改字、改樣式）使內文移頁後一鍵重算。
+
 不可動的頁（封面、裝訂補頁、跨頁段的頁）選單項照常顯示，點了在狀態列與游標處說明
 原因（Sprint 145 教訓：停用或沉默拒收，使用者看不到為什麼）。
 """
@@ -78,6 +81,9 @@ class PageEditActionsMixin:
                 self._insert_page(page_number, after=a == "after"))
         delete = menu.addAction(f"刪除此頁（頁 {page_number}）")
         delete.triggered.connect(lambda checked=False: self._delete_page(page_number))
+        menu.addSeparator()
+        menu.addAction("更新目次頁碼").triggered.connect(
+            lambda checked=False: self._refresh_toc())
         return menu
 
     def _refuse_page_edit(self, reason: str) -> None:
@@ -85,7 +91,7 @@ class PageEditActionsMixin:
         QToolTip.showText(QCursor.pos(), reason)
 
     def _after_page_edit(self, page_number: int, msg: str) -> None:
-        """重排後跳到 page_number 並回報全書頁數、補頁數與目次頁碼是否過期。"""
+        """重排後跳到 page_number 並回報全書頁數、補頁數與目次頁碼更新結果。"""
         pages = self.layout_result.pages
         self.page = pages[min(page_number, len(pages)) - 1]
         self.cursor = None
@@ -93,9 +99,28 @@ class PageEditActionsMixin:
         self._rebuild()
         padding = sum(1 for p in pages if p.blank)
         msg += f"（全書 {len(pages)} 頁，末尾裝訂補頁 {padding} 頁）"
-        if any(p.page_no for p in self.doc.paragraphs):
-            msg += "；目次頁碼已過期，請重新生成目次"
+        toc_msg = self._toc_refresh_message()
+        if toc_msg:
+            msg += f"；{toc_msg}"
         self.statusBar().showMessage(msg)
+
+    def _toc_refresh_message(self) -> str:
+        """session.last_toc_refresh 的說詞（""＝文件沒有目次節）。"""
+        refresh = self.session.last_toc_refresh
+        if refresh.problem:
+            return refresh.problem
+        if not refresh.entries:
+            return ""
+        if not refresh.changed:
+            return f"目次 {refresh.entries} 條頁碼不變"
+        return f"目次頁碼已更新 {refresh.changed} 條（共 {refresh.entries} 條）"
+
+    def _refresh_toc(self) -> None:
+        """依現行版面更新目次頁碼（Sprint 155，供手動調整版面後一鍵重算）。"""
+        if self.session.refresh_toc() is not None:
+            self._rebuild()
+        self.statusBar().showMessage(
+            self._toc_refresh_message() or "文件沒有目次頁，無頁碼可更新")
 
     def _delete_page(self, page_number: int) -> None:
         reason = self._page_edit_guard(page_number, "delete")

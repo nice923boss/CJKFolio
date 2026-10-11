@@ -276,6 +276,62 @@ def document_with_toc(doc: Document, template, *, first_page: int = 1,
     return replace(pass1, paragraphs=tuple(paras))
 
 
+@dataclass(frozen=True)
+class TocRefresh:
+    """目次頁碼重算結果（Sprint 155）。entries＝0 即文件沒有目次節（不算錯）。"""
+    document: Document
+    entries: int = 0
+    changed: int = 0
+    problem: str = ""  # 非空＝條目對不上內文，頁碼未動
+
+
+def refresh_toc_page_numbers(doc: Document, template, *,
+                             first_page: int = 1) -> TocRefresh:
+    """依現行版面重算書首目次節的條目頁碼，條目文字與節結構一律不動（Sprint 155）。
+
+    刪頁、插頁後內文起始頁會移動，但目次條目數不變，故不必像 document_with_toc
+    重建目次節：照順序把目次條目（掛條目樣式的段）對到內文宣告 toc_title 的段，
+    排一次版面填頁碼即準（page_no 不影響斷行，填值不改分頁）。不插新節，所以內文頁
+    上有置入圖、文字框也不受擋。
+
+    條目數或條目文字與內文宣告對不上（目次頁或章首頁被刪過、章節搬過順序、條目
+    文字改過）時不猜對應，原文件照回並在 problem 說明，交由使用者重新生成目次。
+    """
+    spec = getattr(template, "auto_toc", None)
+    if spec is None:
+        return TocRefresh(doc)
+    body, _ = _body_of(doc, spec)
+    offset = len(doc.paragraphs) - len(body)
+    if offset == 0:
+        return TocRefresh(doc)
+    entry_styles = frozenset(spec.entry_styles.values())
+    slots = [i for i in range(offset) if doc.paragraphs[i].style in entry_styles]
+    targets = [(offset + i, 1 if p.toc_level is None else p.toc_level, p.toc_title)
+               for i, p in enumerate(body) if p.toc_title]
+    redo = "目次頁碼未更新；請重新執行 AI 指派並勾生成目次頁"
+    if len(slots) != len(targets):
+        return TocRefresh(doc, len(slots), problem=(
+            f"目次有 {len(slots)} 條、內文宣告 {len(targets)} 條，對不上，{redo}"))
+    for k, (slot, (_, _, title)) in enumerate(zip(slots, targets)):
+        if doc.paragraphs[slot].text != title:  # 章節搬過或條目文字改過：不猜對應
+            return TocRefresh(doc, len(slots), problem=(
+                f"目次第 {k + 1} 條「{doc.paragraphs[slot].text}」與內文宣告"
+                f"「{title}」對不上，{redo}"))
+    result = layout_with_wrap(doc, template, first_page=first_page)
+    paras = list(doc.paragraphs)
+    changed = 0
+    for slot, (target, level, _) in zip(slots, targets):
+        if not spec.wants_page_no(level):
+            continue
+        page_no = str(book_number_for(_first_page_of(result, target), first_page,
+                                      result.cover_pages))
+        if paras[slot].page_no != page_no:
+            paras[slot] = replace(paras[slot], page_no=page_no)
+            changed += 1
+    if not changed:
+        return TocRefresh(doc, len(slots))
+    return TocRefresh(replace(doc, paragraphs=tuple(paras)), len(slots), changed)
+
 def assemble_book_with_toc(book: Book, template, base_dir=None, first_page: int = 1) -> Document:
     """組裝書冊並自動填入目錄頁碼，回傳可直接 render／export 的 document@2 Document。
 
