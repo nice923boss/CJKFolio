@@ -428,6 +428,11 @@ class EditorWindow(CanvasQualityMixin, WindowChromeMixin, StyleActionsMixin,
         self.frame_cursor = None  # body 與框游標互斥（最後點選者為 IME 目標）
         if hit.para_idx is not None and hit.span is not None:
             self._drag_anchor = (hit.para_idx, hit.span)
+        if hit.kind == "empty":  # 空白頁落點槽位（Sprint 154）
+            self.statusBar().showMessage(
+                f"游標｜段 {hit.para_idx + 1}（空白頁）｜在輸入欄組字按 Enter，從這一頁開始打字")
+            self._draw_highlight(item.rect())
+            return
         src = ""
         if hit.para_idx is not None and hit.span is not None:
             s, e = hit.span

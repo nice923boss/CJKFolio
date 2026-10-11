@@ -132,6 +132,10 @@ def iter_cell_rects(
             h = (adv * cell.width - offset) * scale
             yield pi, ci, x, y, w, h, cell.kind
             content_i += cell.width
+        if not placed.line.cells and placed.para_idx is not None:
+            # 空白頁的空行（Sprint 153 插頁）：行首給一格落點槽位，點得到才能打字（Sprint 154）
+            yield (pi, 0, (axis - style.size_pt / 2) * scale, line_top * scale,
+                   style.size_pt * scale, advance * scale, "empty")
 
 
 def page_frame_placements(
@@ -328,8 +332,14 @@ def resolve_frame_hit(page_number: int, placement, line_idx: int,
 
 
 def resolve_hit(doc: Document, page, placed_idx: int, cell_idx: int) -> CellHit:
-    """互動層字格 (placed_idx, cell_idx) → 文件游標（para_idx, span, text）。"""
+    """互動層字格 (placed_idx, cell_idx) → 文件游標（para_idx, span, text）。
+
+    空行的落點槽位（Sprint 154）回 span (0, 0)、kind "empty"：插入落在段首。"""
     placed = page.placed[placed_idx]
+    if not placed.line.cells:
+        return CellHit(page_number=page.number, placed_idx=placed_idx, cell_idx=cell_idx,
+                       para_idx=placed.para_idx, span=(0, 0), text="",
+                       style=placed.style, kind="empty")
     cell = placed.line.cells[cell_idx]
     return CellHit(
         page_number=page.number,

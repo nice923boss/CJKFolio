@@ -101,6 +101,8 @@ def locate_cell(layout: LayoutResult, cursor: DocCursor) -> Optional[CellAddress
 
     以 Cell.span 反查：找 para_idx 段中涵蓋 caret 前一字（caret−1）的字格；
     caret==0 時取涵蓋第 0 字者。段內 span 兩兩不相交且遞增，命中唯一。
+    插入的空白頁（帶節首標記的空段排出的單條空行，Sprint 153）以 cell_idx 0 當
+    落點槽位（Sprint 154）：游標停得住，打字才能直接從空白頁開始。
     反查不到（段無可見字格，或段不在版面）回 None。
     """
     target = cursor.caret - 1 if cursor.caret > 0 else 0
@@ -108,6 +110,8 @@ def locate_cell(layout: LayoutResult, cursor: DocCursor) -> Optional[CellAddress
         for pi, pl in enumerate(page.placed):
             if pl.para_idx != cursor.para_idx:
                 continue
+            if not pl.line.cells:
+                return CellAddress(page.number, pi, 0)
             for ci, cell in enumerate(pl.line.cells):
                 if cell.span is None:
                     continue

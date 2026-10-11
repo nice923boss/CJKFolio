@@ -316,6 +316,10 @@ class EditActionsMixin:
         hit = resolve_hit(self.doc, self.page, *self.cursor)
         if hit.para_idx is None or hit.span is None:
             return False
+        if hit.kind == "empty":  # 空白頁的落點槽位（Sprint 154）
+            self.statusBar().showMessage(
+                "這是空白頁，沒有字可刪；要移除整頁請在頁面面板按右鍵「刪除此頁」")
+            return True
         s, e = hit.span
         para_len = len(self.doc.paragraphs[hit.para_idx].text)
         start, end = (s, e) if before else (e, min(e + 1, para_len))

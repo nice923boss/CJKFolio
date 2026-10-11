@@ -7,6 +7,7 @@
 自動湊回 4 的倍數、一步 undo、刪頁、封面／裝訂補頁／跨頁段頁拒收並說明原因。
 真右鍵手感與縮圖重繪屬真視窗驗收（GAPS #19 批次）。
 """
+from PySide6.QtCore import Qt
 
 
 def _act(menu, prefix: str):
@@ -38,6 +39,17 @@ def check_page_edit(EditorWindow, chapter_path, paiban_path) -> None:
     assert not pages[1].blank, "插入的空白頁照常編頁碼"
     msg = win.statusBar().currentMessage()
     assert "已在頁 2 之前插入空白頁" in msg and "全書" in msg, msg
+
+    # 空白頁直接打字（Sprint 154）：點空行的落點槽位，組字 Enter 落在新頁
+    win._on_pick(win._item_by_key[(0, 0)])
+    assert "空白頁" in win.statusBar().currentMessage()
+    win._on_key(type("K", (), {"key": lambda self: Qt.Key.Key_Backspace})())
+    assert "沒有字可刪" in win.statusBar().currentMessage()
+    win._ime.setText("補記")
+    win._on_ime_commit()
+    assert win.page.number == 2 and win.cursor is not None
+    assert [c.text for c in win.page.placed[0].line.cells] == ["補", "記"]
+    win.session.undo()
 
     # 刪掉剛插的空白頁，再一步一步 undo 回原稿
     _act(win._build_page_menu(2), "刪除此頁").trigger()
@@ -90,5 +102,5 @@ def check_page_edit(EditorWindow, chapter_path, paiban_path) -> None:
 
     for w in (win, win2):
         w._shutdown_thumbnails()
-    print("C41 附驗 刪頁／插頁：右鍵三項＋插頁跳新頁且空白頁編頁碼＋補頁湊回 4 的"
+    print("C41 附驗 刪頁／插頁：右鍵三項＋插頁跳新頁且空白頁編頁碼、可直接打字＋補頁湊回 4 的"
           "倍數＋刪頁＋兩步 undo 回原稿＋封面、裝訂補頁、跨頁續段頁拒收並說明原因")

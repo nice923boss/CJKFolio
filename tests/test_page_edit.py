@@ -10,7 +10,9 @@ from pathlib import Path
 import pytest
 
 from cjkfolio.document import PlacedImage, TextFrame, document_from_dict
-from cjkfolio.editing import DocCursor, delete_page, insert_blank_page
+from cjkfolio.editing import (CellAddress, DocCursor, DocRange, apply_delete,
+                              apply_insert, delete_page, insert_blank_page,
+                              locate_cell)
 from cjkfolio.layout import _sections
 from cjkfolio.session import EditSession
 from cjkfolio.styles import load_template
@@ -172,3 +174,19 @@ def test_session_insert_shifts_cursor_after_insertion_point(template):
     assert ses._cursor == DocCursor(4, 2)
     ses.delete_page(2, 1, 2)
     assert ses._cursor == DocCursor(1, 0)
+
+
+# ---------- 空白頁直接打字（Sprint 154）----------
+
+def test_blank_page_slot_is_cursor_address_and_typing_fills_that_page(template):
+    """空白頁的空行以 cell_idx 0 當落點槽位：游標停得住，打字落在該頁，刪光仍留在該頁。"""
+    doc = insert_blank_page(four_pages(), 1, 2, "A-內文版")
+    lay = layout_with_wrap(doc, template)
+    assert locate_cell(lay, DocCursor(1, 0)) == CellAddress(2, 0, 0)
+    res = apply_insert(doc, template, DocCursor(1, 0), "新增內容")
+    assert res.document.paragraphs[1].text == "新增內容"
+    assert res.document.paragraphs[1].master == "A-內文版"
+    assert res.address.page_number == 2
+    assert len(res.layout.pages) == len(lay.pages)
+    back = apply_delete(res.document, template, DocRange(1, 0, 4))
+    assert back.address == CellAddress(2, 0, 0)
