@@ -631,3 +631,31 @@ def test_harmonize_tie_takes_first_declared_level():
         ("章節小標-黑體", "甲", 3), ("章節小標-黑體", "乙", 2)]))
     result = suggest_styles(["甲", "乙"], CANDIDATES, CONFIG, default_style=DEFAULT, transport=t)
     assert result.toc_entries == (("甲", 3), ("乙", 3))
+def test_complete_reply_missing_an_index_warns_with_table_row():
+    """回應完整卻漏回某段：該段不給建議，並以校正表列號（1 起算）警告（Sprint 151）。"""
+    texts = [f"段{i}" for i in range(6)]
+    t = transport_returning(
+        json.dumps([{"index": i, "style": DEFAULT} for i in (0, 1, 2)]),
+        json.dumps([{"index": i, "style": DEFAULT} for i in (0, 2)]))
+    result = suggest_styles(texts, CANDIDATES, CONFIG, default_style=DEFAULT,
+                            transport=t, batch_char_limit=6)
+    assert result.assignments == (DEFAULT,) * 4 + (None, DEFAULT)
+    missing = [w for w in result.warnings if "漏回" in w]
+    assert missing == ["AI 回應漏回校正表第 5 列，該列維持原樣式（可重跑指派補上）"]
+
+
+def test_missing_warning_lists_at_most_ten_rows():
+    t = transport_returning(json.dumps([{"index": 0, "style": DEFAULT}]))
+    result = suggest_styles([f"段{i}" for i in range(13)], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    (w,) = [w for w in result.warnings if "漏回" in w]
+    assert "第 2、3、4、5、6、7、8、9、10、11 等 12 列" in w
+
+
+def test_malformed_reply_does_not_double_warn_missing():
+    """格式殘缺已有「只採用幾項」的警告，漏回警告不重複。"""
+    t = transport_returning('[{"index": 0, "style": "%s"}, {"index": 1, "sty' % DEFAULT)
+    result = suggest_styles(["甲", "乙", "丙"], CANDIDATES, CONFIG,
+                            default_style=DEFAULT, transport=t)
+    assert any("只採用已寫完的 1／3 項" in w for w in result.warnings)
+    assert not any("漏回" in w for w in result.warnings)

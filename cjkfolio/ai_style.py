@@ -103,6 +103,9 @@ _SENTENCE_END = "。！？；，、：…」』"
 # 送給 AI 的每段上限：超過只送段首（標題、引題、編號都在段首）並註明全段字數
 _EXCERPT_CHARS = 60
 
+# 漏回警告最多列出的段號數（其餘以「等 N 段」帶過）
+_MISSING_SHOWN = 10
+
 
 class AiConfigProblem(RuntimeError):
     """設定錯誤（金鑰、Base URL、Model）：訊息已白話化且不含金鑰值。"""
@@ -444,12 +447,14 @@ def _extract_items(text: str, truncated: bool):
     raise ValueError(f"回應中無 JSON 陣列（前 120 字）：{text[:120]}")
 
 
-def _parse_assignments(payload: dict, count: int, candidates: set):
+def _parse_assignments(payload: dict, count: int, candidates: set, numbers=None):
     """回應 → (逐段樣式列, 逐段目錄條目列, 警告列表, 截斷而沒回到的批內索引)。
 
     樣式名不在候選集即拒（幻覺守門）；目錄欄位獨立守門，樣式被拒不連坐目錄條目
     （反之亦然），兩者各自可用即各自留下。被截斷時回報哪些段 AI 還沒寫到，
     由上層拆小批重送（Sprint 149），故此處不另發「只採用幾項」的警告。
+    回應完整卻漏回某些段時據實警告（Sprint 151）；numbers＝批內索引對應的原段號
+    （0 起算，未帶即批內索引），警告換算成校正表列號（1 起算）以便對照。
     """
     choice = payload["choices"][0]
     msg = choice["message"]
@@ -478,8 +483,15 @@ def _parse_assignments(payload: dict, count: int, candidates: set):
             warnings.append(f"AI 建議樣式不在模版候選集，忽略：{style!r}（段 {idx}）")
             continue
         slots[idx] = style
-    unanswered = tuple(i for i in range(count) if i not in answered) if cut else ()
-    return slots, toc_slots, warnings, unanswered
+    missing = tuple(i for i in range(count) if i not in answered)
+    if cut:
+        return slots, toc_slots, warnings, missing
+    if missing and not partial:   # 格式殘缺已有「只採用幾項」的警告，不重複
+        shown = [str((numbers[i] if numbers else i) + 1) for i in missing]
+        more = f" 等 {len(shown)} 列" if len(shown) > _MISSING_SHOWN else ""
+        warnings.append(f"AI 回應漏回校正表第 {'、'.join(shown[:_MISSING_SHOWN])}{more} 列"
+                        "，該列維持原樣式（可重跑指派補上）")
+    return slots, toc_slots, warnings, ()
 
 
 def suggest_styles(
@@ -550,7 +562,7 @@ def suggest_styles(
         try:
             payload = _post_with_retry(post, (url, headers, body, timeout), gate, note)
             slots, toc_slots, batch_warnings, unanswered = _parse_assignments(
-                payload, len(positions), candidate_set)
+                payload, len(positions), candidate_set, positions)
         except _Truncated:
             return positions   # 一項都沒寫完：整批交給上層拆小批重送
         except Exception as exc:  # 降級不擋流程（§4.4），警告不沉默
