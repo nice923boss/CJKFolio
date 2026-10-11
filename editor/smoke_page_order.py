@@ -13,6 +13,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QDropEvent
 
 from editor.page_panel import drop_index
+from editor.smoke_page_edit import check_page_edit
 
 
 def _masters(win) -> list:
@@ -110,3 +111,4 @@ def check_page_order(EditorWindow, chapter_path, paiban_path) -> None:
         "逐頁主版與 doc.master 跟隨＋跳到新節首頁＋一步 undo 回原序＋原位放下不佔"
         "undo＋封面頁不參與＋非節首頁拒收並指名節首頁＋裝訂補頁拒收"
     )
+    check_page_edit(EditorWindow, chapter_path, paiban_path)  # 刪頁／插頁（Sprint 153）

@@ -1,16 +1,18 @@
 """節與分頁編輯（純文件層）：指派節主版、搬移整節、依模版宣告自動起新頁。
 
 「節」（section）＝ Paragraph.master 節首標記切出的段落區塊，切節規則的唯一實作在
-layout._sections（本檔共用，不另寫一份）。節首恆起新頁（同名主版亦然），故本檔三個
-函式都是在動「哪裡換頁、換到哪個主版」這件事。
+layout._sections（本檔共用，不另寫一份）。節首恆起新頁（同名主版亦然），故本檔的
+函式都是在動「哪裡換頁、換到哪個主版」這件事（Sprint 153 加刪頁）。
 
 自 cjkfolio/editing.py 分出（Sprint 142，依行數紀律分檔，同 Sprint 67 把 EditSession
 分到 session.py 的先例）。editing.py 仍再匯出這三個名字，既有 import 路徑不變。
 """
+from collections import Counter
 from dataclasses import replace
 from typing import Optional
 
-from .document import Document
+from .document import Document, Paragraph
+from .frame_box_editing import remove_text_frame
 # _sections＝切節規則的唯一實作（layout 與本檔共用；另寫一份遲早與版面層分歧）
 from .layout import _sections
 from .styles import Template
@@ -132,3 +134,78 @@ def apply_page_starts(doc: Document, template: Template) -> Document:
         paras[idx] = replace(para, master=current)
         changed = True
     return replace(doc, paragraphs=tuple(paras)) if changed else doc
+
+
+def delete_page(document: Document, page: int, lo: int, hi: int) -> Document:
+    """刪除版面頁 page：拿掉完整落在該頁的段 [lo, hi)，連同該頁的圖與文字框。
+
+    頁面是流排結果，刪一頁＝刪掉排在那一頁的段落（Sprint 153，Owner：「這裡
+    不需要再看到一次標題文字」）。呼叫端負責只交「乾淨頁」：首段不延續自前頁、
+    末段不延續到下一頁，否則刪的就不是一整頁。裝訂補頁由版面層依 sheet_pages
+    重算，本函式不碰（刪後總頁數自動湊回 4 的倍數）。
+
+    節首標記轉移：被刪的段若含節首，其後第一段原本屬於那一節（節首起新頁、
+    主版也是那一節的），刪後若不補標記就會併進前一節、黏在前一頁後面。故該段
+    沒有自帶標記時補上被刪範圍內最後一個節首的主版。
+
+    圖與文字框以頁號錨定：本頁的一併刪除（文字框走 remove_text_frame，串接鏈首
+    被刪時文字交給鏈中下一框），頁號大於本頁者減 1。
+
+    系統邊界快速失敗：範圍不合法或刪光全部段落 raise ValueError。
+    """
+    paras = document.paragraphs
+    if not 0 <= lo < hi <= len(paras):
+        raise ValueError(f"段落範圍 [{lo}, {hi}) 不合法（共 {len(paras)} 段）")
+    if hi - lo == len(paras):
+        raise ValueError("不能刪光全書的段落")
+    head = next((p.master for p in reversed(paras[lo:hi]) if p.master), None)
+    rest = list(paras[:lo] + paras[hi:])
+    if head is not None and lo < len(rest) and rest[lo].master is None:
+        rest[lo] = replace(rest[lo], master=head)
+    doc = replace(document, paragraphs=tuple(rest))
+    for idx in range(len(doc.text_frames) - 1, -1, -1):
+        if doc.text_frames[idx].page == page:
+            doc = remove_text_frame(doc, idx)
+    return replace(
+        doc,
+        images=tuple(replace(im, page=im.page - 1) if im.page > page else im
+                     for im in doc.images if im.page != page),
+        text_frames=tuple(replace(tf, page=tf.page - 1) if tf.page > page else tf
+                          for tf in doc.text_frames),
+    )
+
+
+def insert_blank_page(document: Document, at: int, page: int,
+                      master: Optional[str] = None) -> Document:
+    """在第 at 段之前插入一張空白頁（版面頁 page），回傳新 Document。
+
+    Sprint 153（Owner：新增頁面、插入頁面）。空白頁＝一個自成一節的空段：節首
+    恆起新頁，版面層對「整節只有空段」補一條空行，故它佔滿一頁、照常編頁碼。
+    頁碼數字與左右側都由版面重排推導（書頁號、紙面號），本函式不碰。
+
+    at＝插入位（0＝最前，len＝最後），呼叫端只交頁界（不切斷跨頁段）。空段取
+    全書最常用的段落樣式（通常是內文），不取鄰段：鄰段若是章名或目次條目，空段
+    會被目次一致化（Sprint 150）當成同樣式的短段收進目次。master 預設承插入處
+    所在節的主版。原本在 at 的段若沒有節首標記，補上它所屬節的主版，使它仍從
+    新頁開始（否則會黏到空白頁上、空白頁就不空了）。
+
+    圖與文字框頁號 >= page 者加 1（跟著內容後移）。at 越界 raise IndexError。
+    """
+    paras = document.paragraphs
+    if not 0 <= at <= len(paras):
+        raise IndexError(f"插入位 {at} 超出範圍 0..{len(paras)}")
+    owner = {i: m for m, lo, hi in _sections(document) for i in range(lo, hi)}
+    near = owner[min(at, len(paras) - 1)]
+    style = Counter(p.style for p in paras).most_common(1)[0][0]
+    blank = Paragraph(text="", style=style, master=master or near)
+    rest = list(paras[at:])
+    if rest and rest[0].master is None:
+        rest[0] = replace(rest[0], master=owner[at])
+    return replace(
+        document,
+        paragraphs=paras[:at] + (blank,) + tuple(rest),
+        images=tuple(replace(im, page=im.page + 1) if im.page >= page else im
+                     for im in document.images),
+        text_frames=tuple(replace(tf, page=tf.page + 1) if tf.page >= page else tf
+                          for tf in document.text_frames),
+    )

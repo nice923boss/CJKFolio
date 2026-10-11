@@ -42,6 +42,8 @@ from .editing import (
     apply_style_span,
     change_paragraph_styles,
     change_paragraph_toc_entries,
+    delete_page,
+    insert_blank_page,
     locate_cell,
     move_section,
     rename_char_style_refs,
@@ -303,6 +305,29 @@ class EditSession:
         move_section IndexError 快速失敗、狀態不變不入歷史。"""
         return self._commit_pair(
             move_section(self._document, src_index, dst_index), self._template)
+
+    def delete_page(self, page: int, lo: int, hi: int):
+        """刪除版面頁 page（段 [lo, hi) 與該頁的圖、文字框）入單一 undo 步。
+
+        Sprint 153。段數變少，游標一律落到刪除處（越界即退到末段段首）：留著舊
+        游標會靜默指到別段，文字框游標同理（框可能已被刪）。"""
+        result = self._commit_pair(
+            delete_page(self._document, page, lo, hi), self._template)
+        if result is not None:
+            self._cursor = DocCursor(min(lo, len(self._document.paragraphs) - 1), 0)
+            result = self._state_result()
+        return result
+
+    def insert_blank_page(self, at: int, page: int, master: Optional[str] = None):
+        """在第 at 段之前插入空白頁（版面頁 page）入單一 undo 步（Sprint 153）。
+
+        段數加 1，內文游標在插入處之後者跟著後移一段（仍指同一個字）。"""
+        result = self._commit_pair(
+            insert_blank_page(self._document, at, page, master), self._template)
+        if result is not None and isinstance(self._cursor, DocCursor)                 and self._cursor.para_idx >= at:
+            self._cursor = DocCursor(self._cursor.para_idx + 1, self._cursor.caret)
+            result = self._state_result()
+        return result
 
     def replace_document(self, document: Document):
         """整份換文件（Sprint 107 稿件匯入）：游標歸零，入統一 undo 歷史。

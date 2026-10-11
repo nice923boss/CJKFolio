@@ -63,7 +63,7 @@ class MasterActionsMixin:
                 "本頁以跨頁段落開頭，請於段落起始頁指派" if page.placed
                 else "本頁無內文行，無法指派主版（主版按節指派，節以段落切分）")
             hint.setEnabled(False)
-            return menu
+            return self._add_page_edit_actions(menu, page_number)
         for name in self.template.masters:      # 依模版著作序（A→G）
             act = assign_menu.addAction(name)
             act.setCheckable(True)
@@ -77,7 +77,7 @@ class MasterActionsMixin:
             cancel = menu.addAction("取消節首（併回前節）")
             cancel.triggered.connect(
                 lambda checked=False: self._assign_master(start_para, None, page_number))
-        return menu
+        return self._add_page_edit_actions(menu, page_number)  # 插頁、刪頁（Sprint 153）
 
     def _page_context_menu(self, page_number: int, global_pos: QPoint) -> None:
         """頁面面板 customContextMenuRequested 回呼：建選單並於游標處 exec。"""

@@ -1,0 +1,94 @@
+"""smoke C41 附驗：刪除頁面與插入空白頁（Sprint 153）。
+
+由 smoke_page_order.check_page_order 末尾呼叫（smoke_check.py 已超 800 行，不再往
+它加註冊行，同 Sprint 147 把新驗收塞進既有 C19 的處置）。
+
+離屏可驗：右鍵選單三項、插入前後跳到新頁、空白頁占一頁且照常編頁碼、裝訂補頁
+自動湊回 4 的倍數、一步 undo、刪頁、封面／裝訂補頁／跨頁段頁拒收並說明原因。
+真右鍵手感與縮圖重繪屬真視窗驗收（GAPS #19 批次）。
+"""
+
+
+def _act(menu, prefix: str):
+    return next(a for a in menu.actions() if a.text().startswith(prefix))
+
+
+def _content(win) -> list:
+    return [p for p in win.layout_result.pages if not p.blank]
+
+
+def check_page_edit(EditorWindow, chapter_path, paiban_path) -> None:
+    # ── 單節多頁真樣張 paiban-xiaoji-ch1：頁 2 乾淨起頁、頁 3 跨頁續段 ──
+    win = EditorWindow(str(paiban_path))
+    original = win.doc
+    pages0 = len(win.layout_result.pages)
+    content0 = len(_content(win))
+    assert pages0 % 4 == 0, pages0
+    menu = win._build_page_menu(2)
+    for label in ("在此頁之前插入空白頁", "在此頁之後新增空白頁", "刪除此頁（頁 2）"):
+        _act(menu, label)
+
+    # 在頁 2 之前插入：新頁 2 是只有一條空行的頁，原頁 2 內容退到頁 3
+    _act(menu, "在此頁之前插入空白頁").trigger()
+    pages = win.layout_result.pages
+    assert len(_content(win)) == content0 + 1
+    assert len(pages) % 4 == 0, f"插頁後總頁數 {len(pages)} 非 4 的倍數"
+    assert win.page.number == 2
+    assert [pl.line.cells for pl in pages[1].placed] == [()], "新頁應只有一條空行"
+    assert not pages[1].blank, "插入的空白頁照常編頁碼"
+    msg = win.statusBar().currentMessage()
+    assert "已在頁 2 之前插入空白頁" in msg and "全書" in msg, msg
+
+    # 刪掉剛插的空白頁，再一步一步 undo 回原稿
+    _act(win._build_page_menu(2), "刪除此頁").trigger()
+    assert len(_content(win)) == content0
+    assert "已刪除頁 2" in win.statusBar().currentMessage()
+    win.session.undo()
+    win.session.undo()
+    assert win.doc == original, "兩步 undo 應回到原稿"
+
+    # 頁 2 之後新增：頁 2 末段若延續到頁 3 則拒收並說明，否則新頁為頁 3
+    guard = win._page_edit_guard(2, "after")
+    _act(win._build_page_menu(2), "在此頁之後新增空白頁").trigger()
+    if guard is None:
+        assert len(_content(win)) == content0 + 1
+        assert win.page.number == 3
+        win.session.undo()
+    else:
+        assert guard in win.statusBar().currentMessage()
+        assert win.doc is original
+
+    # 拒收：跨頁續段頁、裝訂補頁（說詞與 guard 單一來源）
+    _act(win._build_page_menu(3), "刪除此頁").trigger()
+    msg3 = win.statusBar().currentMessage()
+    assert "頁 3 開頭的段落延續自前頁" in msg3 and "無法刪除" in msg3, msg3
+    blank_no = next((p.number for p in win.layout_result.pages if p.blank), None)
+    if blank_no is not None:
+        _act(win._build_page_menu(blank_no), "刪除此頁").trigger()
+        assert "裝訂補頁" in win.statusBar().currentMessage()
+    assert win.doc == original, "拒收時文件不得變動"
+
+    # ── 兩節樣張 chapter-opening 加封面：封面不可刪、封面之後可插 ──
+    from cjkfolio.cover import with_cover
+
+    win2 = EditorWindow(str(chapter_path))
+    win2.session.replace_document(with_cover(win2.doc, win2.template))
+    covered = win2.doc
+    _act(win2._build_page_menu(1), "刪除此頁").trigger()
+    assert "封面頁不能刪除" in win2.statusBar().currentMessage()
+    _act(win2._build_page_menu(1), "在此頁之前插入空白頁").trigger()
+    assert "封面固定在最前" in win2.statusBar().currentMessage()
+    assert win2.doc is covered
+    _act(win2._build_page_menu(1), "在此頁之後新增空白頁").trigger()
+    pages2 = win2.layout_result.pages
+    assert win2.page.number == 2 and [pl.line.cells for pl in pages2[1].placed] == [()]
+    assert len(pages2) % 4 == 0, len(pages2)
+    # 刪掉原本的部扉頁（現為頁 3，整節一頁）：剩封面、空白頁、內文頁
+    _act(win2._build_page_menu(3), "刪除此頁").trigger()
+    assert [p.master for p in _content(win2)][1:] == ["B-部扉", "A-內文版"], \
+        [p.master for p in _content(win2)]
+
+    for w in (win, win2):
+        w._shutdown_thumbnails()
+    print("C41 附驗 刪頁／插頁：右鍵三項＋插頁跳新頁且空白頁編頁碼＋補頁湊回 4 的"
+          "倍數＋刪頁＋兩步 undo 回原稿＋封面、裝訂補頁、跨頁續段頁拒收並說明原因")

@@ -8,7 +8,8 @@
 from dataclasses import dataclass, field
 from math import ceil, floor
 
-from .engine import ParagraphSpec, check_kinsoku, check_overflow, flow_pages
+from .engine import (Line, ParagraphSpec, PlacedLine, check_kinsoku, check_overflow,
+                     flow_pages)
 from .primitives import PT_PER_MM
 from .styles import Grid, ParagraphStyle, Template
 
@@ -308,6 +309,13 @@ def layout_document(doc, template: Template, first_para_continues: bool = False,
             first_para_continues=first_para_continues and si == 0, vertical=vertical,
             exclusions=exclusions, page_offset=len(pages),
         )
+        if not raw_pages and hi > lo and doc.paragraphs[lo].master is not None:
+            # 帶節首標記的節只有空段（Sprint 153 插入空白頁）：空段不產生字格行，
+            # 不補一頁的話節首「恆起新頁」就落空、空白頁不見。補一條無字格的空行
+            # 並帶段號，該頁照常編頁碼、印書眉，且可被刪除與指派主版（皆以 para_idx
+            # 反查）。無標記的空節不補：空白起始文件（Sprint 123）要的是 0 頁空紙面。
+            raw_pages = [[PlacedLine(0, Line(()), specs[0].style, para_idx=lo,
+                                     lead_offset_pt=specs[0].lead_offset_pt)]]
         for page in raw_pages:
             pages.append(LayoutPage(len(pages) + 1, tuple(page), master=master_name,
                                     vertical=vertical))

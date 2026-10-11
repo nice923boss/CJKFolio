@@ -24,6 +24,8 @@ from .layout import LayoutResult
 # 節與分頁編輯（Sprint 142 依行數紀律分檔）在此再匯出，既有 import 路徑不變
 from .section_editing import (  # noqa: F401
     apply_page_starts,
+    delete_page,
+    insert_blank_page,
     move_section,
     set_section_master,
 )
