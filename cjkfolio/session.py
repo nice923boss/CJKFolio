@@ -72,6 +72,7 @@ from .image_editing import (
     set_image_wrap,
 )
 from .layout import LayoutResult
+from .page_break import clear_page_start, page_mapping, remap_page_refs, start_page_at
 from .page_scale import scale_page_size
 from .page_size import set_page_size
 from .toc import TocRefresh, document_with_toc, refresh_toc_page_numbers
@@ -334,6 +335,31 @@ class EditSession:
             self._template)
         if result is not None and isinstance(self._cursor, DocCursor)                 and self._cursor.para_idx >= at:
             self._cursor = DocCursor(self._cursor.para_idx + 1, self._cursor.caret)
+            result = self._state_result()
+        return result
+
+    def start_page_at(self, para_idx: int):
+        """自第 para_idx 段起新頁（主版不換）入單一 undo 步（Sprint 158）。
+
+        後續頁順移，置入圖與文字框的頁號依新舊版面錨點跟著移（封底圖留在末頁），
+        目次頁碼同一步重算；游標落在該段段首。已是起新頁或段 0＝no-op 回 None。"""
+        return self._commit_page_break(start_page_at(self._document, para_idx), para_idx)
+
+    def clear_page_start(self, para_idx: int):
+        """取消第 para_idx 段的起新頁入單一 undo 步（Sprint 158，start_page_at 的反向）。
+
+        主版與前一節不同的節首 ValueError（請用頁面面板「取消節首」）、狀態不變。"""
+        return self._commit_page_break(clear_page_start(self._document, para_idx), para_idx)
+
+    def _commit_page_break(self, document: Document, para_idx: int):
+        if document is self._document:
+            return None
+        mapping = page_mapping(self._layout.pages,
+                               layout_with_wrap(document, self._template).pages)
+        result = self._commit_pair(
+            self._with_toc_refreshed(remap_page_refs(document, mapping)), self._template)
+        if result is not None:
+            self._cursor = DocCursor(para_idx, 0)
             result = self._state_result()
         return result
 

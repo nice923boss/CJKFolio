@@ -77,3 +77,5 @@ def check_blank_line(EditorWindow, doc_path) -> None:
         f"插入後段{target}下移一槽＋游標跟隨＋狀態列報全書 {pages0} 頁，"
         f"移除復原、undo 一步回 {paras0} 段 {pages0} 頁"
     )
+    from editor.smoke_page_start import check_page_start  # C47 用同一樣張；延遲匯入
+    check_page_start(EditorWindow, doc_path)

@@ -13,9 +13,15 @@ Sprint 155：刪頁、插頁在同一個 undo 步內自動更新目次頁碼；�
 
 不可動的頁（封面、裝訂補頁、跨頁段的頁）選單項照常顯示，點了在狀態列與游標處說明
 原因（Sprint 145 教訓：停用或沉默拒收，使用者看不到為什麼）。
+
+Sprint 158：版面選單「從游標段起新頁」（Ctrl+Return）與「取消游標段起新頁」。Owner：
+「我要讓這個標題後也能直接換到下一頁」，點標題任一字即可把它移到下一頁開頭；置入圖
+頁碼與目次頁碼同一步跟著更新（cjkfolio.page_break、EditSession.start_page_at）。
 """
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QMenu, QToolTip
+
+from editor.canvas import resolve_hit
 
 
 class PageEditActionsMixin:
@@ -149,3 +155,66 @@ class PageEditActionsMixin:
         side = "後" if after else "前"
         self._after_page_edit(
             new_page, f"已在頁 {page_number} 之{side}插入空白頁，新頁為頁 {new_page}")
+
+    def _page_break_para_idx(self):
+        """起新頁作用的段（游標所在段）；無可用 body 游標時提示並回 None。"""
+        if self.frame_cursor is not None:
+            self.statusBar().showMessage("起新頁只作用於內文段落（文字框不跨頁）")
+            return None
+        if self.cursor is None:
+            self.statusBar().showMessage("先點要移到新頁的標題（任一字），再選起新頁")
+            return None
+        hit = resolve_hit(self.doc, self.page, *self.cursor)
+        if hit.para_idx is None:
+            self.statusBar().showMessage("此字格無文件游標（拉丁串／空格），請點段落中的中文字")
+            return None
+        return hit.para_idx
+
+    def _report_page_break(self, res, pages_before: int, images_before, msg: str):
+        """跳到該段並回報；msg 的 {page} 填游標所在版面頁號。"""
+        self._follow_body_address(res)
+        pages = self.layout_result.pages
+        msg = msg.format(page=self.page.number)
+        msg += f"（全書 {pages_before} → {len(pages)} 頁"
+        moved = sum(1 for a, b in zip(images_before, self.doc.images) if a.page != b.page)
+        if moved:
+            msg += f"，置入圖 {moved} 張跟著移頁"
+        msg += "）"
+        toc_msg = self._toc_refresh_message()
+        if toc_msg:
+            msg += f"；{toc_msg}"
+        self.statusBar().showMessage(msg + "；Ctrl+Z 可復原")
+
+    def _start_page_at_cursor(self) -> None:
+        """游標段起新頁（Sprint 158）：主版不換，前頁剩下的行留白。"""
+        idx = self._page_break_para_idx()
+        if idx is None:
+            return
+        if idx == 0:
+            self.statusBar().showMessage("第一段本來就在書首，不必起新頁")
+            return
+        if self.doc.paragraphs[idx].master is not None:
+            self.statusBar().showMessage(
+                f"段 {idx + 1} 已經從新頁開始；要取消請選「版面 > 取消游標段起新頁」")
+            return
+        pages_before, images_before = len(self.layout_result.pages), self.doc.images
+        res = self.session.start_page_at(idx)
+        self._report_page_break(res, pages_before, images_before,
+                                f"段 {idx + 1} 已移到頁 {{page}} 開頭")
+
+    def _clear_page_start_at_cursor(self) -> None:
+        """取消游標段起新頁（Sprint 158）：併回前頁接著排。"""
+        idx = self._page_break_para_idx()
+        if idx is None:
+            return
+        if idx > 0 and self.doc.paragraphs[idx].master is None:
+            self.statusBar().showMessage(f"段 {idx + 1} 沒有設起新頁，沒有可取消的換頁")
+            return
+        pages_before, images_before = len(self.layout_result.pages), self.doc.images
+        try:
+            res = self.session.clear_page_start(idx)
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc))
+            return
+        self._report_page_break(res, pages_before, images_before,
+                                f"段 {idx + 1} 已取消起新頁，接回頁 {{page}}")

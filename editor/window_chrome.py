@@ -93,6 +93,14 @@ class WindowChromeMixin:
         blank_del = QAction("移除游標段前的空行", self)  # 空行畫布上點不到，故配對提供
         blank_del.triggered.connect(self._remove_blank_line)
         layout_menu.addAction(blank_del)
+        layout_menu.addSeparator()  # 起新頁（Sprint 158）：標題移到下一頁開頭，前文改了也不跑位
+        page_start = QAction("從游標段起新頁", self)
+        page_start.setShortcut(QKeySequence("Ctrl+Return"))
+        page_start.triggered.connect(self._start_page_at_cursor)
+        layout_menu.addAction(page_start)
+        page_start_clear = QAction("取消游標段起新頁", self)
+        page_start_clear.triggered.connect(self._clear_page_start_at_cursor)
+        layout_menu.addAction(page_start_clear)
         layout_menu.addSeparator()
         trim_action = QAction("成品尺寸…", self)  # 換開本（Sprint 140 甲）
         trim_action.triggered.connect(lambda: self._page_size_dialog())
